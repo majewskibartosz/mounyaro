@@ -447,7 +447,7 @@ var STORE = (function(){
     return {
       schemaVersion:1,
       settings:{ lang:"pl", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
-      profile:{ heightCm:null, age:null, sex:null },
+      profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
       calc:{ costPerPen:null, strengthMg:null }
     };
@@ -695,12 +695,13 @@ var UI = (function(){
   function viewBMI(){
     var st=s();
     var latest = st.weightLog.length ? st.weightLog[0].weightKg : null;
+    var curW = st.profile.weightKg!=null ? st.profile.weightKg : latest;
     var html=''
     +'<h1 class="page">'+esc(I18N.t("bmi.title"))+'</h1>'
     +'<div class="card"><p class="sub">'+esc(I18N.t("bmi.sub"))+'</p>'
     +'<div class="grid g2">'
     +'<div class="field"><label>'+esc(I18N.t("bmi.height"))+'</label><input type="number" inputmode="decimal" id="bH" value="'+(st.profile.heightCm!=null?st.profile.heightCm:"")+'" placeholder="170"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="bW" value="'+(latest!=null?latest:"")+'" placeholder="80"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="bW" value="'+(curW!=null?curW:"")+'" placeholder="80"></div>'
     +'<div class="field"><label>'+esc(I18N.t("bmi.age"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bAge" value="'+(st.profile.age!=null?st.profile.age:"")+'" placeholder="40"></div>'
     +'<div class="field"><label>'+esc(I18N.t("bmi.sex"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><select id="bSex">'
       +'<option value=""></option>'
@@ -715,6 +716,7 @@ var UI = (function(){
 
     function persist(){
       st.profile.heightCm = $("#bH").value===""?null:parseFloat($("#bH").value);
+      st.profile.weightKg = $("#bW").value===""?null:parseFloat($("#bW").value);
       st.profile.age = $("#bAge").value===""?null:parseInt($("#bAge").value,10);
       st.profile.sex = $("#bSex").value||null;
       STORE.save();
