@@ -286,6 +286,22 @@ var I18N = (function(){
                       en:"Download a backup file. Keep it in e.g. MEGA / cloud to move data to another device."},
     "set.importOk":{pl:"Dane zaimportowane ✓",en:"Data imported ✓"},
     "set.importErr":{pl:"Nie udało się odczytać pliku.",en:"Could not read the file."},
+    "set.linkTitle":{pl:"Połączony plik (auto-zapis)",en:"Linked file (auto-save)"},
+    "set.linkDesc":{pl:"Powiąż aplikację z prawdziwym plikiem .json — po każdej zmianie zapisuje się automatycznie. Trzymaj plik w MEGA/Dropbox, aby synchronizować urządzenia.",
+                    en:"Bind the app to a real .json file — it auto-saves after every change. Keep the file in MEGA/Dropbox to sync devices."},
+    "set.linkStatusOn":{pl:"Połączono z plikiem:",en:"Linked to file:"},
+    "set.linkStatusOff":{pl:"Brak połączonego pliku.",en:"No linked file."},
+    "set.linkReadyNo":{pl:"Wymaga ponownego nadania uprawnień w tej sesji.",en:"Needs permission re-granted this session."},
+    "set.linkNew":{pl:"Utwórz plik do auto-zapisu",en:"Create file to auto-save"},
+    "set.linkExisting":{pl:"Połącz istniejący plik",en:"Link existing file"},
+    "set.linkReconnect":{pl:"Połącz ponownie",en:"Reconnect file"},
+    "set.linkUnlink":{pl:"Odłącz plik",en:"Unlink"},
+    "set.linkNote":{pl:"Przeglądarka prosi o zgodę raz na sesję. Gdy dane lokalne i plik się różnią, zostaje nowsza wersja.",
+                    en:"The browser asks for permission once per session. If local data and the file differ, the newer version wins."},
+    "set.linkUnsupported":{pl:"Ta przeglądarka nie pozwala na powiązanie z plikiem (np. iPhone/Safari, Firefox). Użyj Eksportu/Importu poniżej, aby zapisać i przenieść dane.",
+                           en:"This browser can't bind to a file (e.g. iPhone/Safari, Firefox). Use Export/Import below to save and move your data."},
+    "set.linkReconnected":{pl:"Plik połączony ✓",en:"File linked ✓"},
+    "set.linkBanner":{pl:"Połączony plik wymaga zgody — kliknij, aby wznowić auto-zapis.",en:"Linked file needs permission — tap to resume auto-save."},
     "set.clear":{pl:"Wyczyść wszystkie dane",en:"Clear all data"},
     "set.clearConfirm":{pl:"Na pewno usunąć WSZYSTKIE dane z tej przeglądarki? Tej operacji nie można cofnąć.",
                         en:"Really delete ALL data from this browser? This cannot be undone."},
@@ -501,9 +517,12 @@ var STORE = (function(){
     return out;
   }
   function save(){
-    if(memoryOnly) return;
-    try{ localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch(e){ memoryOnly=true; }
+    state.updatedAt = Date.now();
+    if(!memoryOnly){
+      try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+      catch(e){ memoryOnly=true; }
+    }
+    scheduleFileWrite();
   }
   function exportFile(){
     var data = JSON.stringify(state, null, 2);
@@ -533,8 +552,124 @@ var STORE = (function(){
     state = defaults();
     if(!memoryOnly){ try{ localStorage.removeItem(KEY); }catch(e){} }
   }
+
+  /* ---------- Linked file (File System Access API) ----------
+     Optional auto-save to a real .json file the user picks (Chromium only).
+     localStorage stays the always-on source of truth; the file is a sync mirror. */
+  var linkedHandle = null;   // FileSystemFileHandle
+  var linkedReady = false;   // readwrite permission granted this session
+  var writeTimer = null;
+
+  function fsaSupported(){ return typeof window!=="undefined" && "showSaveFilePicker" in window; }
+
+  // minimal IndexedDB key/value (handles can't live in localStorage)
+  function idb(cb){
+    try{
+      if(!window.indexedDB){ cb(null); return; }
+      var req = indexedDB.open("mounjaro-fs", 1);
+      req.onupgradeneeded = function(){ req.result.createObjectStore("kv"); };
+      req.onsuccess = function(){ cb(req.result); };
+      req.onerror = function(){ cb(null); };
+    }catch(e){ cb(null); }
+  }
+  function idbSet(key, val, cb){ idb(function(db){ if(!db){cb&&cb();return;} var t=db.transaction("kv","readwrite"); t.objectStore("kv").put(val,key); t.oncomplete=function(){cb&&cb();}; t.onerror=function(){cb&&cb();}; }); }
+  function idbGet(key, cb){ idb(function(db){ if(!db){cb(null);return;} var t=db.transaction("kv","readonly"); var r=t.objectStore("kv").get(key); r.onsuccess=function(){cb(r.result||null);}; r.onerror=function(){cb(null);}; }); }
+  function idbDel(key, cb){ idb(function(db){ if(!db){cb&&cb();return;} var t=db.transaction("kv","readwrite"); t.objectStore("kv").delete(key); t.oncomplete=function(){cb&&cb();}; t.onerror=function(){cb&&cb();}; }); }
+
+  function scheduleFileWrite(){
+    if(!linkedHandle || !linkedReady) return;
+    if(writeTimer) clearTimeout(writeTimer);
+    writeTimer = setTimeout(writeToFile, 800);
+  }
+  function writeToFile(){
+    if(!linkedHandle || !linkedReady) return;
+    try{
+      linkedHandle.createWritable().then(function(w){
+        return w.write(JSON.stringify(state, null, 2)).then(function(){ return w.close(); });
+      }).catch(function(){ /* file vanished / perm lost; keep localStorage */ });
+    }catch(e){}
+  }
+  function adoptParsed(parsed){
+    if(typeof parsed!=="object"||!parsed) return false;
+    state = merge(defaults(), parsed);
+    if(!memoryOnly){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+    return true;
+  }
+  // Read the linked file; keep whichever copy (file vs local) is newer.
+  function syncFromHandle(cb){
+    try{
+      linkedHandle.getFile().then(function(f){ return f.text(); }).then(function(txt){
+        var fileState=null; try{ fileState=JSON.parse(txt); }catch(e){}
+        var localUpdated = state.updatedAt||0;
+        var fileUpdated = (fileState&&fileState.updatedAt)||0;
+        if(fileState && fileUpdated >= localUpdated){ adoptParsed(fileState); cb&&cb("loaded"); }
+        else { writeToFile(); cb&&cb("kept-local"); }
+      }).catch(function(){ cb&&cb("error"); });
+    }catch(e){ cb&&cb("error"); }
+  }
+
+  function linkFileNew(cb){
+    if(!fsaSupported()){ cb&&cb(false); return; }
+    window.showSaveFilePicker({ suggestedName:"mounjaro-tracker.json",
+      types:[{description:"JSON", accept:{"application/json":[".json"]}}] })
+      .then(function(h){ linkedHandle=h; linkedReady=true; idbSet("linkedFileHandle",h); writeToFile(); cb&&cb(true, h.name); })
+      .catch(function(){ cb&&cb(false); });
+  }
+  function linkFileExisting(cb){
+    if(!fsaSupported()){ cb&&cb(false); return; }
+    window.showOpenFilePicker({ multiple:false,
+      types:[{description:"JSON", accept:{"application/json":[".json"]}}] })
+      .then(function(list){
+        var h=list[0]; linkedHandle=h;
+        return h.requestPermission({mode:"readwrite"}).then(function(p){
+          linkedReady = (p==="granted");
+          idbSet("linkedFileHandle",h);
+          if(linkedReady){ syncFromHandle(function(){ cb&&cb(true, h.name); }); }
+          else { cb&&cb(false, h.name); }
+        });
+      })
+      .catch(function(){ cb&&cb(false); });
+  }
+  // On startup: re-acquire a previously linked handle from IndexedDB.
+  function restoreLink(cb){
+    if(!fsaSupported()){ cb&&cb("unsupported"); return; }
+    idbGet("linkedFileHandle", function(h){
+      if(!h){ cb&&cb("none"); return; }
+      linkedHandle = h;
+      try{
+        h.queryPermission({mode:"readwrite"}).then(function(p){
+          if(p==="granted"){ linkedReady=true; syncFromHandle(cb); }
+          else { linkedReady=false; cb&&cb("needsPermission"); }
+        }).catch(function(){ cb&&cb("needsPermission"); });
+      }catch(e){ cb&&cb("needsPermission"); }
+    });
+  }
+  // User-gesture reconnect (requestPermission must be called from a click).
+  function reconnect(cb){
+    if(!linkedHandle){ cb&&cb("none"); return; }
+    try{
+      linkedHandle.requestPermission({mode:"readwrite"}).then(function(p){
+        if(p==="granted"){ linkedReady=true; syncFromHandle(cb); }
+        else { cb&&cb("denied"); }
+      }).catch(function(){ cb&&cb("denied"); });
+    }catch(e){ cb&&cb("denied"); }
+  }
+  function unlinkFile(cb){
+    linkedHandle=null; linkedReady=false;
+    if(writeTimer){ clearTimeout(writeTimer); writeTimer=null; }
+    idbDel("linkedFileHandle", function(){ cb&&cb(); });
+  }
+  function linkInfo(){
+    return { supported:fsaSupported(),
+             linked: !!linkedHandle,
+             ready: linkedReady,
+             name: linkedHandle ? linkedHandle.name : null };
+  }
+
   return {
     load:load, save:save, exportFile:exportFile, importFile:importFile, clearAll:clearAll,
+    fsaSupported:fsaSupported, restoreLink:restoreLink, reconnect:reconnect,
+    linkFileNew:linkFileNew, linkFileExisting:linkFileExisting, unlinkFile:unlinkFile, linkInfo:linkInfo,
     get state(){return state;}, get memoryOnly(){return memoryOnly;}
   };
 })();
@@ -975,6 +1110,42 @@ var UI = (function(){
   }
 
   /* ============ SETTINGS ============ */
+  function linkCardHTML(){
+    var info = STORE.linkInfo();
+    var h = '<div class="card"><h2>'+esc(I18N.t("set.linkTitle"))+'</h2>';
+    if(!info.supported){
+      return h + '<div class="note">'+esc(I18N.t("set.linkUnsupported"))+'</div></div>';
+    }
+    h += '<p class="sub">'+esc(I18N.t("set.linkDesc"))+'</p>';
+    if(info.linked){
+      h += '<div class="note" style="margin-bottom:12px">'+esc(I18N.t("set.linkStatusOn"))+' <b>'+esc(info.name||"")+'</b>'
+         + (info.ready ? ' ✓' : '<br><span style="color:var(--warn)">'+esc(I18N.t("set.linkReadyNo"))+'</span>') + '</div>';
+      h += '<div class="row">';
+      if(!info.ready) h += '<button class="btn" id="linkReconnect">'+esc(I18N.t("set.linkReconnect"))+'</button>';
+      h += '<button class="btn ghost" id="linkExisting">'+esc(I18N.t("set.linkExisting"))+'</button>'
+         + '<button class="btn danger" id="linkUnlink">'+esc(I18N.t("set.linkUnlink"))+'</button></div>';
+    } else {
+      h += '<div class="note" style="margin-bottom:12px">'+esc(I18N.t("set.linkStatusOff"))+'</div>'
+         + '<div class="row"><button class="btn" id="linkNew">'+esc(I18N.t("set.linkNew"))+'</button>'
+         + '<button class="btn ghost" id="linkExisting">'+esc(I18N.t("set.linkExisting"))+'</button></div>';
+    }
+    h += '<p class="tiny muted" style="margin-top:10px">'+esc(I18N.t("set.linkNote"))+'</p>';
+    return h + '</div>';
+  }
+  function bindLinkCard(){
+    function done(ok){ if(ok){ updateBanner(); toast(I18N.t("set.linkReconnected")); } viewSettings(); }
+    var b;
+    if((b=$("#linkNew"))) b.addEventListener("click",function(){ STORE.linkFileNew(function(ok){ done(ok); }); });
+    if((b=$("#linkExisting"))) b.addEventListener("click",function(){ STORE.linkFileExisting(function(ok){
+      if(ok){ I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang; applyStatic(); }
+      done(ok);
+    }); });
+    if((b=$("#linkReconnect"))) b.addEventListener("click",function(){ STORE.reconnect(function(st2){
+      if(st2==="loaded"||st2==="kept-local"){ I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang; applyStatic(); done(true); }
+      else viewSettings();
+    }); });
+    if((b=$("#linkUnlink"))) b.addEventListener("click",function(){ STORE.unlinkFile(function(){ updateBanner(); viewSettings(); }); });
+  }
   function viewSettings(){
     var st=s();
     var html=''
@@ -987,6 +1158,7 @@ var UI = (function(){
     +'</select></div>'
     +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label><input type="text" id="setCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
     +'</div></div>'
+    + linkCardHTML()
     +'<div class="card"><h2>'+esc(I18N.t("set.data"))+'</h2>'
     +'<p class="sub">'+esc(I18N.t("set.exportHint"))+'</p>'
     +'<div class="row">'
@@ -1019,6 +1191,7 @@ var UI = (function(){
       STORE.clearAll(); I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
       applyStatic(); render();
     });
+    bindLinkCard();
   }
 
   /* ---- router & static text ---- */
@@ -1038,10 +1211,21 @@ var UI = (function(){
     $("#footer").textContent=I18N.t("footer.disclaimer");
     $all("#langSwitch button").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-lang")===I18N.lang); });
   }
+  var linkBannerOn=false;
   function updateBanner(){
     var b=$("#storeBanner");
-    if(STORE.memoryOnly){ b.textContent=I18N.t("set.noStore"); b.classList.remove("hidden"); }
-    else b.classList.add("hidden");
+    b.style.cursor=""; b.onclick=null;
+    if(STORE.memoryOnly){ b.textContent=I18N.t("set.noStore"); b.classList.remove("hidden"); return; }
+    if(linkBannerOn){
+      b.textContent=I18N.t("set.linkBanner"); b.style.cursor="pointer"; b.classList.remove("hidden");
+      b.onclick=function(){ STORE.reconnect(function(st2){
+        if(st2==="loaded"||st2==="kept-local"){ linkBannerOn=false; updateBanner();
+          I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
+          applyTheme(); applyStatic(); render(); }
+      }); };
+      return;
+    }
+    b.classList.add("hidden");
   }
   function applyTheme(){
     var dark = STORE.state.settings.theme==="dark";
@@ -1072,6 +1256,15 @@ var UI = (function(){
     window.addEventListener("hashchange",render);
     if(!location.hash) location.hash="#weight";
     render();
+    // Restore a previously linked file (async; Chromium only). May pull in newer data.
+    STORE.restoreLink(function(status){
+      if(status==="loaded"){
+        I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
+        applyTheme(); applyStatic(); render();
+      } else if(status==="needsPermission"){
+        linkBannerOn=true; updateBanner();
+      }
+    });
   }
   return { init:init };
 })();
