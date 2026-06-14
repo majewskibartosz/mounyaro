@@ -339,6 +339,7 @@ var I18N = (function(){
     "set.linkUnsupported":{pl:"Ta przeglądarka nie pozwala na powiązanie z plikiem (np. iPhone/Safari, Firefox). Użyj Eksportu/Importu poniżej, aby zapisać i przenieść dane.",
                            en:"This browser can't bind to a file (e.g. iPhone/Safari, Firefox). Use Export/Import below to save and move your data."},
     "set.linkReconnected":{pl:"Plik połączony ✓",en:"File linked ✓"},
+    "set.linkEmpty":{pl:"Połączono, ale plik jest pusty lub nieczytelny — brak danych do wczytania.",en:"Linked, but the file is empty or unreadable — no data to load."},
     "set.linkBanner":{pl:"Połączony plik wymaga zgody — kliknij, aby wznowić auto-zapis.",en:"Linked file needs permission — tap to resume auto-save."},
     "set.clear":{pl:"Wyczyść wszystkie dane",en:"Clear all data"},
     "set.clearConfirm":{pl:"Na pewno usunąć WSZYSTKIE dane z tej przeglądarki? Tej operacji nie można cofnąć.",
@@ -687,15 +688,22 @@ var STORE = (function(){
     if(!memoryOnly){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
     return true;
   }
-  // Read the linked file; keep whichever copy (file vs local) is newer.
-  function syncFromHandle(cb){
+  // Read the linked file. On automatic reconnect keep whichever copy is newer;
+  // on an explicit "open existing file" (forceAdopt) always load the file's data.
+  function syncFromHandle(cb, forceAdopt){
     try{
       linkedHandle.getFile().then(function(f){ return f.text(); }).then(function(txt){
         var fileState=null; try{ fileState=JSON.parse(txt); }catch(e){}
-        var localUpdated = state.updatedAt||0;
-        var fileUpdated = (fileState&&fileState.updatedAt)||0;
-        if(fileState && fileUpdated >= localUpdated){ adoptParsed(fileState); cb&&cb("loaded"); }
-        else { writeToFile(); cb&&cb("kept-local"); }
+        if(fileState){
+          var localUpdated = state.updatedAt||0;
+          var fileUpdated = fileState.updatedAt||0;
+          if(forceAdopt || fileUpdated >= localUpdated){ adoptParsed(fileState); cb&&cb("loaded"); }
+          else { writeToFile(); cb&&cb("kept-local"); }
+        } else {
+          // empty / unreadable file: never clobber it on an explicit open
+          if(forceAdopt){ cb&&cb("empty"); }
+          else { writeToFile(); cb&&cb("kept-local"); }
+        }
       }).catch(function(){ cb&&cb("error"); });
     }catch(e){ cb&&cb("error"); }
   }
@@ -716,7 +724,7 @@ var STORE = (function(){
         return h.requestPermission({mode:"readwrite"}).then(function(p){
           linkedReady = (p==="granted");
           idbSet("linkedFileHandle",h);
-          if(linkedReady){ syncFromHandle(function(){ cb&&cb(true, h.name); }); }
+          if(linkedReady){ syncFromHandle(function(status){ cb&&cb(status!=="error", h.name, status); }, true); }
           else { cb&&cb(false, h.name); }
         });
       })
@@ -1367,8 +1375,12 @@ var UI = (function(){
     function done(ok){ if(ok){ updateBanner(); toast(I18N.t("set.linkReconnected")); } viewSettings(); }
     var b;
     if((b=$("#linkNew"))) b.addEventListener("click",function(){ STORE.linkFileNew(function(ok){ done(ok); }); });
-    if((b=$("#linkExisting"))) b.addEventListener("click",function(){ STORE.linkFileExisting(function(ok){
-      if(ok){ I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang; applyStatic(); }
+    if((b=$("#linkExisting"))) b.addEventListener("click",function(){ STORE.linkFileExisting(function(ok, name, status){
+      if(ok && status==="loaded"){
+        I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
+        applyTheme(); applyStatic(); updateBanner(); toast(I18N.t("set.importOk")); render(); return;
+      }
+      if(ok && status==="empty"){ toast(I18N.t("set.linkEmpty")); }
       done(ok);
     }); });
     if((b=$("#linkReconnect"))) b.addEventListener("click",function(){ STORE.reconnect(function(st2){
