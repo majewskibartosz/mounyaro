@@ -63,8 +63,18 @@
   .grid{display:grid;gap:12px}
   .g2{grid-template-columns:1fr 1fr}
   .g3{grid-template-columns:1fr 1fr 1fr}
-  @media(max-width:520px){.g3{grid-template-columns:1fr 1fr}}
+  @media(max-width:600px){.g2,.g3{grid-template-columns:1fr}}
   .field{margin:0 0 12px}
+
+  /* tap-to-choose chips (pen strength) */
+  .chips{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:0 0 12px}
+  @media(max-width:560px){.chips{grid-template-columns:repeat(3,1fr)}}
+  .chip{appearance:none;cursor:pointer;border:1px solid var(--line);background:var(--soft);
+    border-radius:12px;padding:10px 4px;text-align:center;color:var(--ink);
+    transition:border-color .15s,background .15s,box-shadow .15s}
+  .chip .cv{display:block;font-weight:800;font-size:16px;line-height:1.1}
+  .chip .cu{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+  .chip.on{border-color:var(--brand);background:rgba(14,165,164,.10);box-shadow:0 0 0 1px var(--brand) inset}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 
   button.btn{
@@ -315,8 +325,8 @@ var I18N = (function(){
     "opt.schReachD":{pl:"Po 1 tygodniu na każdym kroku resztę kliknięć zużywasz na dawce docelowej.",en:"One week per step, then spend the rest at the target dose."},
     "opt.totalWeeks":{pl:"Łącznie tygodni",en:"Total weeks"},
     "opt.totalCost":{pl:"Koszt (1 pen)",en:"Total cost (1 pen)"},
-    "opt.costShared":{pl:"Cena i moc pena są wspólne z zakładką Koszt — ustawiasz raz, działa w obu miejscach.",
-                      en:"Pen price and strength are shared with the Cost tab — set once, used in both places."},
+    "opt.costShared":{pl:"Koszt uzupełnia się z cen penów ustawionych w Ustawieniach. Zmiany tutaj dotyczą tylko tego wyliczenia.",
+                      en:"Cost auto-fills from your per-pen prices in Settings. Edits here apply to this calculation only."},
     "opt.clicksUsed":{pl:"Zużyte kliknięcia",en:"Clicks used"},
     "opt.coarsened":{pl:"Krok dopasowano do",en:"Step adjusted to"},
     "opt.infeasible":{pl:"Nawet 1 tydzień na dawce startowej + 1 tydzień na docelowej nie mieści się w jednym penie. Włącz dawkę „golden” lub wybierz mocniejszego pena.",
@@ -329,6 +339,9 @@ var I18N = (function(){
     "set.sub":{pl:"Dane są zapisywane tylko w tej przeglądarce. Nikt inny ich nie widzi.",en:"Data is stored only in this browser. No one else can see it."},
     "set.language":{pl:"Język",en:"Language"},
     "set.currency":{pl:"Domyślna waluta",en:"Default currency"},
+    "set.penCosts":{pl:"Ceny penów",en:"Pen costs"},
+    "set.penCostsHint":{pl:"Ustaw cenę dla każdej mocy raz — kalkulator sam ją podstawi po wybraniu pena.",
+                        en:"Set a price for each strength once — the calculator fills it in automatically when you pick a pen."},
     "set.data":{pl:"Twoje dane",en:"Your data"},
     "set.export":{pl:"Eksportuj do pliku",en:"Export to file"},
     "set.import":{pl:"Importuj z pliku",en:"Import from file"},
@@ -586,7 +599,8 @@ var STORE = (function(){
   function defaults(){
     return {
       schemaVersion:1,
-      settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
+      settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8},
+        penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] },
@@ -929,6 +943,25 @@ var UI = (function(){
   var app, S;
   function s(){ return STORE.state; }
 
+  /* ---- pen-strength chips (tap to choose) ---- */
+  var STRENGTHS=[2.5,5,7.5,10,12.5,15];
+  function chipRow(group, values, sel, unit){
+    return '<div class="chips" data-chip="'+group+'">'+values.map(function(v){
+      return '<button type="button" class="chip'+(sel==v?" on":"")+'" data-v="'+v+'">'
+        +'<span class="cv">'+v+'</span><span class="cu">'+esc(unit)+'</span></button>';
+    }).join("")+'</div>';
+  }
+  function bindChips(group, onPick){
+    var wrap=$('[data-chip="'+group+'"]'); if(!wrap) return;
+    $all(".chip",wrap).forEach(function(b){
+      b.addEventListener("click",function(){
+        $all(".chip",wrap).forEach(function(x){ x.classList.remove("on"); });
+        b.classList.add("on");
+        onPick(parseFloat(b.getAttribute("data-v")));
+      });
+    });
+  }
+
   /* ---- toast ---- */
   function toast(msg){
     var t=$("#toast");
@@ -1193,29 +1226,29 @@ var UI = (function(){
     var html=''
     +'<h1 class="page">'+esc(I18N.t("cost.title"))+'</h1>'
     +'<div class="card"><p class="sub">'+esc(I18N.t("cost.sub"))+'</p>'
-    +'<div class="grid g3">'
+    +'<div class="grid g2">'
     +'<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+'</label><input type="number" inputmode="decimal" id="cPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
     +'<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label><input type="text" id="cCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("cost.penStrength"))+'</label><select id="cStr">'
-      +[2.5,5,7.5,10,12.5,15].map(function(v){ return '<option value="'+v+'"'+(st.calc.strengthMg==v?" selected":"")+'>'+v+' mg</option>'; }).join("")
-    +'</select></div>'
-    +'</div></div>'
+    +'</div>'
+    +'<div class="field"><label>'+esc(I18N.t("cost.penStrength"))+'</label>'+chipRow("cStr",STRENGTHS,st.calc.strengthMg||5,"mg")+'</div>'
+    +'</div>'
     +'<div class="card" id="costResult"></div>';
     app.innerHTML=html;
 
+    var selStr = st.calc.strengthMg||5;
     function recompute(){
       var P=parseFloat($("#cPrice").value);
-      var S=parseFloat($("#cStr").value);
       var cur=($("#cCur").value||"PLN").toUpperCase();
       st.calc.costPerPen = isNaN(P)?null:P;
-      st.calc.strengthMg = S;
+      st.calc.strengthMg = selStr;
       st.settings.currency = cur;
       STORE.save();
-      $("#costResult").innerHTML = renderCost(P,S,cur);
+      $("#costResult").innerHTML = renderCost(P,selStr,cur);
     }
-    ["cPrice","cCur","cStr"].forEach(function(id){
+    ["cPrice","cCur"].forEach(function(id){
       $("#"+id).addEventListener("input",recompute); $("#"+id).addEventListener("change",recompute);
     });
+    bindChips("cStr",function(v){ selStr=v; recompute(); });
     recompute();
   }
   function renderCost(P,S,cur){
@@ -1260,16 +1293,12 @@ var UI = (function(){
     app.innerHTML=html;
 
     var strength = st.calc.strengthMg || 5;
-    function strengthSelect(){
-      return '<select id="oStr">'
-        +[2.5,5,7.5,10,12.5,15].map(function(v){return '<option value="'+v+'"'+(strength==v?" selected":"")+'>'+v+' mg</option>';}).join("")
-        +'</select>';
-    }
+    function strengthChips(){ return chipRow("oStr",STRENGTHS,strength,"mg"); }
     function fieldsStretch(){
       var base = st.calc.baseDose!=null ? st.calc.baseDose : strength;
       var cyc = st.calc.cycleLen || 1;
-      return '<div class="grid g3">'
-        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthSelect()+'</div>'
+      return '<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
+        +'<div class="grid g2">'
         +'<div class="field"><label>'+esc(I18N.t("opt.baseDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oBase" value="'+base+'"></div>'
         +'<div class="field"><label>'+esc(I18N.t("opt.cycleLen"))+'</label><select id="oCycle">'
           +[1,2,3,4,5,6,7,8].map(function(v){return '<option value="'+v+'"'+(cyc==v?" selected":"")+'>'+v+'</option>';}).join("")
@@ -1297,10 +1326,8 @@ var UI = (function(){
       });
     }
     function fieldsProg(){
-      return '<div class="grid g2">'
-        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label><select id="oStr">'
-          +[2.5,5,7.5,10,12.5,15].map(function(v){return '<option value="'+v+'"'+(strength==v?" selected":"")+'>'+v+' mg</option>';}).join("")
-        +'</select></div>'
+      return '<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
+        +'<div class="grid g2">'
         +'<div class="field"><label>'+esc(I18N.t("opt.step"))+'</label><select id="oStep">'
           +[0.25,0.5,1].map(function(v){return '<option value="'+v+'"'+(v===0.5?" selected":"")+'>'+v+' mg</option>';}).join("")
         +'</select></div>'
@@ -1308,13 +1335,18 @@ var UI = (function(){
         +'<div class="field"><label>'+esc(I18N.t("opt.toDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTo" value="5"></div>'
         +'</div>';
     }
-    function bindStrength(){
-      var el=$("#oStr"); if(!el) return;
-      el.addEventListener("change",function(){ st.calc.strengthMg=parseFloat(this.value); STORE.save(); });
+    // Picking a strength chip pre-fills the pen price from the per-pen cost saved
+    // in Settings (when present); the inline value stays an editable per-calc override.
+    function autofillPrice(v){
+      var pc = st.settings.penCosts ? st.settings.penCosts[String(v)] : null;
+      if(pc!=null){ var inp=$("#oPrice"); if(inp){ inp.value=pc; st.calc.costPerPen=pc; } }
+    }
+    function bindStrengthChips(){
+      bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; autofillPrice(v); STORE.save(); });
     }
     function renderFields(){
       $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg();
-      bindStrength();
+      bindStrengthChips();
       if($("#oMode").value==="stretch"){
         renderPattern();
         $("#oCycle").addEventListener("change",renderPattern);
@@ -1322,6 +1354,7 @@ var UI = (function(){
       }
     }
     renderFields();
+    autofillPrice(strength);
     $("#oMode").addEventListener("change",function(){ renderFields(); $("#optResult").innerHTML=""; });
     // price + currency shared with the Cost tab; interval shared by both modes
     $("#oPrice").addEventListener("input",function(){ st.calc.costPerPen = this.value===""?null:parseFloat(this.value); STORE.save(); });
@@ -1341,7 +1374,7 @@ var UI = (function(){
       st.calc.costPerPen = $("#oPrice").value===""?null:parseFloat($("#oPrice").value);
       st.settings.currency = ($("#oCur").value||"PLN").toUpperCase();
       st.calc.intervalDays = Math.max(1, parseInt($("#oInterval").value,10)||7);
-      if($("#oStr")) st.calc.strengthMg=parseFloat($("#oStr").value);
+      st.calc.strengthMg = strength;
       if($("#oBase")) st.calc.baseDose = $("#oBase").value===""?null:parseFloat($("#oBase").value);
       STORE.save();
       if($("#oMode").value==="stretch") runPlan(); else runProg();
@@ -1349,7 +1382,7 @@ var UI = (function(){
   }
   function runPlan(){
     var st=s();
-    var S=parseFloat($("#oStr").value);
+    var S=st.calc.strengthMg||5;
     var base=parseFloat($("#oBase").value);
     var interval=Math.max(1, parseInt($("#oInterval").value,10)||7);
     var pattern=(st.calc.pattern&&st.calc.pattern.length)?st.calc.pattern:[1];
@@ -1395,7 +1428,7 @@ var UI = (function(){
   }
   function runProg(){
     var st=s();
-    var S=parseFloat($("#oStr").value), A=parseFloat($("#oFrom").value), B=parseFloat($("#oTo").value);
+    var S=s().calc.strengthMg||5, A=parseFloat($("#oFrom").value), B=parseFloat($("#oTo").value);
     var step=parseFloat($("#oStep").value), P=st.calc.costPerPen, cur=st.settings.currency;
     var interval=Math.max(1, parseInt(($("#oInterval")||{}).value,10) || (st.calc.intervalDays||7));
     var r=DOMAIN.progression(A,B,S,step,st.settings.goldenDose,P);
@@ -1488,6 +1521,14 @@ var UI = (function(){
     +'</select></div>'
     +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label><input type="text" id="setCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
     +'</div></div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2><p class="sub">'+esc(I18N.t("set.penCostsHint"))+'</p>'
+    +'<div class="grid g3">'
+    + STRENGTHS.map(function(v){
+        var pc = st.settings.penCosts ? st.settings.penCosts[String(v)] : null;
+        return '<div class="field"><label>'+v+' mg</label>'
+          +'<input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(st.settings.currency)+'"></div>';
+      }).join("")
+    +'</div></div>'
     + linkCardHTML()
     +'<div class="card"><h2>'+esc(I18N.t("set.data"))+'</h2>'
     +'<p class="sub">'+esc(I18N.t("set.exportHint"))+'</p>'
@@ -1506,6 +1547,12 @@ var UI = (function(){
       document.documentElement.lang=this.value; applyStatic(); render();
     });
     $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
+    $all(".penCost").forEach(function(inp){
+      inp.addEventListener("input",function(){
+        st.settings.penCosts[inp.getAttribute("data-v")] = inp.value===""?null:parseFloat(inp.value);
+        STORE.save();
+      });
+    });
     $("#setExport").addEventListener("click",function(){ STORE.exportFile(); });
     $("#setImportBtn").addEventListener("click",function(){ $("#setImport").click(); });
     $("#setImport").addEventListener("change",function(){
