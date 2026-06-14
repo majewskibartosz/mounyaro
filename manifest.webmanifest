@@ -1,0 +1,21 @@
+{
+  "name": "Mounjaro Tracker",
+  "short_name": "Mounjaro",
+  "description": "Free, private Mounjaro weight tracker + KwikPen clicks calculator. Works offline, no account, data stays on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f5f7",
+  "theme_color": "#0ea5a4",
+  "lang": "pl",
+  "categories": ["health", "medical", "utilities"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
