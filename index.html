@@ -992,6 +992,14 @@ function fmtMoney(n, currency){
   catch(e){ num = Number(n).toFixed(2); }
   return num+' <span class="cur">'+esc(cur)+'</span>';
 }
+// Plain-text amount (no HTML) for use inside sentences that get esc()'d.
+function fmtMoneyTxt(n, currency){
+  if(n==null||isNaN(n)) return "—";
+  var cur=(currency||"PLN"), num;
+  try{ num = new Intl.NumberFormat(I18N.lang==="en"?"en-GB":"pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2}).format(n); }
+  catch(e){ num = Number(n).toFixed(2); }
+  return num+" "+cur;
+}
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function addDaysISO(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
@@ -1663,6 +1671,7 @@ var UI = (function(){
     }
     var destCur=tv.currency||"";
     function money(n){ return fmtMoney(n,homeCur); }
+    function moneyTxt(n){ return fmtMoneyTxt(n,homeCur); }
     function destOrig(n){ return fmtNum(n,0); }
     function tx(key,map){ var t=I18N.t(key); for(var k in map){ t=t.split("{"+k+"}").join(map[k]); } return t; }
     // one full-width breakdown card: title, plain explanation, big pen price, meta
@@ -1677,7 +1686,7 @@ var UI = (function(){
     function verdictCard(titleKey, titleS, perShot, perMonth){
       if(perShot==null) return "";
       var save=perShot>0, col=save?"var(--good)":"var(--bad)";
-      var line=tx(save?"trv.saveLine":"trv.costLine",{pm:money(Math.abs(perMonth)),ps:money(Math.abs(perShot))});
+      var line=tx(save?"trv.saveLine":"trv.costLine",{pm:moneyTxt(Math.abs(perMonth)),ps:moneyTxt(Math.abs(perShot))});
       return '<div class="tcard verdict" style="border-color:'+col+'">'
         +'<h3>'+esc(tx(titleKey,{s:titleS}))+'</h3>'
         +'<div class="big" style="color:'+col+'">'+money(Math.abs(perMonth))+' <small style="color:'+col+'">/ '+esc(I18N.t("opt.months"))+'</small></div>'
@@ -1689,8 +1698,8 @@ var UI = (function(){
     }
     var pensNeeded = (r.rx&&r.home)?Math.max(1,Math.ceil(r.home.shotsPerPen/r.rx.shotsPerPen)):0;
     var exHome=tx("trv.exHome",{s:S,d:D,n:r.home.shotsPerPen,m:fmtNum(r.home.coverMonths,1)});
-    var exSame=r.same?tx("trv.exSame",{s:S,orig:destOrig(destSame),cur:destCur,pln:money(r.same.priceHome),n:r.same.shotsPerPen}):"";
-    var exRx=r.rx?tx("trv.exRx",{s:rxStr,orig:destOrig(destRx),cur:destCur,pln:money(r.rx.priceHome),n:r.rx.shotsPerPen,k:pensNeeded}):"";
+    var exSame=r.same?tx("trv.exSame",{s:S,orig:destOrig(destSame),cur:destCur,pln:moneyTxt(r.same.priceHome),n:r.same.shotsPerPen}):"";
+    var exRx=r.rx?tx("trv.exRx",{s:rxStr,orig:destOrig(destRx),cur:destCur,pln:moneyTxt(r.rx.priceHome),n:r.rx.shotsPerPen,k:pensNeeded}):"";
     var html='<div class="card"><h2>'+esc(I18N.t("opt.modeTravel"))+'</h2>'+rateNote
       +'<div class="tsub">'+esc(tx("trv.whatPay",{home:homeCur}))+'</div>'
       +'<div class="tgrid">'
