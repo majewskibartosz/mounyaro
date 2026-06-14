@@ -1733,14 +1733,14 @@ var UI = (function(){
     function moneyTxt(n){ return fmtMoneyTxt(n,homeCur); }
     function destOrig(n){ return fmtNum(n,0); }
     function tx(key,map){ var t=I18N.t(key); for(var k in map){ t=t.split("{"+k+"}").join(map[k]); } return t; }
-    // a row of period figures. When dosing is weekly, per-shot == per-week, so we
-    // show just two cells (shot, month) to avoid two identical numbers.
+    // a row of period figures. When dosing is weekly, one shot == one week, so we
+    // show just per week + per month (no redundant per-shot). Otherwise all three.
     var weekly=((st.calc.intervalDays||7)===7);
     function periods(perShot, perWeek, perMonth, col){
       var c=col?' style="color:'+col+'"':'';
       function cell(amt, unitKey){ return '<div class="per"><b'+c+'>'+money(amt)+'</b><span>'+esc(I18N.t(unitKey))+'</span></div>'; }
-      return '<div class="pers'+(weekly?' two':'')+'">'+cell(perShot,"trv.perShot2")
-        +(weekly?'':cell(perWeek,"trv.perWeek"))+cell(perMonth,"trv.perMonth2")+'</div>';
+      if(weekly) return '<div class="pers two">'+cell(perWeek,"trv.perWeek")+cell(perMonth,"trv.perMonth2")+'</div>';
+      return '<div class="pers">'+cell(perShot,"trv.perShot2")+cell(perWeek,"trv.perWeek")+cell(perMonth,"trv.perMonth2")+'</div>';
     }
     // one full-width breakdown card: title, plain explanation, big pen price,
     // the three period costs and how long one pen lasts.
