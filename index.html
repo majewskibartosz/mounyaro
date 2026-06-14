@@ -423,10 +423,13 @@ var I18N = (function(){
     "trv.lasts":{pl:"1 pen starcza na ~{w} tyg. (~{m} mies.)",en:"1 pen lasts ~{w} weeks (~{m} months)"},
     "trv.verdictHomeShort":{pl:"Taniej z domu",en:"Cheaper from home"},
     "trv.verdictDestShort":{pl:"Taniej na miejscu",en:"Cheaper in the destination"},
-    "trv.vsSameEx":{pl:"Przywozisz swój pen {s} mg z domu, zamiast kupować taki sam na miejscu. Ile oszczędzasz:",
-                    en:"Bringing your {s} mg pen from home instead of buying the same one there. What you save:"},
-    "trv.vsRxEx":{pl:"Przywozisz swój pen {s} mg z domu, zamiast kupować mniejsze peny {r} mg na miejscu. Ile oszczędzasz:",
-                  en:"Bringing your {s} mg pen from home instead of buying smaller {r} mg pens there. What you save:"},
+    "trv.vsSameEx":{pl:"Przywozisz swój pen {s} mg z domu, zamiast kupować taki sam na miejscu.",
+                    en:"Bringing your {s} mg pen from home instead of buying the same one there."},
+    "trv.vsRxEx":{pl:"Przywozisz swój pen {s} mg z domu, zamiast kupować mniejsze peny {r} mg na miejscu.",
+                  en:"Bringing your {s} mg pen from home instead of buying smaller {r} mg pens there."},
+    "trv.contrast":{pl:"Dom: {h} / pen · Na miejscu: {d} / pen",en:"Home: {h} / pen · There: {d} / pen"},
+    "trv.youSaveHome":{pl:"Taniej z domu — oszczędzasz:",en:"Cheaper from home — you save:"},
+    "trv.youSaveDest":{pl:"Taniej na miejscu — oszczędzasz, kupując tam:",en:"Cheaper there — you save by buying locally:"},
     "trv.tripQ":{pl:"Jak długo Cię nie będzie?",en:"How long is your trip?"},
     "trv.weeks":{pl:"tygodni",en:"weeks"},
     "trv.months":{pl:"miesięcy",en:"months"},
@@ -1751,14 +1754,15 @@ var UI = (function(){
         + periods(sc.perShot, sc.perWeek, sc.perMonth)
         +'<div class="meta">'+esc(tx("trv.lasts",{w:fmtNum(sc.coverWeeks,1),m:fmtNum(sc.coverMonths,1)}))+'</div></div>';
     }
-    function verdictCard(titleKey, exKey, titleS, perShot, perWeek, perMonth){
-      if(perShot==null) return "";
+    function verdictCard(titleKey, exKey, titleS, sc, perShot, perWeek, perMonth){
+      if(perShot==null || !sc || !r.home) return "";
       var save=perShot>0, col=save?"var(--good)":"var(--bad)";
-      var msg=save?I18N.t("trv.verdictHomeShort"):I18N.t("trv.verdictDestShort");
+      var head=save?I18N.t("trv.youSaveHome"):I18N.t("trv.youSaveDest");
       return '<div class="tcard verdict" style="border-color:'+col+'">'
         +'<h3>'+esc(tx(titleKey,{s:titleS}))+'</h3>'
         +'<p class="ex">'+esc(tx(exKey,{s:S,r:rxStr}))+'</p>'
-        +'<div class="vmsg" style="color:'+col+'">'+esc(msg)+'</div>'
+        +'<div class="meta" style="margin:0 0 6px">'+esc(tx("trv.contrast",{h:moneyTxt(r.home.priceHome),d:moneyTxt(sc.priceHome)}))+'</div>'
+        +'<div class="vmsg" style="color:'+col+'">'+esc(head)+'</div>'
         + periods(Math.abs(perShot), Math.abs(perWeek), Math.abs(perMonth), col)+'</div>';
     }
     // trip planner card (only when a trip length is given)
@@ -1791,8 +1795,8 @@ var UI = (function(){
       + (trip?'<div class="tgrid" style="margin-bottom:14px">'+trip+'</div>':'')
       +'<div class="tsub">'+esc(I18N.t("trv.verdictTitle"))+'</div>'
       +'<div class="tgrid two">'
-      + verdictCard("trv.vsSame", "trv.vsSameEx", S, r.saveVsSame, r.saveVsSameWeek, r.saveVsSameMonth)
-      + (rxStr!==S ? verdictCard("trv.vsRx", "trv.vsRxEx", rxStr, r.saveVsRx, r.saveVsRxWeek, r.saveVsRxMonth) : "")
+      + verdictCard("trv.vsSame", "trv.vsSameEx", S, r.same, r.saveVsSame, r.saveVsSameWeek, r.saveVsSameMonth)
+      + (rxStr!==S ? verdictCard("trv.vsRx", "trv.vsRxEx", rxStr, r.rx, r.saveVsRx, r.saveVsRxWeek, r.saveVsRxMonth) : "")
       +'</div>'
       +'<div class="tsub">'+esc(tx("trv.whatPay",{home:homeCur}))+'</div>'
       +'<div class="tgrid">'
