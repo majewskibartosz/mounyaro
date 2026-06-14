@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0ea5a4">
+<title>Mounjaro Tracker</title>
+<style>
+  :root{
+    --bg:#f3f5f7; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --brand:#0ea5a4; --brand-dk:#0b827f; --accent:#6366f1;
+    --good:#16a34a; --warn:#f59e0b; --bad:#dc2626; --info:#0284c7;
+    --radius:16px; --shadow:0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.05);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.5;
+    -webkit-text-size-adjust:100%; padding-bottom:84px;
+  }
+  a{color:var(--brand-dk)}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  header.app{
+    position:sticky;top:0;z-index:20;background:rgba(243,245,247,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .head-inner{max-width:760px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
+  .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px}
+  .logo .dot{width:14px;height:14px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(14,165,164,.18)}
+  .spacer{flex:1}
+  .lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:#fff}
+  .lang button{border:0;background:transparent;padding:6px 12px;font-weight:700;color:var(--muted);cursor:pointer;font-size:13px}
+  .lang button.on{background:var(--brand);color:#fff}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin:0 0 16px}
+  .card h2{margin:0 0 4px;font-size:17px}
+  .card .sub{margin:0 0 14px;color:var(--muted);font-size:13px}
+  h1.page{font-size:22px;margin:4px 0 14px}
+
+  label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
+  input,select,textarea{
+    width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;font-size:16px;
+    background:#fff;color:var(--ink);font-family:inherit;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid rgba(14,165,164,.35);border-color:var(--brand)}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:1fr 1fr 1fr}
+  @media(max-width:520px){.g3{grid-template-columns:1fr 1fr}}
+  .field{margin:0 0 12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  button.btn{
+    border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;
+    background:var(--brand);color:#fff;transition:filter .15s,transform .05s;
+  }
+  button.btn:hover{filter:brightness(1.05)}
+  button.btn:active{transform:translateY(1px)}
+  button.btn.ghost{background:#eef2f3;color:var(--ink)}
+  button.btn.danger{background:#fee2e2;color:var(--bad)}
+  button.btn.sm{padding:8px 12px;font-size:13px}
+
+  .toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+  .switch{width:44px;height:26px;border-radius:999px;background:#cbd5e1;position:relative;transition:background .2s}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .toggle input{display:none}
+  .toggle input:checked + .switch{background:var(--brand)}
+  .toggle input:checked + .switch::after{left:21px}
+
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .tiny{font-size:12px}
+  .center{text-align:center}
+  .stat{display:flex;flex-direction:column;gap:2px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .stat .k{font-size:12px;color:var(--muted);font-weight:600}
+  .stat .v{font-size:20px;font-weight:800}
+  .stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+  th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto}
+
+  .note{background:#f1f5f9;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--muted)}
+  .warnbox{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:10px 12px;font-size:13px}
+  .banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+
+  /* tabs */
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:30;background:#fff;border-top:1px solid var(--line);
+    display:flex;padding:6px max(8px,env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom));}
+  nav.tabs a{flex:1;text-decoration:none;color:var(--muted);text-align:center;font-size:11px;font-weight:700;
+    padding:6px 2px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:3px}
+  nav.tabs a .ic{font-size:20px;line-height:1}
+  nav.tabs a.on{color:var(--brand);background:rgba(14,165,164,.10)}
+
+  /* BMI gauge */
+  .gauge{margin:6px 0 4px}
+  .gauge .track{position:relative;height:26px;border-radius:999px;overflow:hidden;display:flex;border:1px solid var(--line)}
+  .gauge .seg{height:100%}
+  .gauge .marker{position:absolute;top:-8px;transform:translateX(-50%);transition:left .6s cubic-bezier(.22,1,.36,1)}
+  .gauge .marker .tri{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:12px solid var(--ink);margin:0 auto}
+  .gauge .marker .bubble{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    font-size:12px;font-weight:800;padding:3px 8px;border-radius:8px;white-space:nowrap}
+  .gauge .ticks{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:8px}
+  .gauge .labels{display:flex;font-size:10px;color:var(--muted);margin-top:4px;text-align:center}
+  .gauge .labels span{flex:1}
+
+  svg.chart{width:100%;height:auto;display:block;touch-action:pan-y}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .empty{padding:30px 10px;text-align:center;color:var(--muted)}
+
+  footer.app{max-width:760px;margin:8px auto 0;padding:14px 16px 0;color:var(--muted);font-size:12px}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+<header class="app">
+  <div class="head-inner">
+    <div class="logo"><span class="dot"></span><span>Mounjaro Tracker</span></div>
+    <div class="spacer"></div>
+    <div class="lang" id="langSwitch">
+      <button data-lang="pl">PL</button>
+      <button data-lang="en">EN</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="storeBanner" class="banner hidden"></div>
+  <div id="app"></div>
+  <footer class="app" id="footer"></footer>
+</main>
+
+<nav class="tabs" id="tabs">
+  <a href="#weight"    data-tab="weight"><span class="ic">📉</span><span data-i="tab.weight">Waga</span></a>
+  <a href="#bmi"       data-tab="bmi"><span class="ic">⚖️</span><span data-i="tab.bmi">BMI</span></a>
+  <a href="#cost"      data-tab="cost"><span class="ic">💷</span><span data-i="tab.cost">Koszt</span></a>
+  <a href="#optimizer" data-tab="optimizer"><span class="ic">🧮</span><span data-i="tab.optimizer">Kalkulator</span></a>
+  <a href="#settings"  data-tab="settings"><span class="ic">⚙️</span><span data-i="tab.settings">Ustawienia</span></a>
+</nav>
+
+<script>
+"use strict";
+/* =========================================================================
+   I18N — Polish + English dictionary
+   ========================================================================= */
+var I18N = (function(){
+  var dict = {
+    "tab.weight":{pl:"Waga",en:"Weight"},
+    "tab.bmi":{pl:"BMI",en:"BMI"},
+    "tab.cost":{pl:"Koszt",en:"Cost"},
+    "tab.optimizer":{pl:"Kalkulator",en:"Calculator"},
+    "tab.settings":{pl:"Ustawienia",en:"Settings"},
+
+    "common.save":{pl:"Zapisz",en:"Save"},
+    "common.add":{pl:"Dodaj",en:"Add"},
+    "common.delete":{pl:"Usuń",en:"Delete"},
+    "common.date":{pl:"Data",en:"Date"},
+    "common.note":{pl:"Notatka",en:"Note"},
+    "common.optional":{pl:"opcjonalnie",en:"optional"},
+    "common.dose":{pl:"Dawka",en:"Dose"},
+    "common.weight":{pl:"Waga",en:"Weight"},
+    "common.none":{pl:"—",en:"—"},
+    "common.clicks":{pl:"kliknięć",en:"clicks"},
+    "common.week":{pl:"tydz.",en:"wk"},
+    "common.weeks":{pl:"tygodni",en:"weeks"},
+    "common.perWeek":{pl:"/tydzień",en:"/week"},
+    "common.saved":{pl:"Zapisano ✓",en:"Saved ✓"},
+
+    "weight.title":{pl:"Dziennik wagi",en:"Weight log"},
+    "weight.sub":{pl:"Zapisuj wagę i powiązaną dawkę Mounjaro. Wszystko zostaje na Twoim urządzeniu.",
+                  en:"Log your weight and the Mounjaro dose at that time. Everything stays on your device."},
+    "weight.doseMg":{pl:"Dawka (mg)",en:"Dose (mg)"},
+    "weight.add":{pl:"Dodaj wpis",en:"Add entry"},
+    "weight.chartTitle":{pl:"Trend wagi",en:"Weight trend"},
+    "weight.empty":{pl:"Brak wpisów. Dodaj pierwszy pomiar powyżej.",en:"No entries yet. Add your first measurement above."},
+    "weight.history":{pl:"Historia",en:"History"},
+    "weight.change":{pl:"Zmiana",en:"Change"},
+    "weight.total":{pl:"Łączna zmiana",en:"Total change"},
+    "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
+    "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
+
+    "bmi.title":{pl:"Kalkulator BMI",en:"BMI calculator"},
+    "bmi.sub":{pl:"BMI wg standardów WHO. Wzrost i waga są wymagane.",en:"BMI by WHO standards. Height and weight required."},
+    "bmi.height":{pl:"Wzrost (cm)",en:"Height (cm)"},
+    "bmi.weight":{pl:"Waga (kg)",en:"Weight (kg)"},
+    "bmi.age":{pl:"Wiek",en:"Age"},
+    "bmi.sex":{pl:"Płeć",en:"Sex"},
+    "bmi.female":{pl:"Kobieta",en:"Female"},
+    "bmi.male":{pl:"Mężczyzna",en:"Male"},
+    "bmi.your":{pl:"Twoje BMI",en:"Your BMI"},
+    "bmi.category":{pl:"Kategoria",en:"Category"},
+    "bmi.fillData":{pl:"Podaj wzrost i wagę, aby zobaczyć BMI.",en:"Enter height and weight to see your BMI."},
+    "bmi.useLatest":{pl:"Użyj ostatniej wagi z dziennika",en:"Use latest weight from log"},
+    "bmi.healthyRange":{pl:"Zdrowy zakres wagi dla Twojego wzrostu",en:"Healthy weight range for your height"},
+    "bmi.cat.under":{pl:"Niedowaga",en:"Underweight"},
+    "bmi.cat.normal":{pl:"Waga prawidłowa",en:"Normal weight"},
+    "bmi.cat.over":{pl:"Nadwaga",en:"Overweight"},
+    "bmi.cat.ob1":{pl:"Otyłość I°",en:"Obese (Class I)"},
+    "bmi.cat.ob2":{pl:"Otyłość II°",en:"Obese (Class II)"},
+    "bmi.cat.ob3":{pl:"Otyłość III°",en:"Obese (Class III)"},
+
+    "cost.title":{pl:"Koszt dawki",en:"Cost per dose"},
+    "cost.sub":{pl:"Policz realny koszt na podstawie kliknięć pena.",en:"Work out the real cost based on pen clicks."},
+    "cost.pricePerPen":{pl:"Cena za pen",en:"Price per pen"},
+    "cost.currency":{pl:"Waluta",en:"Currency"},
+    "cost.penStrength":{pl:"Moc pena (mg)",en:"Pen strength (mg)"},
+    "cost.perPen":{pl:"Za pen (240 kliknięć)",en:"Per pen (240 clicks)"},
+    "cost.perLabeledDose":{pl:"Za dawkę nominalną",en:"Per labeled dose"},
+    "cost.perMg":{pl:"Za 1 mg",en:"Per 1 mg"},
+    "cost.perClick":{pl:"Za 1 kliknięcie",en:"Per click"},
+    "cost.totalMg":{pl:"Lek w penie",en:"Drug in pen"},
+
+    "opt.title":{pl:"Kalkulator kliknięć",en:"Clicks calculator"},
+    "opt.sub":{pl:"Każdy pen = 240 kliknięć = 4 dawki nominalne (60 kliknięć/dawkę). mg/klik = moc pena ÷ 60.",
+               en:"Every pen = 240 clicks = 4 labeled doses (60 clicks/dose). mg/click = pen strength ÷ 60."},
+    "opt.mode":{pl:"Tryb",en:"Mode"},
+    "opt.modeStretch":{pl:"Rozciągnij / oszczędzaj",en:"Stretch / save"},
+    "opt.modeProg":{pl:"Powolna progresja",en:"Slow progression"},
+    "opt.penStrength":{pl:"Moc pena, który masz (mg)",en:"Strength of the pen you have (mg)"},
+    "opt.targetDose":{pl:"Docelowa dawka tygodniowa (mg)",en:"Target weekly dose (mg)"},
+    "opt.fromDose":{pl:"Obecna dawka (mg)",en:"Current dose (mg)"},
+    "opt.toDose":{pl:"Dawka docelowa (mg)",en:"Target dose (mg)"},
+    "opt.step":{pl:"Krok zwiększania (mg)",en:"Increase step (mg)"},
+    "opt.golden":{pl:"Licz dawkę „golden” (dodatkowe kliknięcia)",en:"Count the “golden” dose (extra clicks)"},
+    "opt.goldenWarn":{pl:"Dawka „golden” to resztka leku z procesu napełniania pena — nie jest zatwierdzona medycznie, a jej dokładność nie jest gwarantowana. Nowy pen z 2026 r. ma jej mniej. Używasz na własną odpowiedzialność.",
+                      en:"The “golden” dose is leftover priming liquid — it is not medically endorsed and its accuracy is not guaranteed. The 2026 redesigned pen has less of it. Use at your own risk."},
+    "opt.calc":{pl:"Oblicz",en:"Calculate"},
+    "opt.clicksPerWeek":{pl:"Kliknięć / tydzień",en:"Clicks / week"},
+    "opt.weeksPerPen":{pl:"Tygodni z 1 pena",en:"Weeks per pen"},
+    "opt.actualDose":{pl:"Realna dawka",en:"Actual dose"},
+    "opt.leftover":{pl:"Pozostałe kliknięcia",en:"Leftover clicks"},
+    "opt.costPerWeek":{pl:"Koszt / tydzień",en:"Cost / week"},
+    "opt.savings":{pl:"vs standard (4 dawki)",en:"vs standard (4 doses)"},
+    "opt.savingsWeeks":{pl:"dodatkowych tygodni",en:"extra weeks"},
+    "opt.savingsMoney":{pl:"oszczędność / tydzień",en:"saving / week"},
+    "opt.budget":{pl:"Dostępny budżet kliknięć",en:"Available click budget"},
+    "opt.schedules":{pl:"Możliwe plany progresji",en:"Possible progression plans"},
+    "opt.schGentle":{pl:"Powolna drabinka",en:"Gentle ladder"},
+    "opt.schGentleD":{pl:"Stopniowe wchodzenie krok po kroku, a nadmiar kliknięć zostaje na najniższej dawce — najwięcej czasu zanim zaczniesz zwiększać.",en:"Step up gradually, with leftover clicks kept at the lowest dose — the most time before you start ramping."},
+    "opt.schLongest":{pl:"Najwięcej tygodni",en:"Most weeks"},
+    "opt.schLongestD":{pl:"Maksymalna liczba tygodni z pena: długo na dawce wyjściowej, potem 1 tydzień na dawce docelowej.",en:"Maximum weeks from the pen: stay long at the starting dose, then 1 week at the target."},
+    "opt.schReach":{pl:"Szybko do celu, potem utrzymanie",en:"Reach target, then maintain"},
+    "opt.schReachD":{pl:"Po 1 tygodniu na każdym kroku resztę kliknięć zużywasz na dawce docelowej.",en:"One week per step, then spend the rest at the target dose."},
+    "opt.totalWeeks":{pl:"Łącznie tygodni",en:"Total weeks"},
+    "opt.clicksUsed":{pl:"Zużyte kliknięcia",en:"Clicks used"},
+    "opt.coarsened":{pl:"Krok dopasowano do",en:"Step adjusted to"},
+    "opt.infeasible":{pl:"Nawet 1 tydzień na dawce startowej + 1 tydzień na docelowej nie mieści się w jednym penie. Włącz dawkę „golden” lub wybierz mocniejszego pena.",
+                      en:"Even 1 week at the start dose + 1 week at the target doesn't fit in one pen. Enable the “golden” dose or pick a stronger pen."},
+    "opt.needBudget":{pl:"Minimalnie potrzeba",en:"Minimum needed"},
+    "opt.targetGt":{pl:"Dawka docelowa musi być większa od obecnej.",en:"Target dose must be greater than the current dose."},
+    "opt.enterPrice":{pl:"Podaj cenę pena w zakładce Koszt, aby zobaczyć kwoty.",en:"Enter pen price in the Cost tab to see amounts."},
+
+    "set.title":{pl:"Ustawienia i dane",en:"Settings & data"},
+    "set.sub":{pl:"Dane są zapisywane tylko w tej przeglądarce. Nikt inny ich nie widzi.",en:"Data is stored only in this browser. No one else can see it."},
+    "set.language":{pl:"Język",en:"Language"},
+    "set.currency":{pl:"Domyślna waluta",en:"Default currency"},
+    "set.data":{pl:"Twoje dane",en:"Your data"},
+    "set.export":{pl:"Eksportuj do pliku",en:"Export to file"},
+    "set.import":{pl:"Importuj z pliku",en:"Import from file"},
+    "set.exportHint":{pl:"Pobierz plik kopii zapasowej. Trzymaj go np. w MEGA / chmurze, aby przenieść dane na inne urządzenie.",
+                      en:"Download a backup file. Keep it in e.g. MEGA / cloud to move data to another device."},
+    "set.importOk":{pl:"Dane zaimportowane ✓",en:"Data imported ✓"},
+    "set.importErr":{pl:"Nie udało się odczytać pliku.",en:"Could not read the file."},
+    "set.clear":{pl:"Wyczyść wszystkie dane",en:"Clear all data"},
+    "set.clearConfirm":{pl:"Na pewno usunąć WSZYSTKIE dane z tej przeglądarki? Tej operacji nie można cofnąć.",
+                        en:"Really delete ALL data from this browser? This cannot be undone."},
+    "set.privacy":{pl:"Prywatność",en:"Privacy"},
+    "set.privacyTxt":{pl:"Aplikacja działa w 100% offline. Nie wysyła żadnych danych na serwer i nie wymaga logowania. Dane (waga, profil, ustawienia) są zapisane w pamięci tej przeglądarki (localStorage) na tym urządzeniu.",
+                      en:"The app runs 100% offline. It sends no data to any server and needs no login. Your data (weight, profile, settings) is saved in this browser's storage (localStorage) on this device."},
+    "set.noStore":{pl:"⚠ Ta przeglądarka blokuje zapis (np. tryb prywatny). Dane nie zostaną zapisane po zamknięciu — użyj Eksportu.",
+                   en:"⚠ This browser is blocking storage (e.g. private mode). Data won't persist after closing — use Export."},
+
+    "footer.disclaimer":{pl:"To narzędzie edukacyjne, nie porada medyczna. Zawsze konsultuj dawkowanie z lekarzem lub farmaceutą. Darmowe, bez reklam, dla społeczności ❤",
+                         en:"Educational tool, not medical advice. Always confirm dosing with your doctor or pharmacist. Free, ad-free, for the community ❤"}
+  };
+  var lang = "pl";
+  function setLang(l){ lang = (l==="en")?"en":"pl"; }
+  function t(key){
+    var e = dict[key];
+    if(!e) return key;
+    return e[lang] || e.pl || key;
+  }
+  return { setLang:setLang, t:t, get lang(){return lang;} };
+})();
+
+/* =========================================================================
+   DOMAIN — pure pen / click / cost math + optimizer (no DOM, no storage)
+   ========================================================================= */
+var DOMAIN = (function(){
+  var CLICKS_PER_PEN = 240, CLICKS_PER_DOSE = 60, DOSES_PER_PEN = 4;
+  function round(n){ return Math.round(n); }
+  function r3(n){ return Math.round(n*1000)/1000; }
+
+  function mgPerClick(S){ return S/CLICKS_PER_DOSE; }
+  function clicksForDose(D,S){ return Math.max(0, Math.round(D*CLICKS_PER_DOSE/S)); }
+  function mgForClicks(c,S){ return c*S/CLICKS_PER_DOSE; }
+  function totalMgPerPen(S){ return DOSES_PER_PEN*S; }
+  function budgetClicks(golden){ return CLICKS_PER_PEN + (golden && golden.enabled ? Math.max(0, golden.extraClicks||0) : 0); }
+
+  function cost(P,S){
+    return {
+      perClick: P/CLICKS_PER_PEN,
+      perMg: P/(DOSES_PER_PEN*S),
+      perLabeledDose: P/DOSES_PER_PEN,
+      perPen: P
+    };
+  }
+
+  // Stretch mode: closed form
+  function stretch(S, D, P, golden){
+    var budget = budgetClicks(golden);
+    var c = clicksForDose(D,S);
+    if(c<=0) return {error:"badInput"};
+    var weeks = Math.floor(budget/c);
+    var leftover = budget - weeks*c;
+    var actual = mgForClicks(c,S);
+    var pc = (P!=null) ? P/CLICKS_PER_PEN : null;
+    return {
+      clicksPerWeek:c, weeks:weeks, leftover:leftover, actualMg:r3(actual),
+      requestedMg:D, deltaMg:r3(actual-D),
+      costPerWeek: pc!=null ? c*pc : null,
+      baselineWeeks: DOSES_PER_PEN, // 4
+      baselineCostPerWeek: P!=null ? P/DOSES_PER_PEN : null,
+      extraWeeks: weeks - DOSES_PER_PEN,
+      savingPerWeek: P!=null ? (P/DOSES_PER_PEN - c*pc) : null,
+      budget:budget
+    };
+  }
+
+  // Build discrete dose levels from A to B by step inc (mg)
+  function buildLevels(A,B,inc){
+    var levels=[];
+    for(var mg=A; mg < B - 1e-9; mg = r3(mg+inc)) levels.push(r3(mg));
+    levels.push(r3(B));
+    return levels;
+  }
+
+  // Finest ladder A..B (multiples of inc) whose one-week-per-level cost fits the budget.
+  function fittingLadder(A,B,inc,S,budget){
+    for(var m=1; m<=400; m++){
+      var levels = buildLevels(A,B,inc*m);
+      var w = levels.map(function(mg){ return Math.max(1, clicksForDose(mg,S)); });
+      var sum = w.reduce(function(a,b){return a+b;},0);
+      if(sum<=budget) return {levels:levels, w:w, sum:sum, step:r3(inc*m), coarsened:(m>1)};
+    }
+    return null;
+  }
+
+  // Slow progression schedules. Returns {feasible, budget, candidates:[...]}
+  function progression(A,B,S,inc,golden,P){
+    if(B<=A) return {error:"targetGt"};
+    if(inc<=0) inc=0.25;
+    var budget = budgetClicks(golden);
+    var wA = Math.max(1, clicksForDose(A,S));
+    var wB = Math.max(1, clicksForDose(B,S));
+
+    // Minimum feasible progression = 1 week at A + 1 week at B.
+    if(wA + wB > budget){
+      return { feasible:false, minNeed:wA+wB, budget:budget };
+    }
+    var pc = (P!=null) ? P/CLICKS_PER_PEN : null;
+
+    function pack(levels, w, dwell, coarsenStep){
+      var used=0, weeks=0, sched=[];
+      for(var i=0;i<levels.length;i++){
+        var wk=dwell[i];
+        used += wk*w[i]; weeks += wk;
+        sched.push({mg:levels[i], clicks:w[i], weeks:wk});
+      }
+      return {
+        schedule:sched, totalWeeks:weeks, clicksUsed:used, leftover:budget-used,
+        totalCost: P!=null ? P : null,
+        costPerWeek: pc!=null && weeks>0 ? (P/weeks) : null,
+        coarsenStep: coarsenStep||null
+      };
+    }
+
+    // 1) LONGEST: maximize total weeks. Optimum is to dwell at the cheapest dose (A)
+    //    as long as possible, then a single week at B (a non-decreasing sequence
+    //    must end at B; any intermediate dose only costs more clicks per week).
+    var kA = Math.floor((budget - wB) / wA);
+    var longest = pack([A,B], [wA,wB], [kA,1]);
+
+    // 2) GENTLE: walk up a ladder (auto-coarsened to fit), 1 week per step,
+    //    then spend the leftover at the LOWEST dose to lengthen the slow phase.
+    var lad = fittingLadder(A,B,inc,S,budget);
+    var gentle=null, reach=null;
+    if(lad){
+      var dG = lad.w.map(function(){return 1;});
+      dG[0] += Math.floor((budget - lad.sum) / lad.w[0]);
+      gentle = pack(lad.levels, lad.w, dG, lad.coarsened?lad.step:null);
+
+      // 3) REACH THEN MAINTAIN: same ladder, leftover spent at the TARGET dose.
+      var dR = lad.w.map(function(){return 1;});
+      dR[lad.levels.length-1] += Math.floor((budget - lad.sum) / lad.w[lad.levels.length-1]);
+      reach = pack(lad.levels, lad.w, dR, lad.coarsened?lad.step:null);
+    }
+
+    var candidates = [];
+    if(gentle) candidates.push({key:"gentle", res:gentle});
+    candidates.push({key:"longest", res:longest});
+    if(reach) candidates.push({key:"reach", res:reach});
+
+    return { feasible:true, budget:budget, candidates:candidates };
+  }
+
+  function bmi(weightKg, heightCm){
+    if(!weightKg || !heightCm) return null;
+    var h = heightCm/100;
+    return weightKg/(h*h);
+  }
+  function bmiCategory(b){
+    if(b < 18.5) return {key:"bmi.cat.under", color:"#0284c7"};
+    if(b < 25)   return {key:"bmi.cat.normal",color:"#16a34a"};
+    if(b < 30)   return {key:"bmi.cat.over",  color:"#f59e0b"};
+    if(b < 35)   return {key:"bmi.cat.ob1",   color:"#f97316"};
+    if(b < 40)   return {key:"bmi.cat.ob2",   color:"#dc2626"};
+    return {key:"bmi.cat.ob3", color:"#991b1b"};
+  }
+  function healthyWeightRange(heightCm){
+    if(!heightCm) return null;
+    var h=heightCm/100;
+    return { min: 18.5*h*h, max: 24.9*h*h };
+  }
+
+  return {
+    CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
+    mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
+    totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost,
+    stretch:stretch, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
+    healthyWeightRange:healthyWeightRange
+  };
+})();
+
+/* =========================================================================
+   STORE — localStorage load/save + export/import
+   ========================================================================= */
+var STORE = (function(){
+  var KEY = "mounjaro.v1";
+  var memoryOnly = false;
+  function defaults(){
+    return {
+      schemaVersion:1,
+      settings:{ lang:"pl", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
+      profile:{ heightCm:null, age:null, sex:null },
+      weightLog:[],
+      calc:{ costPerPen:null, strengthMg:null }
+    };
+  }
+  var state = defaults();
+
+  function canStore(){
+    try{ var k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
+    catch(e){ return false; }
+  }
+  function load(){
+    if(!canStore()){ memoryOnly=true; return; }
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        state = merge(defaults(), parsed);
+      }
+    }catch(e){ /* corrupt -> keep defaults */ }
+  }
+  function merge(base, over){
+    if(typeof over!=="object"||over===null) return base;
+    var out = Array.isArray(base)? base.slice():Object.assign({},base);
+    for(var k in over){
+      if(!over.hasOwnProperty(k)) continue;
+      if(typeof base[k]==="object" && base[k]!==null && !Array.isArray(base[k]) &&
+         typeof over[k]==="object" && over[k]!==null && !Array.isArray(over[k])){
+        out[k]=merge(base[k], over[k]);
+      } else { out[k]=over[k]; }
+    }
+    return out;
+  }
+  function save(){
+    if(memoryOnly) return;
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch(e){ memoryOnly=true; }
+  }
+  function exportFile(){
+    var data = JSON.stringify(state, null, 2);
+    var blob = new Blob([data], {type:"application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    var d = new Date().toISOString().slice(0,10);
+    a.href=url; a.download="mounjaro-tracker-"+d+".json";
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 500);
+  }
+  function importFile(file, cb){
+    var r = new FileReader();
+    r.onload = function(){
+      try{
+        var parsed = JSON.parse(r.result);
+        if(typeof parsed!=="object"||!parsed) throw new Error("bad");
+        state = merge(defaults(), parsed);
+        save();
+        cb(true);
+      }catch(e){ cb(false); }
+    };
+    r.onerror = function(){ cb(false); };
+    r.readAsText(file);
+  }
+  function clearAll(){
+    state = defaults();
+    if(!memoryOnly){ try{ localStorage.removeItem(KEY); }catch(e){} }
+  }
+  return {
+    load:load, save:save, exportFile:exportFile, importFile:importFile, clearAll:clearAll,
+    get state(){return state;}, get memoryOnly(){return memoryOnly;}
+  };
+})();
+
+/* =========================================================================
+   Helpers
+   ========================================================================= */
+function $(sel,root){ return (root||document).querySelector(sel); }
+function $all(sel,root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
+function el(tag, attrs, html){
+  var e=document.createElement(tag);
+  if(attrs) for(var k in attrs){ if(k==="class") e.className=attrs[k]; else e.setAttribute(k,attrs[k]); }
+  if(html!=null) e.innerHTML=html;
+  return e;
+}
+function fmtNum(n, dp){ if(n==null||isNaN(n)) return "—"; return Number(n).toFixed(dp==null?2:dp); }
+function fmtMoney(n, currency){
+  if(n==null||isNaN(n)) return "—";
+  try{ return new Intl.NumberFormat(I18N.lang==="en"?"en-GB":"pl-PL",{style:"currency",currency:currency||"PLN"}).format(n); }
+  catch(e){ return Number(n).toFixed(2)+" "+(currency||""); }
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+// color scale for dose 0..15mg -> teal(low) to indigo/red(high)
+function doseColor(mg){
+  if(mg==null) return "#94a3b8";
+  var t = Math.max(0, Math.min(1, mg/15));
+  // interpolate teal -> amber -> red
+  var stops=[[14,165,164],[245,158,11],[220,38,38]];
+  var seg = t*(stops.length-1), i=Math.floor(seg), f=seg-i;
+  if(i>=stops.length-1){ i=stops.length-2; f=1; }
+  var a=stops[i], b=stops[i+1];
+  var r=Math.round(a[0]+(b[0]-a[0])*f), g=Math.round(a[1]+(b[1]-a[1])*f), bl=Math.round(a[2]+(b[2]-a[2])*f);
+  return "rgb("+r+","+g+","+bl+")";
+}
+
+/* =========================================================================
+   CHART — inline SVG weight trend + dose colouring
+   ========================================================================= */
+var CHART = (function(){
+  function render(log){
+    var data = log.slice().filter(function(e){return e.weightKg!=null;})
+                  .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+    if(data.length===0){
+      return '<div class="empty">'+esc(I18N.t("weight.empty"))+'</div>';
+    }
+    var W=320, H=200, mL=38, mR=14, mT=14, mB=26;
+    var iw=W-mL-mR, ih=H-mT-mB;
+    var xs = data.map(function(e){ return new Date(e.date+"T12:00:00").getTime(); });
+    var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+    var ys = data.map(function(e){ return e.weightKg; });
+    var minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
+    if(minY===maxY){ minY-=1; maxY+=1; }
+    var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
+    function X(t){ return maxX===minX ? mL+iw/2 : mL + (t-minX)/(maxX-minX)*iw; }
+    function Y(v){ return mT + (1-(v-minY)/(maxY-minY))*ih; }
+
+    var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="weight chart">';
+    // gridlines + y ticks
+    var rows=4;
+    for(var r=0;r<=rows;r++){
+      var val = minY + (maxY-minY)*r/rows;
+      var y = Y(val);
+      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
+      svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
+    }
+    // x labels (first, mid, last)
+    function dlabel(t){ var d=new Date(t); return (d.getDate())+"."+(d.getMonth()+1); }
+    var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0, Math.floor((data.length-1)/2), data.length-1];
+    idxs.forEach(function(i){
+      var x=X(xs[i]);
+      svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
+    });
+    // trend line
+    if(data.length>1){
+      var pts = data.map(function(e,i){ return X(xs[i]).toFixed(1)+","+Y(e.weightKg).toFixed(1); }).join(" ");
+      svg+='<polyline points="'+pts+'" fill="none" stroke="#0ea5a4" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    // points coloured by dose, with native tooltip
+    data.forEach(function(e,i){
+      var x=X(xs[i]).toFixed(1), y=Y(e.weightKg).toFixed(1);
+      var c=doseColor(e.doseMg);
+      var tip = e.date+" · "+e.weightKg+" kg"+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
+      svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+c+'" stroke="#fff" stroke-width="1.5">'
+         +'<title>'+esc(tip)+'</title></circle>';
+    });
+    svg+='</svg>';
+    return svg;
+  }
+  return { render:render };
+})();
+
+/* =========================================================================
+   UI — renders, router
+   ========================================================================= */
+var UI = (function(){
+  var app, S;
+  function s(){ return STORE.state; }
+
+  /* ---- toast ---- */
+  function toast(msg){
+    var t=$("#toast");
+    if(!t){ t=el("div",{id:"toast"}); document.body.appendChild(t);
+      t.style.cssText="position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;font-weight:700;z-index:99;opacity:0;transition:opacity .2s";
+    }
+    t.textContent=msg; t.style.opacity="1";
+    clearTimeout(t._t); t._t=setTimeout(function(){ t.style.opacity="0"; },1500);
+  }
+
+  /* ============ WEIGHT ============ */
+  function viewWeight(){
+    var st=s();
+    var last = st.weightLog.length ? st.weightLog[0].doseMg : null;
+    var html=''
+    + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>'
+    + '<div class="card">'
+    +   '<p class="sub">'+esc(I18N.t("weight.sub"))+'</p>'
+    +   '<div class="grid g3">'
+    +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+todayISO()+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="'+(last!=null?last:"7.5")+'"></div>'
+    +   '</div>'
+    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80"></div>'
+    +   '<button class="btn" id="wAdd">'+esc(I18N.t("weight.add"))+'</button>'
+    + '</div>';
+
+    // chart card
+    html+='<div class="card"><h2>'+esc(I18N.t("weight.chartTitle"))+'</h2>'
+        + '<div id="chartHolder">'+CHART.render(st.weightLog)+'</div>';
+    if(st.weightLog.length){
+      var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
+      var diff=cur-first;
+      html+='<div class="legend"><span>'+esc(I18N.t("weight.legendDose"))+'</span></div>'
+          + '<div class="stats" style="margin-top:12px">'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+(diff<=0?"var(--good)":"var(--bad)")+'">'+(diff>0?"+":"")+fmtNum(diff,1)+' kg</span></div>'
+          + '</div>';
+    }
+    html+='</div>';
+
+    // history
+    if(st.weightLog.length){
+      html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><thead><tr>'
+          + '<th>'+esc(I18N.t("common.date"))+'</th><th class="num">'+esc(I18N.t("common.weight"))+'</th>'
+          + '<th class="num">'+esc(I18N.t("common.dose"))+'</th><th>'+esc(I18N.t("common.note"))+'</th><th></th>'
+          + '</tr></thead><tbody>';
+      st.weightLog.forEach(function(e){
+        html+='<tr><td>'+esc(e.date)+'</td><td class="num">'+fmtNum(e.weightKg,1)+'</td>'
+            + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
+            + '<td>'+esc(e.note||"")+'</td>'
+            + '<td class="num"><button class="btn ghost sm wDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+      });
+      html+='</tbody></table></div></div>';
+    }
+    app.innerHTML=html;
+
+    $("#wAdd").addEventListener("click",function(){
+      var kg=parseFloat($("#wKg").value);
+      if(isNaN(kg)||kg<=0){ $("#wKg").focus(); return; }
+      var dose=$("#wDose").value===""?null:parseFloat($("#wDose").value);
+      var entry={ id:uid(), date:$("#wDate").value||todayISO(), weightKg:kg,
+                  doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#wNote").value||"").trim() };
+      st.weightLog.push(entry);
+      st.weightLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
+      STORE.save(); toast(I18N.t("common.saved")); viewWeight();
+    });
+    $all(".wDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("weight.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.weightLog = st.weightLog.filter(function(e){return e.id!==id;});
+      STORE.save(); viewWeight();
+    });});
+  }
+
+  /* ============ BMI ============ */
+  function viewBMI(){
+    var st=s();
+    var latest = st.weightLog.length ? st.weightLog[0].weightKg : null;
+    var html=''
+    +'<h1 class="page">'+esc(I18N.t("bmi.title"))+'</h1>'
+    +'<div class="card"><p class="sub">'+esc(I18N.t("bmi.sub"))+'</p>'
+    +'<div class="grid g2">'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.height"))+'</label><input type="number" inputmode="decimal" id="bH" value="'+(st.profile.heightCm!=null?st.profile.heightCm:"")+'" placeholder="170"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="bW" value="'+(latest!=null?latest:"")+'" placeholder="80"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.age"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bAge" value="'+(st.profile.age!=null?st.profile.age:"")+'" placeholder="40"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.sex"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><select id="bSex">'
+      +'<option value=""></option>'
+      +'<option value="f"'+(st.profile.sex==="f"?" selected":"")+'>'+esc(I18N.t("bmi.female"))+'</option>'
+      +'<option value="m"'+(st.profile.sex==="m"?" selected":"")+'>'+esc(I18N.t("bmi.male"))+'</option>'
+    +'</select></div>'
+    +'</div>';
+    if(latest!=null) html+='<button class="btn ghost sm" id="bUseLatest">'+esc(I18N.t("bmi.useLatest"))+' ('+fmtNum(latest,1)+' kg)</button> ';
+    html+='</div>';
+    html+='<div class="card" id="bmiResult"></div>';
+    app.innerHTML=html;
+
+    function persist(){
+      st.profile.heightCm = $("#bH").value===""?null:parseFloat($("#bH").value);
+      st.profile.age = $("#bAge").value===""?null:parseInt($("#bAge").value,10);
+      st.profile.sex = $("#bSex").value||null;
+      STORE.save();
+    }
+    function recompute(){
+      persist();
+      var h=parseFloat($("#bH").value), w=parseFloat($("#bW").value);
+      $("#bmiResult").innerHTML = renderBMI(h,w);
+    }
+    ["bH","bW","bAge","bSex"].forEach(function(id){
+      $("#"+id).addEventListener("input",recompute);
+      $("#"+id).addEventListener("change",recompute);
+    });
+    if($("#bUseLatest")) $("#bUseLatest").addEventListener("click",function(){ $("#bW").value=latest; recompute(); });
+    recompute();
+  }
+  function renderBMI(h,w){
+    if(!h||!w||h<=0||w<=0) return '<div class="empty">'+esc(I18N.t("bmi.fillData"))+'</div>';
+    var b = DOMAIN.bmi(w,h);
+    var cat = DOMAIN.bmiCategory(b);
+    var range = DOMAIN.healthyWeightRange(h);
+    // gauge maps BMI 15..40 -> 0..100%
+    var lo=15, hi=40;
+    var pct = Math.max(0, Math.min(100, (b-lo)/(hi-lo)*100));
+    // segment widths across 15..40: under(15-18.5),normal(18.5-25),over(25-30),ob1(30-35),ob2/3(35-40)
+    function segW(a,bnd){ return (bnd-a)/(hi-lo)*100; }
+    var segs=[
+      {w:segW(15,18.5),c:"#0284c7"},
+      {w:segW(18.5,25),c:"#16a34a"},
+      {w:segW(25,30),c:"#f59e0b"},
+      {w:segW(30,35),c:"#f97316"},
+      {w:segW(35,40),c:"#dc2626"}
+    ];
+    var segHtml = segs.map(function(x){ return '<div class="seg" style="width:'+x.w+'%;background:'+x.c+'"></div>'; }).join("");
+    var html=''
+    +'<div class="stats" style="margin-bottom:14px">'
+    +'<div class="stat"><span class="k">'+esc(I18N.t("bmi.your"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(b,1)+'</span></div>'
+    +'<div class="stat"><span class="k">'+esc(I18N.t("bmi.category"))+'</span><span class="v" style="font-size:16px;color:'+cat.color+'">'+esc(I18N.t(cat.key))+'</span></div>'
+    +'</div>'
+    +'<div class="gauge">'
+    +'<div class="track">'+segHtml
+    +'<div class="marker" style="left:'+pct.toFixed(1)+'%"><div class="bubble">'+fmtNum(b,1)+'</div><div class="tri"></div></div>'
+    +'</div>'
+    +'<div class="ticks"><span>15</span><span>18.5</span><span>25</span><span>30</span><span>35</span><span>40</span></div>'
+    +'<div class="labels"><span>'+esc(I18N.t("bmi.cat.under"))+'</span><span>'+esc(I18N.t("bmi.cat.normal"))+'</span><span>'+esc(I18N.t("bmi.cat.over"))+'</span><span>'+esc(I18N.t("bmi.cat.ob1"))+'</span><span>'+esc(I18N.t("bmi.cat.ob2"))+'+</span></div>'
+    +'</div>';
+    if(range){
+      html+='<div class="note" style="margin-top:14px">'+esc(I18N.t("bmi.healthyRange"))+': <b>'+fmtNum(range.min,1)+'–'+fmtNum(range.max,1)+' kg</b></div>';
+    }
+    return html;
+  }
+
+  /* ============ COST ============ */
+  function viewCost(){
+    var st=s();
+    var html=''
+    +'<h1 class="page">'+esc(I18N.t("cost.title"))+'</h1>'
+    +'<div class="card"><p class="sub">'+esc(I18N.t("cost.sub"))+'</p>'
+    +'<div class="grid g3">'
+    +'<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+'</label><input type="number" inputmode="decimal" id="cPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label><input type="text" id="cCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("cost.penStrength"))+'</label><select id="cStr">'
+      +[2.5,5,7.5,10,12.5,15].map(function(v){ return '<option value="'+v+'"'+(st.calc.strengthMg==v?" selected":"")+'>'+v+' mg</option>'; }).join("")
+    +'</select></div>'
+    +'</div></div>'
+    +'<div class="card" id="costResult"></div>';
+    app.innerHTML=html;
+
+    function recompute(){
+      var P=parseFloat($("#cPrice").value);
+      var S=parseFloat($("#cStr").value);
+      var cur=($("#cCur").value||"PLN").toUpperCase();
+      st.calc.costPerPen = isNaN(P)?null:P;
+      st.calc.strengthMg = S;
+      st.settings.currency = cur;
+      STORE.save();
+      $("#costResult").innerHTML = renderCost(P,S,cur);
+    }
+    ["cPrice","cCur","cStr"].forEach(function(id){
+      $("#"+id).addEventListener("input",recompute); $("#"+id).addEventListener("change",recompute);
+    });
+    recompute();
+  }
+  function renderCost(P,S,cur){
+    if(isNaN(P)||P<=0||isNaN(S)) return '<div class="empty">'+esc(I18N.t("cost.enterPrice"))+'</div>';
+    var c=DOMAIN.cost(P,S);
+    function row(k,v){ return '<div class="stat"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'; }
+    return '<div class="stats">'
+      + row(I18N.t("cost.perLabeledDose"), fmtMoney(c.perLabeledDose,cur))
+      + row(I18N.t("cost.perMg"), fmtMoney(c.perMg,cur))
+      + row(I18N.t("cost.perClick"), fmtMoney(c.perClick,cur))
+      + row(I18N.t("cost.totalMg"), fmtNum(DOMAIN.totalMgPerPen(S),1)+' mg')
+      + '</div>';
+  }
+
+  /* ============ OPTIMIZER ============ */
+  function viewOpt(){
+    var st=s();
+    var g=st.settings.goldenDose;
+    var html=''
+    +'<h1 class="page">'+esc(I18N.t("opt.title"))+'</h1>'
+    +'<div class="card"><p class="sub">'+esc(I18N.t("opt.sub"))+'</p>'
+    +'<div class="field"><label>'+esc(I18N.t("opt.mode"))+'</label><select id="oMode">'
+      +'<option value="stretch">'+esc(I18N.t("opt.modeStretch"))+'</option>'
+      +'<option value="prog">'+esc(I18N.t("opt.modeProg"))+'</option>'
+    +'</select></div>'
+    +'<div id="oFields"></div>'
+    +'<label class="toggle" style="margin:8px 0 12px"><input type="checkbox" id="oGold"'+(g.enabled?" checked":"")+'><span class="switch"></span>'
+      +'<span>'+esc(I18N.t("opt.golden"))+'</span></label>'
+    +'<div id="oGoldRow" class="'+(g.enabled?"":"hidden")+'">'
+      +'<div class="warnbox" style="margin-bottom:10px">'+esc(I18N.t("opt.goldenWarn"))+'</div>'
+      +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("common.clicks"))+' (golden)</label><input type="number" inputmode="numeric" id="oGoldClicks" value="'+(g.extraClicks||8)+'"></div>'
+    +'</div>'
+    +'<button class="btn" id="oCalc">'+esc(I18N.t("opt.calc"))+'</button>'
+    +'</div>'
+    +'<div id="optResult"></div>';
+    app.innerHTML=html;
+
+    var strength = st.calc.strengthMg || 5;
+    function fieldsStretch(){
+      return '<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label><select id="oStr">'
+          +[2.5,5,7.5,10,12.5,15].map(function(v){return '<option value="'+v+'"'+(strength==v?" selected":"")+'>'+v+' mg</option>';}).join("")
+        +'</select></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.targetDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTarget" value="2.5"></div>'
+        +'</div>';
+    }
+    function fieldsProg(){
+      return '<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label><select id="oStr">'
+          +[2.5,5,7.5,10,12.5,15].map(function(v){return '<option value="'+v+'"'+(strength==v?" selected":"")+'>'+v+' mg</option>';}).join("")
+        +'</select></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.step"))+'</label><select id="oStep">'
+          +[0.25,0.5,1].map(function(v){return '<option value="'+v+'"'+(v===0.5?" selected":"")+'>'+v+' mg</option>';}).join("")
+        +'</select></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.fromDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oFrom" value="2.5"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.toDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTo" value="5"></div>'
+        +'</div>';
+    }
+    function renderFields(){ $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg(); }
+    renderFields();
+    $("#oMode").addEventListener("change",function(){ renderFields(); $("#optResult").innerHTML=""; });
+    $("#oGold").addEventListener("change",function(){
+      st.settings.goldenDose.enabled=this.checked;
+      $("#oGoldRow").className = this.checked?"":"hidden";
+      STORE.save();
+    });
+    var gc=$("#oGoldClicks"); if(gc) gc.addEventListener("change",function(){
+      st.settings.goldenDose.extraClicks=Math.max(0,parseInt(this.value,10)||0); STORE.save();
+    });
+    $("#oCalc").addEventListener("click",function(){
+      st.settings.goldenDose.enabled = $("#oGold").checked;
+      if($("#oGoldClicks")) st.settings.goldenDose.extraClicks=Math.max(0,parseInt($("#oGoldClicks").value,10)||0);
+      STORE.save();
+      if($("#oMode").value==="stretch") runStretch(); else runProg();
+    });
+  }
+  function runStretch(){
+    var st=s();
+    var S=parseFloat($("#oStr").value), D=parseFloat($("#oTarget").value);
+    var P=st.calc.costPerPen, cur=st.settings.currency;
+    var r=DOMAIN.stretch(S,D,P,st.settings.goldenDose);
+    if(r.error){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.targetGt"))+'</div></div>'; return; }
+    function stat(k,v,col){ return '<div class="stat"><span class="k">'+esc(k)+'</span><span class="v"'+(col?' style="color:'+col+'"':'')+'>'+v+'</span></div>'; }
+    var html='<div class="card"><h2>'+esc(I18N.t("opt.modeStretch"))+'</h2><div class="stats">'
+      + stat(I18N.t("opt.clicksPerWeek"), r.clicksPerWeek)
+      + stat(I18N.t("opt.weeksPerPen"), r.weeks+" "+I18N.t("common.weeks"))
+      + stat(I18N.t("opt.actualDose"), fmtNum(r.actualMg,2)+" mg")
+      + stat(I18N.t("opt.leftover"), r.leftover+" "+I18N.t("common.clicks"))
+      + '</div>';
+    html+='<div class="note" style="margin-top:12px">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b></div>';
+    if(P!=null){
+      html+='<div class="stats" style="margin-top:12px">'
+        + stat(I18N.t("opt.costPerWeek"), fmtMoney(r.costPerWeek,cur))
+        + stat(I18N.t("opt.savingsWeeks"), (r.extraWeeks>=0?"+":"")+r.extraWeeks, r.extraWeeks>0?"var(--good)":"")
+        + stat(I18N.t("opt.savingsMoney"), fmtMoney(r.savingPerWeek,cur), r.savingPerWeek>0?"var(--good)":"")
+        + '</div>';
+    } else {
+      html+='<div class="note" style="margin-top:10px">'+esc(I18N.t("opt.enterPrice"))+'</div>';
+    }
+    html+='</div>';
+    $("#optResult").innerHTML=html;
+  }
+  function runProg(){
+    var st=s();
+    var S=parseFloat($("#oStr").value), A=parseFloat($("#oFrom").value), B=parseFloat($("#oTo").value);
+    var step=parseFloat($("#oStep").value), P=st.calc.costPerPen, cur=st.settings.currency;
+    var r=DOMAIN.progression(A,B,S,step,st.settings.goldenDose,P);
+    if(r.error){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.targetGt"))+'</div></div>'; return; }
+    if(!r.feasible){
+      $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.infeasible"))
+        +'<br><b>'+esc(I18N.t("opt.needBudget"))+': '+r.minNeed+' '+I18N.t("common.clicks")+'</b> · '
+        +esc(I18N.t("opt.budget"))+': '+r.budget+'</div></div>';
+      return;
+    }
+    var names={gentle:["opt.schGentle","opt.schGentleD"],longest:["opt.schLongest","opt.schLongestD"],reach:["opt.schReach","opt.schReachD"]};
+    var html='<div class="card"><h2>'+esc(I18N.t("opt.schedules"))+'</h2>'
+      +'<div class="note">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b></div></div>';
+    r.candidates.forEach(function(cand){
+      var res=cand.res, nm=names[cand.key];
+      html+='<div class="card"><h2>'+esc(I18N.t(nm[0]))+'</h2><p class="sub">'+esc(I18N.t(nm[1]))+'</p>';
+      if(res.coarsenStep){ html+='<div class="note" style="margin-bottom:12px">'+esc(I18N.t("opt.coarsened"))+' <b>'+fmtNum(res.coarsenStep,2)+' mg</b></div>'; }
+      html+='<div class="stats" style="margin-bottom:12px">'
+        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.totalWeeks"))+'</span><span class="v">'+res.totalWeeks+'</span></div>'
+        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.clicksUsed"))+'</span><span class="v">'+res.clicksUsed+'/'+r.budget+'</span></div>'
+        +(res.costPerWeek!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.costPerWeek"))+'</span><span class="v">'+fmtMoney(res.costPerWeek,cur)+'</span></div>':'')
+        +'</div>';
+      html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("common.dose"))+'</th><th class="num">'+esc(I18N.t("common.clicks"))+'</th><th class="num">'+esc(I18N.t("common.weeks"))+'</th></tr></thead><tbody>';
+      res.schedule.forEach(function(row){
+        if(row.weeks<=0) return;
+        html+='<tr><td><span class="pill" style="background:'+doseColor(row.mg)+'22;color:'+doseColor(row.mg)+'">'+fmtNum(row.mg,2)+' mg</span></td>'
+            +'<td class="num">'+row.clicks+'</td><td class="num">'+row.weeks+'</td></tr>';
+      });
+      html+='</tbody></table></div></div>';
+    });
+    $("#optResult").innerHTML=html;
+  }
+
+  /* ============ SETTINGS ============ */
+  function viewSettings(){
+    var st=s();
+    var html=''
+    +'<h1 class="page">'+esc(I18N.t("set.title"))+'</h1>'
+    +'<div class="card"><p class="sub">'+esc(I18N.t("set.sub"))+'</p>'
+    +'<div class="grid g2">'
+    +'<div class="field"><label>'+esc(I18N.t("set.language"))+'</label><select id="setLang">'
+      +'<option value="pl"'+(st.settings.lang==="pl"?" selected":"")+'>Polski</option>'
+      +'<option value="en"'+(st.settings.lang==="en"?" selected":"")+'>English</option>'
+    +'</select></div>'
+    +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label><input type="text" id="setCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +'</div></div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.data"))+'</h2>'
+    +'<p class="sub">'+esc(I18N.t("set.exportHint"))+'</p>'
+    +'<div class="row">'
+      +'<button class="btn" id="setExport">⬇ '+esc(I18N.t("set.export"))+'</button>'
+      +'<button class="btn ghost" id="setImportBtn">⬆ '+esc(I18N.t("set.import"))+'</button>'
+      +'<input type="file" id="setImport" accept="application/json,.json" class="hidden">'
+    +'</div>'
+    +'<div style="margin-top:14px"><button class="btn danger" id="setClear">'+esc(I18N.t("set.clear"))+'</button></div>'
+    +'</div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.privacy"))+'</h2><p class="small muted">'+esc(I18N.t("set.privacyTxt"))+'</p></div>';
+    app.innerHTML=html;
+
+    $("#setLang").addEventListener("change",function(){
+      st.settings.lang=this.value; I18N.setLang(this.value); STORE.save();
+      document.documentElement.lang=this.value; applyStatic(); render();
+    });
+    $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
+    $("#setExport").addEventListener("click",function(){ STORE.exportFile(); });
+    $("#setImportBtn").addEventListener("click",function(){ $("#setImport").click(); });
+    $("#setImport").addEventListener("change",function(){
+      if(!this.files||!this.files[0]) return;
+      STORE.importFile(this.files[0],function(ok){
+        if(ok){ I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
+          applyStatic(); updateBanner(); toast(I18N.t("set.importOk")); render(); }
+        else toast(I18N.t("set.importErr"));
+      });
+    });
+    $("#setClear").addEventListener("click",function(){
+      if(!confirm(I18N.t("set.clearConfirm"))) return;
+      STORE.clearAll(); I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
+      applyStatic(); render();
+    });
+  }
+
+  /* ---- router & static text ---- */
+  var routes={ weight:viewWeight, bmi:viewBMI, cost:viewCost, optimizer:viewOpt, settings:viewSettings };
+  function currentTab(){
+    var h=(location.hash||"#weight").replace("#","");
+    return routes[h]?h:"weight";
+  }
+  function render(){
+    var tab=currentTab();
+    $all("nav.tabs a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-tab")===tab); });
+    routes[tab]();
+    window.scrollTo(0,0);
+  }
+  function applyStatic(){
+    $all("[data-i]").forEach(function(n){ n.textContent=I18N.t(n.getAttribute("data-i")); });
+    $("#footer").textContent=I18N.t("footer.disclaimer");
+    $all("#langSwitch button").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-lang")===I18N.lang); });
+  }
+  function updateBanner(){
+    var b=$("#storeBanner");
+    if(STORE.memoryOnly){ b.textContent=I18N.t("set.noStore"); b.classList.remove("hidden"); }
+    else b.classList.add("hidden");
+  }
+
+  function init(){
+    app=$("#app");
+    // language
+    I18N.setLang(STORE.state.settings.lang||"pl");
+    document.documentElement.lang=I18N.lang;
+    applyStatic(); updateBanner();
+    // lang switch buttons
+    $all("#langSwitch button").forEach(function(btn){
+      btn.addEventListener("click",function(){
+        var l=btn.getAttribute("data-lang");
+        STORE.state.settings.lang=l; I18N.setLang(l); STORE.save();
+        document.documentElement.lang=l; applyStatic(); render();
+      });
+    });
+    window.addEventListener("hashchange",render);
+    if(!location.hash) location.hash="#weight";
+    render();
+  }
+  return { init:init };
+})();
+
+/* ===== bootstrap ===== */
+STORE.load();
+UI.init();
+</script>
+</body>
+</html>
