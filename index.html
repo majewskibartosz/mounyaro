@@ -7,11 +7,23 @@
 <title>Mounjaro Tracker</title>
 <style>
   :root{
-    --bg:#f3f5f7; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --bg:#f3f5f7; --card:#ffffff; --soft:#f6f8fa; --input:#ffffff;
+    --headbg:rgba(243,245,247,.92);
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
     --brand:#0ea5a4; --brand-dk:#0b827f; --accent:#6366f1;
     --good:#16a34a; --warn:#f59e0b; --bad:#dc2626; --info:#0284c7;
+    --warnbg:#fff7ed; --warnline:#fed7aa; --warnink:#9a3412;
     --radius:16px; --shadow:0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.05);
   }
+  :root[data-theme="dark"]{
+    --bg:#0b1220; --card:#16202e; --soft:#1c2838; --input:#1c2838;
+    --headbg:rgba(11,18,32,.92);
+    --ink:#e8eef5; --muted:#94a3b8; --line:#2b3a4d;
+    --brand:#14b8b6; --brand-dk:#5eead4;
+    --warnbg:#3a2a14; --warnline:#7c5418; --warnink:#fbbf24;
+    --shadow:0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+  html{transition:background .2s,color .2s}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
@@ -22,14 +34,15 @@
   a{color:var(--brand-dk)}
   .wrap{max-width:760px;margin:0 auto;padding:16px}
   header.app{
-    position:sticky;top:0;z-index:20;background:rgba(243,245,247,.92);backdrop-filter:blur(8px);
+    position:sticky;top:0;z-index:20;background:var(--headbg);backdrop-filter:blur(8px);
     border-bottom:1px solid var(--line);
   }
   .head-inner{max-width:760px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
   .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px}
   .logo .dot{width:14px;height:14px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(14,165,164,.18)}
   .spacer{flex:1}
-  .lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:#fff}
+  .iconbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);width:38px;height:34px;border-radius:999px;cursor:pointer;font-size:16px;line-height:1}
+  .lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--card)}
   .lang button{border:0;background:transparent;padding:6px 12px;font-weight:700;color:var(--muted);cursor:pointer;font-size:13px}
   .lang button.on{background:var(--brand);color:#fff}
 
@@ -41,7 +54,7 @@
   label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
   input,select,textarea{
     width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;font-size:16px;
-    background:#fff;color:var(--ink);font-family:inherit;
+    background:var(--input);color:var(--ink);font-family:inherit;
   }
   input:focus,select:focus,textarea:focus{outline:2px solid rgba(14,165,164,.35);border-color:var(--brand)}
   .grid{display:grid;gap:12px}
@@ -57,7 +70,7 @@
   }
   button.btn:hover{filter:brightness(1.05)}
   button.btn:active{transform:translateY(1px)}
-  button.btn.ghost{background:#eef2f3;color:var(--ink)}
+  button.btn.ghost{background:var(--soft);color:var(--ink);border:1px solid var(--line)}
   button.btn.danger{background:#fee2e2;color:var(--bad)}
   button.btn.sm{padding:8px 12px;font-size:13px}
 
@@ -73,7 +86,7 @@
   .small{font-size:13px}
   .tiny{font-size:12px}
   .center{text-align:center}
-  .stat{display:flex;flex-direction:column;gap:2px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .stat{display:flex;flex-direction:column;gap:2px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px}
   .stat .k{font-size:12px;color:var(--muted);font-weight:600}
   .stat .v{font-size:20px;font-weight:800}
   .stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
@@ -84,12 +97,12 @@
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .scroll{overflow-x:auto}
 
-  .note{background:#f1f5f9;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--muted)}
-  .warnbox{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:10px 12px;font-size:13px}
-  .banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+  .note{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--muted)}
+  .warnbox{background:var(--warnbg);border:1px solid var(--warnline);color:var(--warnink);border-radius:12px;padding:10px 12px;font-size:13px}
+  .banner{background:var(--warnbg);border:1px solid var(--warnline);color:var(--warnink);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
 
   /* tabs */
-  nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:30;background:#fff;border-top:1px solid var(--line);
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--card);border-top:1px solid var(--line);
     display:flex;padding:6px max(8px,env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom));}
   nav.tabs a{flex:1;text-decoration:none;color:var(--muted);text-align:center;font-size:11px;font-weight:700;
     padding:6px 2px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -102,7 +115,7 @@
   .gauge .seg{height:100%}
   .gauge .marker{position:absolute;top:-8px;transform:translateX(-50%);transition:left .6s cubic-bezier(.22,1,.36,1)}
   .gauge .marker .tri{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:12px solid var(--ink);margin:0 auto}
-  .gauge .marker .bubble{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+  .gauge .marker .bubble{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);
     font-size:12px;font-weight:800;padding:3px 8px;border-radius:8px;white-space:nowrap}
   .gauge .ticks{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:8px}
   .gauge .labels{display:flex;font-size:10px;color:var(--muted);margin-top:4px;text-align:center}
@@ -122,6 +135,7 @@
   <div class="head-inner">
     <div class="logo"><span class="dot"></span><span>Mounjaro Tracker</span></div>
     <div class="spacer"></div>
+    <button class="iconbtn" id="themeBtn" title="Dark / light" aria-label="Toggle dark mode">🌙</button>
     <div class="lang" id="langSwitch">
       <button data-lang="pl">PL</button>
       <button data-lang="en">EN</button>
@@ -446,7 +460,7 @@ var STORE = (function(){
   function defaults(){
     return {
       schemaVersion:1,
-      settings:{ lang:"pl", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
+      settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
       calc:{ costPerPen:null, strengthMg:null }
@@ -1004,13 +1018,24 @@ var UI = (function(){
     if(STORE.memoryOnly){ b.textContent=I18N.t("set.noStore"); b.classList.remove("hidden"); }
     else b.classList.add("hidden");
   }
+  function applyTheme(){
+    var dark = STORE.state.settings.theme==="dark";
+    document.documentElement.setAttribute("data-theme", dark?"dark":"light");
+    var btn=$("#themeBtn"); if(btn) btn.textContent = dark?"☀️":"🌙";
+    var meta=document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute("content", dark?"#0b1220":"#0ea5a4");
+  }
 
   function init(){
     app=$("#app");
     // language
     I18N.setLang(STORE.state.settings.lang||"pl");
     document.documentElement.lang=I18N.lang;
+    applyTheme();
     applyStatic(); updateBanner();
+    $("#themeBtn").addEventListener("click",function(){
+      STORE.state.settings.theme = (STORE.state.settings.theme==="dark")?"light":"dark";
+      STORE.save(); applyTheme();
+    });
     // lang switch buttons
     $all("#langSwitch button").forEach(function(btn){
       btn.addEventListener("click",function(){
