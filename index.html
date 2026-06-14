@@ -1754,17 +1754,6 @@ var UI = (function(){
         + periods(sc.perShot, sc.perWeek, sc.perMonth)
         +'<div class="meta">'+esc(tx("trv.lasts",{w:fmtNum(sc.coverWeeks,1),m:fmtNum(sc.coverMonths,1)}))+'</div></div>';
     }
-    function verdictCard(titleKey, exKey, titleS, sc, perShot, perWeek, perMonth){
-      if(perShot==null || !sc || !r.home) return "";
-      var save=perShot>0, col=save?"var(--good)":"var(--bad)";
-      var head=save?I18N.t("trv.youSaveHome"):I18N.t("trv.youSaveDest");
-      return '<div class="tcard verdict" style="border-color:'+col+'">'
-        +'<h3>'+esc(tx(titleKey,{s:titleS}))+'</h3>'
-        +'<p class="ex">'+esc(tx(exKey,{s:S,r:rxStr}))+'</p>'
-        +'<div class="meta" style="margin:0 0 6px">'+esc(tx("trv.contrast",{h:moneyTxt(r.home.priceHome),d:moneyTxt(sc.priceHome)}))+'</div>'
-        +'<div class="vmsg" style="color:'+col+'">'+esc(head)+'</div>'
-        + periods(Math.abs(perShot), Math.abs(perWeek), Math.abs(perMonth), col)+'</div>';
-    }
     // trip planner card (only when a trip length is given)
     function tripCard(){
       var t=r.trip; if(!t || !t.home) return "";
@@ -1793,11 +1782,6 @@ var UI = (function(){
     var trip=tripCard();
     var html='<div class="card"><h2>'+esc(I18N.t("opt.modeTravel"))+'</h2>'+rateNote
       + (trip?'<div class="tgrid" style="margin-bottom:14px">'+trip+'</div>':'')
-      +'<div class="tsub">'+esc(I18N.t("trv.verdictTitle"))+'</div>'
-      +'<div class="tgrid two">'
-      + verdictCard("trv.vsSame", "trv.vsSameEx", S, r.same, r.saveVsSame, r.saveVsSameWeek, r.saveVsSameMonth)
-      + (rxStr!==S ? verdictCard("trv.vsRx", "trv.vsRxEx", rxStr, r.rx, r.saveVsRx, r.saveVsRxWeek, r.saveVsRxMonth) : "")
-      +'</div>'
       +'<div class="tsub">'+esc(tx("trv.whatPay",{home:homeCur}))+'</div>'
       +'<div class="tgrid">'
       + scCard(tx("trv.rowHome",{s:S}), exHome, r.home)
