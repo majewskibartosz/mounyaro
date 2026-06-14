@@ -41,7 +41,9 @@
     border-bottom:1px solid var(--line);
   }
   .head-inner{max-width:760px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
-  .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px}
+  .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;white-space:nowrap}
+  #installBtn{padding:7px 10px;font-size:13px;white-space:nowrap;flex-shrink:0}
+  @media(max-width:430px){ .head-inner{gap:7px} .logo{font-size:15px} .logo .dot{width:11px;height:11px} }
   .logo .dot{width:14px;height:14px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(14,165,164,.18)}
   .spacer{flex:1}
   .iconbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);width:38px;height:34px;border-radius:999px;cursor:pointer;font-size:16px;line-height:1}
@@ -170,6 +172,7 @@
   <div class="head-inner">
     <div class="logo"><span class="dot"></span><span>Mounjaro Tracker</span></div>
     <div class="spacer"></div>
+    <button class="btn sm" id="installBtn" hidden>📲 <span data-i="install.btn">Zainstaluj</span></button>
     <button class="iconbtn" id="themeBtn" title="Dark / light" aria-label="Toggle dark mode">🌙</button>
     <div class="lang" id="langSwitch">
       <button data-lang="pl">PL</button>
@@ -228,6 +231,9 @@ var I18N = (function(){
     "common.date":{pl:"Data",en:"Date"},
     "common.note":{pl:"Notatka",en:"Note"},
     "common.optional":{pl:"opcjonalnie",en:"optional"},
+    "install.btn":{pl:"Zainstaluj",en:"Install app"},
+    "install.ios":{pl:"Aby zainstalować na iPhone: dotknij przycisku Udostępnij (kwadrat ze strzałką) na dole ekranu, a następnie wybierz „Do ekranu początkowego”.",
+                   en:"To install on iPhone: tap the Share button (square with an arrow) at the bottom, then choose “Add to Home Screen”."},
     "common.dose":{pl:"Dawka",en:"Dose"},
     "common.weight":{pl:"Waga",en:"Weight"},
     "common.none":{pl:"—",en:"—"},
@@ -1872,6 +1878,23 @@ var UI = (function(){
     var meta=document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute("content", dark?"#0b1220":"#0ea5a4");
   }
 
+  // PWA install: capture the deferred prompt (Android/Chromium) and surface a
+  // visible Install button; on iOS Safari there's no prompt, so show how-to.
+  var deferredInstall=null;
+  function setupInstall(){
+    var btn=$("#installBtn"); if(!btn) return;
+    var ua=navigator.userAgent||"";
+    var isIOS=/iphone|ipad|ipod/i.test(ua);
+    var standalone=(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
+    if(standalone){ btn.hidden=true; }
+    else if(isIOS){ btn.hidden=false; }
+    window.addEventListener("beforeinstallprompt",function(e){ e.preventDefault(); deferredInstall=e; btn.hidden=false; });
+    window.addEventListener("appinstalled",function(){ deferredInstall=null; btn.hidden=true; });
+    btn.addEventListener("click",function(){
+      if(deferredInstall){ deferredInstall.prompt(); deferredInstall.userChoice.then(function(){ deferredInstall=null; btn.hidden=true; }); }
+      else { alert(I18N.t("install.ios")); }
+    });
+  }
   function init(){
     app=$("#app");
     ensureCurrencyList();
@@ -1880,6 +1903,7 @@ var UI = (function(){
     document.documentElement.lang=I18N.lang;
     applyTheme();
     applyStatic(); updateBanner();
+    setupInstall();
     $("#themeBtn").addEventListener("click",function(){
       STORE.state.settings.theme = (STORE.state.settings.theme==="dark")?"light":"dark";
       STORE.save(); applyTheme();
