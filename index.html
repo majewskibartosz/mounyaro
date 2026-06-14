@@ -942,45 +942,41 @@ var UI = (function(){
   /* ============ JAB (next-shot countdown ring) ============ */
   // Urgency palette: green (just injected) -> amber -> red (shot due).
   var RING_GREEN="#16a34a", RING_AMBER="#f59e0b", RING_RED="#dc2626";
-  function lerpHex(a,b,t){
-    function ch(s,i){ return parseInt(s.slice(i,i+2),16); }
-    a=a.replace("#",""); b=b.replace("#","");
-    var r=Math.round(ch(a,0)+(ch(b,0)-ch(a,0))*t),
-        g=Math.round(ch(a,2)+(ch(b,2)-ch(a,2))*t),
-        bl=Math.round(ch(a,4)+(ch(b,4)-ch(a,4))*t);
-    return "rgb("+r+","+g+","+bl+")";
-  }
+  function hex2rgb(h){ h=h.replace("#",""); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+  function lerpRGB(a,b,t){ return [Math.round(a[0]+(b[0]-a[0])*t),Math.round(a[1]+(b[1]-a[1])*t),Math.round(a[2]+(b[2]-a[2])*t)]; }
+  function rgbCss(c){ return "rgb("+c[0]+","+c[1]+","+c[2]+")"; }
+  var GREEN_RGB=hex2rgb(RING_GREEN), AMBER_RGB=hex2rgb(RING_AMBER), RED_RGB=hex2rgb(RING_RED);
   // Continuous green -> amber -> red. Input 0 = green, 0.5 = amber, 1 = red.
   function urgencyColor(m){
     m=Math.max(0,Math.min(1,m));
-    return m<0.5 ? lerpHex(RING_GREEN,RING_AMBER,m/0.5)
-                 : lerpHex(RING_AMBER,RING_RED,(m-0.5)/0.5);
+    return m<0.5 ? lerpRGB(GREEN_RGB,AMBER_RGB,m/0.5)
+                 : lerpRGB(AMBER_RGB,RED_RGB,(m-0.5)/0.5);
   }
   // Bias the hot colour: stay green until ~60% of the cycle, then ramp to red.
   function urgency(frac){ frac=Math.max(0,Math.min(1,frac)); return frac<=0.6 ? 0 : (frac-0.6)/0.4; }
   function ringSVG(frac, big, sub){
     frac=Math.max(0,Math.min(1,frac));
-    var R=85, C=2*Math.PI*R, off=C*(1-frac);
-    var hot=urgencyColor(urgency(frac));
-    // Gradient follows the ARC, not the screen: green sits on the trailing part
-    // of the arc, the hot colour at the leading edge (the rounded cap). The
-    // vector is derived from frac so the cap is always the "business end" — no
-    // re-greening as the sweep returns to the top at due.
-    var a=2*Math.PI*frac, sa=Math.sin(a), ca=Math.cos(a);
-    var x1=(100-R*sa).toFixed(1), y1=(100+R*ca).toFixed(1),
-        x2=(100+R*sa).toFixed(1), y2=(100-R*ca).toFixed(1);
+    var R=85, cx=100, cy=100, hot=urgencyColor(urgency(frac)), hotCss=rgbCss(hot);
+    // The blend runs ALONG the arc (relative to the ring's own path), not across
+    // the screen: green on the older trailing part, the hot colour riding the
+    // moving leading cap. Built from many short arc segments coloured by their
+    // position p in [0,1] along the drawn arc — an SVG linearGradient can only
+    // interpolate along a straight screen line, which is what we're avoiding.
+    function pt(t){ var ang=(-90+t*frac*360)*Math.PI/180; return [cx+R*Math.cos(ang),cy+R*Math.sin(ang)]; }
+    function colorAt(p){ return p<=0.55 ? RING_GREEN : rgbCss(lerpRGB(GREEN_RGB,hot,(p-0.55)/0.45)); }
+    var arc="";
+    if(frac>0){
+      var N=Math.max(2,Math.ceil(frac*96));
+      for(var i=0;i<N;i++){
+        var t0=i/N, t1=(i+1)/N, p0=pt(t0), p1=pt(t1);
+        arc+='<path d="M'+p0[0].toFixed(2)+' '+p0[1].toFixed(2)+'A'+R+' '+R+' 0 0 1 '+p1[0].toFixed(2)+' '+p1[1].toFixed(2)+'" '
+          +'fill="none" stroke="'+colorAt((t0+t1)/2)+'" stroke-width="14" stroke-linecap="round"/>';
+      }
+    }
     return '<svg class="ring" viewBox="0 0 200 200" role="img">'
-      +'<defs><linearGradient id="ringGrad" gradientUnits="userSpaceOnUse" '
-        +'x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'">'
-        +'<stop offset="0%" stop-color="'+RING_GREEN+'"/>'
-        +'<stop offset="55%" stop-color="'+RING_GREEN+'"/>'
-        +'<stop offset="100%" stop-color="'+hot+'"/>'
-      +'</linearGradient></defs>'
       +'<circle cx="100" cy="100" r="85" fill="none" stroke="var(--line)" stroke-width="14"/>'
-      +'<circle cx="100" cy="100" r="85" fill="none" stroke="url(#ringGrad)" stroke-width="14" stroke-linecap="round" '
-        +'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 100 100)" '
-        +'style="transition:stroke-dashoffset .8s cubic-bezier(.22,1,.36,1)"/>'
-      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+hot+'" '
+      +arc
+      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+hotCss+'" '
         +'style="transition:fill .8s ease">'+esc(big)+'</text>'
       +'<text x="100" y="126" text-anchor="middle" font-size="12" fill="var(--muted)">'+esc(sub)+'</text>'
       +'</svg>';

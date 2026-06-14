@@ -29,27 +29,32 @@ overdue. Keep the gradient-painted-arc look (not a single flat color).
 Three coordinated changes, all inside the existing `UI` IIFE. `DOMAIN`/`STORE`
 untouched. No new keys, no CSP impact.
 
-### 1. Gradient follows the arc, not the screen
+### 1. Blend runs *along the arc*, not across the screen
 
-Compute the gradient vector from `frac` so the **green end sits on the trailing
-part of the arc** and the **hot end sits at the leading edge** (the rounded
-cap). Leading-edge angle from top, clockwise: `a = 2π · frac`.
+An SVG `linearGradient` can only interpolate along a straight screen line, so it
+never follows the ring's curve and degenerates to a hard split near a full
+circle. Instead, draw the progress arc as **many short arc segments**
+(`N = ceil(frac · 96)`), each a `<path>` arc command with `stroke-linecap="round"`
+so consecutive caps overlap and the joins disappear. The leading cap is the
+moving "bowl"; green sits on the older trailing part — anchored to arc position,
+independent of where on screen the cap is.
+
+Segment endpoints, going clockwise from the top, for `t ∈ [0,1]` along the arc:
 
 ```
-dir = (sin a, -cos a)           // unit vector toward leading edge from centre
-x1,y1 = 100 - 85·sin a, 100 + 85·cos a   // offset 0%  (green, trailing)
-x2,y2 = 100 + 85·sin a, 100 - 85·cos a   // offset 100% (hot, leading cap)
+angle(t) = (-90 + t · frac · 360)°
+pt(t)    = (100 + 85·cos angle, 100 + 85·sin angle)
 ```
-
-Drop the old `gradientTransform` rotate hack; set `x1/y1/x2/y2` directly with
-`gradientUnits="userSpaceOnUse"`. The cap is always the "business end," for all
-`frac`, with no re-greening.
 
 ### 2. Stretch the calm band
 
-Gradient stops: `0% green → 55% green → 100% hotColor`. The bulk of the painted
-arc stays green; the color shift is compressed into the last stretch near the
-cap.
+Each segment is colored by its position `p` (midpoint of `t0..t1`) along the
+drawn arc: `p ≤ 0.55 → green`, else lerp `green → hotColor` over `(p-0.55)/0.45`.
+The bulk of the arc stays green; the color shift is compressed into the last
+stretch near the leading cap.
+
+Color helpers work in RGB (`hex2rgb` / `lerpRGB` / `rgbCss`) so segments can
+blend toward the dynamic `hotColor`.
 
 ### 3. Gate the hot color by a biased curve
 
