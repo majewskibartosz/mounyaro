@@ -629,15 +629,32 @@ var STORE = (function(){
     }
     scheduleFileWrite();
   }
-  function exportFile(){
-    var data = JSON.stringify(state, null, 2);
+  function downloadBlob(data, fname){
     var blob = new Blob([data], {type:"application/json"});
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
-    var d = new Date().toISOString().slice(0,10);
-    a.href=url; a.download="mounjaro-tracker-"+d+".json";
+    a.href=url; a.download=fname;
     document.body.appendChild(a); a.click();
     setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 500);
+  }
+  function exportFile(){
+    var data = JSON.stringify(state, null, 2);
+    var fname = "mounjaro-tracker-"+new Date().toISOString().slice(0,10)+".json";
+    // On devices that can share files (mostly mobile), offer the native share
+    // sheet so the backup can go straight into MEGA/Drive/Files — no account,
+    // no server. Fall back to a normal download everywhere else.
+    if(typeof File==="function" && navigator.canShare){
+      try{
+        var file = new File([data], fname, {type:"application/json"});
+        if(navigator.canShare({files:[file]})){
+          navigator.share({files:[file], title:"Mounjaro Tracker"}).catch(function(err){
+            if(!err || err.name!=="AbortError") downloadBlob(data, fname); // ignore user cancel
+          });
+          return;
+        }
+      }catch(e){ /* fall through to download */ }
+    }
+    downloadBlob(data, fname);
   }
   function importFile(file, cb){
     var r = new FileReader();
