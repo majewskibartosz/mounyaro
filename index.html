@@ -84,6 +84,10 @@
   .pcitem{display:flex;flex-direction:column;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px}
   .pcitem label{margin:0;font-size:12px;font-weight:700;color:var(--ink)}
   .pcitem input{padding:7px 8px;font-size:14px;border-radius:8px}
+  /* segmented toggle */
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--soft);margin:0 0 12px}
+  .seg button{border:0;background:transparent;padding:8px 14px;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--brand);color:#fff}
 
   /* travel comparison: full-width cards on mobile, multi-column on desktop */
   .tgrid{display:grid;gap:10px;grid-template-columns:1fr;margin:0 0 8px}
@@ -96,6 +100,8 @@
   .tcard .meta{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.5}
   .tcard.verdict{border-width:1px}
   .tsub{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 8px}
+  /* faded currency code after an amount */
+  .cur{color:var(--muted);font-weight:600;font-size:.82em;opacity:.85}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 
   button.btn{
@@ -373,6 +379,11 @@ var I18N = (function(){
     "trv.destPriceSame":{pl:"Cena w kraju docelowym — pen {s} mg",en:"Destination price — {s} mg pen"},
     "trv.destPriceRx":{pl:"Cena w kraju docelowym — pen {s} mg (na receptę)",en:"Destination price — {s} mg pen (prescribed)"},
     "trv.calc":{pl:"Porównaj",en:"Compare"},
+    "trv.override":{pl:"Wpisz ceny tutaj (zamiast w Ustawieniach)",en:"Type the prices here (instead of in Settings)"},
+    "trv.pricesNote":{pl:"Ceny penów biorę z Ustawień. Aby zmienić je tylko teraz, włącz przełącznik poniżej.",
+                      en:"Pen prices come from Settings. To change them just for now, turn on the switch below."},
+    "trv.setPricesNote":{pl:"Najpierw wpisz ceny penów — w domu i w kraju docelowym — w Ustawieniach, albo włącz przełącznik poniżej i wpisz je tutaj.",
+                         en:"First add your pen prices — at home and in the destination — in Settings, or turn on the switch below and type them here."},
     "trv.needInputs":{pl:"Uzupełnij cenę pena w domu, kurs i ceny w kraju docelowym, aby zobaczyć porównanie.",
                       en:"Fill in your home pen price, the rate and destination prices to see the comparison."},
     "trv.rowHome":{pl:"Dom: pen {s} mg, rozciągany",en:"Home: {s} mg pen, stretched"},
@@ -427,6 +438,10 @@ var I18N = (function(){
     "set.penCosts":{pl:"Ceny penów",en:"Pen costs"},
     "set.penCostsHint":{pl:"Ustaw cenę dla każdej mocy raz — kalkulator sam ją podstawi po wybraniu pena.",
                         en:"Set a price for each strength once — the calculator fills it in automatically when you pick a pen."},
+    "set.pcHome":{pl:"Dom",en:"Home"},
+    "set.pcDest":{pl:"Kraj docelowy",en:"Destination"},
+    "set.pcDestHint":{pl:"Ceny penów w kraju docelowym (dla trybu Podróż). Wybierz walutę kraju docelowego.",
+                      en:"Destination-country pen prices (for Travel mode). Pick the destination currency."},
     "set.data":{pl:"Twoje dane",en:"Your data"},
     "set.export":{pl:"Eksportuj do pliku",en:"Export to file"},
     "set.import":{pl:"Importuj z pliku",en:"Import from file"},
@@ -968,10 +983,14 @@ function el(tag, attrs, html){
   return e;
 }
 function fmtNum(n, dp){ if(n==null||isNaN(n)) return "—"; return Number(n).toFixed(dp==null?2:dp); }
+// Amount with the currency code shown faded right after the number, so it's
+// always clear what the number means (e.g. "756,02 PLN"). Returns HTML.
 function fmtMoney(n, currency){
   if(n==null||isNaN(n)) return "—";
-  try{ return new Intl.NumberFormat(I18N.lang==="en"?"en-GB":"pl-PL",{style:"currency",currency:currency||"PLN"}).format(n); }
-  catch(e){ return Number(n).toFixed(2)+" "+(currency||""); }
+  var cur=(currency||"PLN"), num;
+  try{ num = new Intl.NumberFormat(I18N.lang==="en"?"en-GB":"pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2}).format(n); }
+  catch(e){ num = Number(n).toFixed(2); }
+  return num+' <span class="cur">'+esc(cur)+'</span>';
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -1423,11 +1442,11 @@ var UI = (function(){
     +'</select></div>'
     +'<div id="oFields"></div>'
     +'<div class="grid g3">'
-    +  '<div class="field"><label><span id="oPriceLbl">'+esc(I18N.t("cost.pricePerPen"))+'</span> <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
+    +  '<div class="field" id="oPriceField"><label><span id="oPriceLbl">'+esc(I18N.t("cost.pricePerPen"))+'</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
     +  '<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("oCur",st.settings.currency)+'</div>'
     +  '<div class="field"><label>'+esc(I18N.t("opt.interval"))+'</label><input type="number" inputmode="numeric" id="oInterval" value="'+(st.calc.intervalDays||7)+'" min="1"></div>'
     +'</div>'
-    +'<p class="tiny muted" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
+    +'<p class="tiny muted" id="oCostShared" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
     +'<label class="toggle" style="margin:8px 0 12px"><input type="checkbox" id="oGold"'+(g.enabled?" checked":"")+'><span class="switch"></span>'
       +'<span>'+esc(I18N.t("opt.golden"))+'</span></label>'
     +'<div id="oGoldRow" class="'+(g.enabled?"":"hidden")+'">'
@@ -1488,34 +1507,44 @@ var UI = (function(){
     function travelDose(){ var d=st.settings.travel.dose; return d!=null?d:(strength||5); }
     function rxStrength(){ var D=travelDose(); return STRENGTHS.indexOf(D)>=0?D:null; }
     function fieldsTravel(){
-      var tv=st.settings.travel, D=travelDose(), destCur=tv.currency||"";
-      var same=(tv.penCosts?tv.penCosts[String(strength)]:null);
+      var D=travelDose();
       return '<div class="note" style="margin:0 0 12px">'+esc(I18N.t("trv.intro"))+'</div>'
         +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
         +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trv.dose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oDose" value="'+D+'"></div>'
-        +'<div class="grid g2">'
-        +'<div class="field"><label>'+esc(I18N.t("trv.destCur"))+'</label>'+currencyInput("oDestCur",destCur)+'</div>'
-        +'<div class="field"><label>'+esc(I18N.t("trv.rate"))+' <span class="muted tiny" id="oRateHint"></span></label><div id="oRateWrap"></div></div>'
-        +'</div>'
-        +'<div class="field"><label id="oSameLbl"></label><input type="number" inputmode="decimal" id="oDestSame" value="'+(same!=null?same:"")+'" placeholder="'+esc(destCur||"")+'"></div>'
-        +'<div class="field" id="oRxWrap"><label id="oRxLbl"></label><input type="number" inputmode="decimal" id="oDestRx" placeholder="'+esc(destCur||"")+'"></div>';
+        +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trv.rate"))+' <span class="muted tiny" id="oRateHint"></span></label><div id="oRateWrap"></div></div>'
+        +'<p class="tiny muted" id="oPricesNote" style="margin:0 0 8px"></p>'
+        +'<label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="oOverride"><span class="switch"></span><span>'+esc(I18N.t("trv.override"))+'</span></label>'
+        +'<div id="oOverrideWrap" class="hidden">'
+        +  '<div class="grid g2">'
+        +    '<div class="field"><label>'+esc(I18N.t("trv.homePrice"))+'</label><input type="number" inputmode="decimal" id="oHomePrice"></div>'
+        +    '<div class="field"><label id="oSameLbl"></label><input type="number" inputmode="decimal" id="oDestSame"></div>'
+        +  '</div>'
+        +  '<div class="field" id="oRxWrap"><label id="oRxLbl"></label><input type="number" inputmode="decimal" id="oDestRx"></div>'
+        +'</div>';
     }
     function travelLabels(){
-      var tv=st.settings.travel, destCur=tv.currency||"";
-      var hint=I18N.t("trv.rateHint").replace("{home}",st.settings.currency).replace("{dest}",destCur||"?");
+      var tv=st.settings.travel, destCur=tv.currency||"", homeCur=st.settings.currency;
+      var hint=I18N.t("trv.rateHint").replace("{home}",homeCur).replace("{dest}",destCur||"?");
       if($("#oRateHint")) $("#oRateHint").textContent="("+hint+")";
+      // prices come from Settings; prompt if the ones we need are missing
+      var rxStr=rxStrength();
+      var homeP=st.settings.penCosts?st.settings.penCosts[String(strength)]:null;
+      var sameP=tv.penCosts?tv.penCosts[String(strength)]:null;
+      var rxP=(rxStr!=null&&tv.penCosts)?tv.penCosts[String(rxStr)]:null;
+      var missing=(homeP==null||sameP==null||(rxStr!=null&&rxStr!==strength&&rxP==null));
+      var note=$("#oPricesNote"); if(note) note.textContent=I18N.t(missing?"trv.setPricesNote":"trv.pricesNote");
+      // override editors (revealed by the toggle)
       if($("#oSameLbl")) $("#oSameLbl").textContent=I18N.t("trv.destPriceSame").replace("{s}",strength);
-      if($("#oDestCur")) $("#oDestCur").placeholder="USD";
+      if($("#oHomePrice")) $("#oHomePrice").value=(homeP!=null?homeP:"");
+      if($("#oDestSame")) $("#oDestSame").value=(sameP!=null?sameP:"");
+      ["oHomePrice"].forEach(function(id){ if($("#"+id)) $("#"+id).placeholder=homeCur||""; });
       ["oDestSame","oDestRx"].forEach(function(id){ if($("#"+id)) $("#"+id).placeholder=destCur||""; });
-      var rxStr=rxStrength(), wrap=$("#oRxWrap");
+      var wrap=$("#oRxWrap");
       if(rxStr!=null && rxStr!==strength){
         if(wrap) wrap.style.display="";
         if($("#oRxLbl")) $("#oRxLbl").textContent=I18N.t("trv.destPriceRx").replace("{s}",rxStr);
-        if($("#oDestSame")) $("#oDestSame").value=(tv.penCosts&&tv.penCosts[String(strength)]!=null)?tv.penCosts[String(strength)]:"";
-        if($("#oDestRx")) $("#oDestRx").value=(tv.penCosts&&tv.penCosts[String(rxStr)]!=null)?tv.penCosts[String(rxStr)]:"";
-      } else {
-        if(wrap) wrap.style.display="none";
-      }
+        if($("#oDestRx")) $("#oDestRx").value=(rxP!=null?rxP:"");
+      } else { if(wrap) wrap.style.display="none"; }
     }
     function bindRateInput(){
       var el=$("#oRate"); if(el) el.addEventListener("change",function(){ st.settings.travel.rate=this.value===""?null:parseFloat(this.value); STORE.save(); });
@@ -1566,18 +1595,22 @@ var UI = (function(){
     function renderTravelFields(){
       $("#oFields").innerHTML = fieldsTravel();
       travelLabels(); updateRateField();
-      bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; autofillPrice(v); STORE.save(); travelLabels(); });
+      bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; STORE.save(); travelLabels(); });
       $("#oDose").addEventListener("change",function(){ st.settings.travel.dose=this.value===""?null:parseFloat(this.value); STORE.save(); travelLabels(); });
-      $("#oDestCur").addEventListener("change",function(){ st.settings.travel.currency=(this.value||"").toUpperCase(); STORE.save(); travelLabels(); updateRateField(); });
+      $("#oOverride").addEventListener("change",function(){ $("#oOverrideWrap").className=this.checked?"":"hidden"; });
+      $("#oHomePrice").addEventListener("input",function(){ st.settings.penCosts[String(strength)]=this.value===""?null:parseFloat(this.value); STORE.save(); });
       $("#oDestSame").addEventListener("input",function(){ st.settings.travel.penCosts[String(strength)]=this.value===""?null:parseFloat(this.value); STORE.save(); });
       $("#oDestRx").addEventListener("input",function(){
         var rxStr=rxStrength(); if(rxStr!=null) st.settings.travel.penCosts[String(rxStr)]=this.value===""?null:parseFloat(this.value); STORE.save();
       });
     }
     function renderFields(){
-      var mode=$("#oMode").value;
-      if($("#oPriceLbl")) $("#oPriceLbl").textContent = (mode==="travel") ? I18N.t("trv.homePrice") : I18N.t("cost.pricePerPen");
-      if(mode==="travel"){ renderTravelFields(); return; }
+      var mode=$("#oMode").value, travel=(mode==="travel");
+      // In travel mode the home price comes from Settings (or the inline override),
+      // so hide the shared price field + its note to keep the form simple.
+      if($("#oPriceField")) $("#oPriceField").style.display = travel?"none":"";
+      if($("#oCostShared")) $("#oCostShared").style.display = travel?"none":"";
+      if(travel){ renderTravelFields(); return; }
       $("#oFields").innerHTML = mode==="stretch"?fieldsStretch():fieldsProg();
       bindStrengthChips();
       if(mode==="stretch"){
@@ -1621,8 +1654,9 @@ var UI = (function(){
     var rxStr=(STRENGTHS.indexOf(D)>=0?D:null);
     var destSame=(tv.penCosts?tv.penCosts[String(S)]:null);
     var destRx = rxStr==null ? null : (rxStr===S ? destSame : (tv.penCosts?tv.penCosts[String(rxStr)]:null));
+    var homePrice = st.settings.penCosts ? st.settings.penCosts[String(S)] : null;
     var r=DOMAIN.travelCompare({ homeStrength:S, dose:D, intervalDays:st.calc.intervalDays||7,
-      golden:st.settings.goldenDose, rate:tv.rate, homePrice:st.calc.costPerPen,
+      golden:st.settings.goldenDose, rate:tv.rate, homePrice:homePrice,
       destPriceSame:destSame, destPriceRx:destRx, rxStrength:rxStr });
     if(!r.home || (!r.same && !r.rx)){
       $("#optResult").innerHTML='<div class="card"><div class="empty">'+esc(I18N.t("trv.needInputs"))+'</div></div>'; return;
@@ -1821,14 +1855,12 @@ var UI = (function(){
     +'</select></div>'
     +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label>'+currencyInput("setCur",st.settings.currency)+'</div>'
     +'</div></div>'
-    +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2><p class="sub">'+esc(I18N.t("set.penCostsHint"))+'</p>'
-    +'<div class="pcgrid">'
-    + STRENGTHS.map(function(v){
-        var pc = st.settings.penCosts ? st.settings.penCosts[String(v)] : null;
-        return '<div class="pcitem"><label>'+v+' mg</label>'
-          +'<input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(st.settings.currency)+'"></div>';
-      }).join("")
-    +'</div></div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2>'
+    +'<div class="seg" id="pcSeg">'
+      +'<button type="button" class="on" data-pc="home">'+esc(I18N.t("set.pcHome"))+'</button>'
+      +'<button type="button" data-pc="dest">'+esc(I18N.t("set.pcDest"))+'</button>'
+    +'</div>'
+    +'<div id="pcBody"></div></div>'
     +'<div class="card"><h2>'+esc(I18N.t("fx.toggle"))+'</h2><p class="sub">'+esc(I18N.t("fx.desc"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setFxAuto"'+(st.settings.fxAuto?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("fx.toggle"))+'</span></label>'
     + fxStatusHTML()
@@ -1850,13 +1882,37 @@ var UI = (function(){
       st.settings.lang=this.value; I18N.setLang(this.value); STORE.save();
       document.documentElement.lang=this.value; applyStatic(); render();
     });
-    $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
-    $all(".penCost").forEach(function(inp){
-      inp.addEventListener("input",function(){
-        st.settings.penCosts[inp.getAttribute("data-v")] = inp.value===""?null:parseFloat(inp.value);
-        STORE.save();
+    $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); renderPenCosts(pcMode); });
+    // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
+    var pcMode="home";
+    function renderPenCosts(mode){
+      pcMode=mode;
+      var dest=(mode==="dest"), costs=dest?st.settings.travel.penCosts:st.settings.penCosts;
+      var cur=dest?(st.settings.travel.currency||""):st.settings.currency;
+      var h=dest ? '<p class="sub">'+esc(I18N.t("set.pcDestHint"))+'</p>'
+                     +'<div class="field" style="max-width:220px"><label>'+esc(I18N.t("trv.destCur"))+'</label>'+currencyInput("pcDestCur",st.settings.travel.currency)+'</div>'
+                 : '<p class="sub">'+esc(I18N.t("set.penCostsHint"))+'</p>';
+      h+='<div class="pcgrid">'+STRENGTHS.map(function(v){
+        var pc=costs?costs[String(v)]:null;
+        return '<div class="pcitem"><label>'+v+' mg</label><input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(cur)+'"></div>';
+      }).join("")+'</div>';
+      $("#pcBody").innerHTML=h;
+      $all(".penCost").forEach(function(inp){
+        inp.addEventListener("input",function(){
+          var store=dest?st.settings.travel.penCosts:st.settings.penCosts;
+          store[inp.getAttribute("data-v")] = inp.value===""?null:parseFloat(inp.value);
+          STORE.save();
+        });
+      });
+      var dc=$("#pcDestCur"); if(dc) dc.addEventListener("change",function(){ st.settings.travel.currency=(this.value||"").toUpperCase(); STORE.save(); renderPenCosts("dest"); });
+    }
+    $all("#pcSeg button").forEach(function(b){
+      b.addEventListener("click",function(){
+        $all("#pcSeg button").forEach(function(x){ x.classList.remove("on"); });
+        b.classList.add("on"); renderPenCosts(b.getAttribute("data-pc"));
       });
     });
+    renderPenCosts("home");
     $("#setFxAuto").addEventListener("change",function(){
       if(this.checked){
         if(!confirm(I18N.t("fx.consent"))){ this.checked=false; return; }
