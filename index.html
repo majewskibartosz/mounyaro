@@ -99,6 +99,12 @@
   .tcard .big small{font-size:12px;font-weight:600;color:var(--muted)}
   .tcard .meta{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.5}
   .tcard.verdict{border-width:1px}
+  .tcard .vmsg{font-size:15px;font-weight:800;margin:0 0 8px}
+  /* per shot / week / month figure row */
+  .pers{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0 4px}
+  .per{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 6px;text-align:center}
+  .per b{display:block;font-size:14px;font-weight:800;line-height:1.15}
+  .per span{display:block;font-size:10.5px;color:var(--muted);margin-top:2px}
   .tsub{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 8px}
   /* faded currency code after an amount */
   .cur{color:var(--muted);font-weight:600;font-size:.82em;opacity:.85}
@@ -410,6 +416,23 @@ var I18N = (function(){
                     en:"Cheaper from home by {pm} / month ({ps} / shot). Worth bringing."},
     "trv.costLine":{pl:"Taniej na miejscu o {pm} / mies. ({ps} / zastrzyk). Kup na miejscu.",
                     en:"Cheaper there by {pm} / month ({ps} / shot). Buy locally."},
+    "trv.perWeek":{pl:"/ tydzień",en:"/ week"},
+    "trv.perShot2":{pl:"/ zastrzyk",en:"/ shot"},
+    "trv.perMonth2":{pl:"/ miesiąc",en:"/ month"},
+    "trv.lasts":{pl:"1 pen starcza na ~{w} tyg. (~{m} mies.)",en:"1 pen lasts ~{w} weeks (~{m} months)"},
+    "trv.verdictHomeShort":{pl:"Taniej z domu",en:"Cheaper from home"},
+    "trv.verdictDestShort":{pl:"Taniej na miejscu",en:"Cheaper in the destination"},
+    "trv.tripQ":{pl:"Jak długo Cię nie będzie?",en:"How long is your trip?"},
+    "trv.weeks":{pl:"tygodni",en:"weeks"},
+    "trv.months":{pl:"miesięcy",en:"months"},
+    "trv.tripTitle":{pl:"Na Twój wyjazd",en:"For your trip"},
+    "trv.tripBring":{pl:"Weź {k} pen(y) z domu",en:"Bring {k} pen(s) from home"},
+    "trv.tripShotsOver":{pl:"{n} zastrzyków przez {t}",en:"{n} shots over {t}"},
+    "trv.tripHomeCost":{pl:"Koszt z domu: {c}",en:"Cost from home: {c}"},
+    "trv.tripSame":{pl:"Te same peny na miejscu ({k} szt.): {c}",en:"Same pens bought there ({k}): {c}"},
+    "trv.tripRx":{pl:"Peny na receptę na miejscu ({k} szt.): {c}",en:"Prescribed pens there ({k}): {c}"},
+    "trv.tripSave":{pl:"oszczędzasz {c}",en:"you save {c}"},
+    "trv.tripMore":{pl:"drożej o {c}",en:"{c} more"},
     "trv.saveSame":{pl:"Oszczędność vs ten sam pen w kraju docelowym",en:"Saving vs same pen in destination"},
     "trv.saveRx":{pl:"Oszczędność vs pen na receptę w kraju docelowym",en:"Saving vs prescribed pen in destination"},
     "trv.saveMonth":{pl:"/ miesiąc",en:"/ month"},
@@ -694,14 +717,27 @@ var DOMAIN = (function(){
       var sp=shots(str); if(sp<=0) return null;
       var per=priceHome/sp;
       return { strength:str, priceHome:r3(priceHome), shotsPerPen:sp,
-        perShot:r3(per), perMonth:r3(per*monthDays/interval), coverMonths:r3(sp*interval/monthDays) };
+        perShot:r3(per), perWeek:r3(per*7/interval), perMonth:r3(per*monthDays/interval),
+        coverWeeks:r3(sp*interval/7), coverMonths:r3(sp*interval/monthDays) };
     }
     function toHome(p){ return (p!=null && rate) ? p/rate : null; }
     var home=scenario(S, o.homePrice), same=scenario(S, toHome(o.destPriceSame)), rx=scenario(o.rxStrength, toHome(o.destPriceRx));
     function dS(x){ return (home&&x)?r3(x.perShot-home.perShot):null; }
+    function dW(x){ return (home&&x)?r3(x.perWeek-home.perWeek):null; }
     function dM(x){ return (home&&x)?r3(x.perMonth-home.perMonth):null; }
-    return { home:home, same:same, rx:rx, needRate:!rate,
-      saveVsSame:dS(same), saveVsSameMonth:dM(same), saveVsRx:dS(rx), saveVsRxMonth:dM(rx) };
+    // Trip planner: how many whole pens to cover a trip of o.tripDays, and the
+    // total trip cost for each route (you buy whole pens).
+    var trip=null;
+    if(o.tripDays && o.tripDays>0){
+      var shotsTrip=Math.floor(o.tripDays/interval)+1;
+      function leg(sc){ if(!sc) return null; var pens=Math.max(1,Math.ceil(shotsTrip/sc.shotsPerPen)); return { pens:pens, cost:r3(pens*sc.priceHome) }; }
+      var lh=leg(home), ls=leg(same), lr=leg(rx);
+      trip={ days:o.tripDays, shots:shotsTrip, home:lh, same:ls, rx:lr,
+        saveSame:(lh&&ls)?r3(ls.cost-lh.cost):null, saveRx:(lh&&lr)?r3(lr.cost-lh.cost):null };
+    }
+    return { home:home, same:same, rx:rx, needRate:!rate, trip:trip,
+      saveVsSame:dS(same), saveVsSameWeek:dW(same), saveVsSameMonth:dM(same),
+      saveVsRx:dS(rx), saveVsRxWeek:dW(rx), saveVsRxMonth:dM(rx) };
   }
 
   return {
@@ -724,7 +760,7 @@ var STORE = (function(){
       schemaVersion:1,
       settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
-        travel:{ currency:"", rate:null, dose:null, penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
+        travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" } },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
@@ -1515,10 +1551,19 @@ var UI = (function(){
     function travelDose(){ var d=st.settings.travel.dose; return d!=null?d:(strength||5); }
     function rxStrength(){ var D=travelDose(); return STRENGTHS.indexOf(D)>=0?D:null; }
     function fieldsTravel(){
-      var D=travelDose();
+      var tv=st.settings.travel, D=travelDose();
+      var tu=tv.tripUnit==="months"?"months":"weeks";
       return '<div class="note" style="margin:0 0 12px">'+esc(I18N.t("trv.intro"))+'</div>'
         +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
-        +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trv.dose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oDose" value="'+D+'"></div>'
+        +'<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("trv.dose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oDose" value="'+D+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("trv.tripQ"))+'</label><div class="row" style="flex-wrap:nowrap;gap:6px">'
+          +'<input type="number" inputmode="numeric" id="oTrip" value="'+(tv.tripValue!=null?tv.tripValue:"")+'" placeholder="4" style="flex:1">'
+          +'<select id="oTripUnit" style="flex:0 0 auto;width:auto">'
+            +'<option value="weeks"'+(tu==="weeks"?" selected":"")+'>'+esc(I18N.t("trv.weeks"))+'</option>'
+            +'<option value="months"'+(tu==="months"?" selected":"")+'>'+esc(I18N.t("trv.months"))+'</option>'
+          +'</select></div></div>'
+        +'</div>'
         +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trv.rate"))+' <span class="muted tiny" id="oRateHint"></span></label><div id="oRateWrap"></div></div>'
         +'<p class="tiny muted" id="oPricesNote" style="margin:0 0 8px"></p>'
         +'<label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="oOverride"><span class="switch"></span><span>'+esc(I18N.t("trv.override"))+'</span></label>'
@@ -1605,6 +1650,8 @@ var UI = (function(){
       travelLabels(); updateRateField();
       bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; STORE.save(); travelLabels(); });
       $("#oDose").addEventListener("change",function(){ st.settings.travel.dose=this.value===""?null:parseFloat(this.value); STORE.save(); travelLabels(); });
+      $("#oTrip").addEventListener("input",function(){ st.settings.travel.tripValue=this.value===""?null:parseFloat(this.value); STORE.save(); });
+      $("#oTripUnit").addEventListener("change",function(){ st.settings.travel.tripUnit=this.value; STORE.save(); });
       $("#oOverride").addEventListener("change",function(){ $("#oOverrideWrap").className=this.checked?"":"hidden"; });
       $("#oHomePrice").addEventListener("input",function(){ st.settings.penCosts[String(strength)]=this.value===""?null:parseFloat(this.value); STORE.save(); });
       $("#oDestSame").addEventListener("input",function(){ st.settings.travel.penCosts[String(strength)]=this.value===""?null:parseFloat(this.value); STORE.save(); });
@@ -1663,9 +1710,10 @@ var UI = (function(){
     var destSame=(tv.penCosts?tv.penCosts[String(S)]:null);
     var destRx = rxStr==null ? null : (rxStr===S ? destSame : (tv.penCosts?tv.penCosts[String(rxStr)]:null));
     var homePrice = st.settings.penCosts ? st.settings.penCosts[String(S)] : null;
+    var tripDays = (tv.tripValue>0) ? (tv.tripUnit==="months" ? tv.tripValue*30.4 : tv.tripValue*7) : 0;
     var r=DOMAIN.travelCompare({ homeStrength:S, dose:D, intervalDays:st.calc.intervalDays||7,
       golden:st.settings.goldenDose, rate:tv.rate, homePrice:homePrice,
-      destPriceSame:destSame, destPriceRx:destRx, rxStrength:rxStr });
+      destPriceSame:destSame, destPriceRx:destRx, rxStrength:rxStr, tripDays:tripDays });
     if(!r.home || (!r.same && !r.rx)){
       $("#optResult").innerHTML='<div class="card"><div class="empty">'+esc(I18N.t("trv.needInputs"))+'</div></div>'; return;
     }
@@ -1674,23 +1722,46 @@ var UI = (function(){
     function moneyTxt(n){ return fmtMoneyTxt(n,homeCur); }
     function destOrig(n){ return fmtNum(n,0); }
     function tx(key,map){ var t=I18N.t(key); for(var k in map){ t=t.split("{"+k+"}").join(map[k]); } return t; }
-    // one full-width breakdown card: title, plain explanation, big pen price, meta
+    // a row of three period figures (per shot / per week / per month)
+    function periods(perShot, perWeek, perMonth, col){
+      var c=col?' style="color:'+col+'"':'';
+      function cell(amt, unitKey){ return '<div class="per"><b'+c+'>'+money(amt)+'</b><span>'+esc(I18N.t(unitKey))+'</span></div>'; }
+      return '<div class="pers">'+cell(perShot,"trv.perShot2")+cell(perWeek,"trv.perWeek")+cell(perMonth,"trv.perMonth2")+'</div>';
+    }
+    // one full-width breakdown card: title, plain explanation, big pen price,
+    // the three period costs and how long one pen lasts.
     function scCard(title, ex, sc){
       if(!sc) return "";
       return '<div class="tcard"><h3>'+esc(title)+'</h3><p class="ex">'+esc(ex)+'</p>'
         +'<div class="big">'+money(sc.priceHome)+' <small>'+esc(I18N.t("trv.perPen"))+'</small></div>'
-        +'<div class="meta">'+money(sc.perMonth)+' / '+esc(I18N.t("opt.months"))
-          +' · '+sc.shotsPerPen+' '+esc(I18N.t("trv.shotsPerPen"))
-          +' · '+esc(I18N.t("trv.covers"))+' '+fmtNum(sc.coverMonths,1)+' '+esc(I18N.t("opt.months"))+'</div></div>';
+        + periods(sc.perShot, sc.perWeek, sc.perMonth)
+        +'<div class="meta">'+esc(tx("trv.lasts",{w:fmtNum(sc.coverWeeks,1),m:fmtNum(sc.coverMonths,1)}))+'</div></div>';
     }
-    function verdictCard(titleKey, titleS, perShot, perMonth){
+    function verdictCard(titleKey, titleS, perShot, perWeek, perMonth){
       if(perShot==null) return "";
       var save=perShot>0, col=save?"var(--good)":"var(--bad)";
-      var line=tx(save?"trv.saveLine":"trv.costLine",{pm:moneyTxt(Math.abs(perMonth)),ps:moneyTxt(Math.abs(perShot))});
+      var msg=save?I18N.t("trv.verdictHomeShort"):I18N.t("trv.verdictDestShort");
       return '<div class="tcard verdict" style="border-color:'+col+'">'
         +'<h3>'+esc(tx(titleKey,{s:titleS}))+'</h3>'
-        +'<div class="big" style="color:'+col+'">'+money(Math.abs(perMonth))+' <small style="color:'+col+'">/ '+esc(I18N.t("opt.months"))+'</small></div>'
-        +'<div class="meta" style="color:'+col+'">'+esc(line)+'</div></div>';
+        +'<div class="vmsg" style="color:'+col+'">'+esc(msg)+'</div>'
+        + periods(Math.abs(perShot), Math.abs(perWeek), Math.abs(perMonth), col)+'</div>';
+    }
+    // trip planner card (only when a trip length is given)
+    function tripCard(){
+      var t=r.trip; if(!t || !t.home) return "";
+      var tripTxt=(tv.tripUnit==="months"?tv.tripValue+" "+I18N.t("trv.months"):tv.tripValue+" "+I18N.t("trv.weeks"));
+      var h='<div class="tcard" style="border-color:var(--brand)"><h3>'+esc(I18N.t("trv.tripTitle"))+'</h3>'
+        +'<div class="big">'+esc(tx("trv.tripBring",{k:t.home.pens}))+'</div>'
+        +'<div class="meta">'+esc(tx("trv.tripShotsOver",{n:t.shots,t:tripTxt}))+' · '+esc(tx("trv.tripHomeCost",{c:moneyTxt(t.home.cost)}))+'</div>';
+      function leg(label, lg, save){
+        if(!lg) return "";
+        var verdict = save==null?"" : (save>0?tx("trv.tripSave",{c:moneyTxt(Math.abs(save))}):tx("trv.tripMore",{c:moneyTxt(Math.abs(save))}));
+        var col=save==null?"var(--muted)":(save>0?"var(--good)":"var(--bad)");
+        return '<div class="meta" style="margin-top:8px">'+esc(label)+(verdict?' — <b style="color:'+col+'">'+esc(verdict)+'</b>':'')+'</div>';
+      }
+      h+=leg(tx("trv.tripSame",{k:t.same?t.same.pens:0,c:t.same?moneyTxt(t.same.cost):"—"}), t.same, t.saveSame);
+      if(rxStr!==S) h+=leg(tx("trv.tripRx",{k:t.rx?t.rx.pens:0,c:t.rx?moneyTxt(t.rx.cost):"—"}), t.rx, t.saveRx);
+      return h+'</div>';
     }
     var rateNote="";
     if(tv.rate!=null && tv.rate>0 && destCur){
@@ -1700,17 +1771,19 @@ var UI = (function(){
     var exHome=tx("trv.exHome",{s:S,d:D,n:r.home.shotsPerPen,m:fmtNum(r.home.coverMonths,1)});
     var exSame=r.same?tx("trv.exSame",{s:S,orig:destOrig(destSame),cur:destCur,pln:moneyTxt(r.same.priceHome),n:r.same.shotsPerPen}):"";
     var exRx=r.rx?tx("trv.exRx",{s:rxStr,orig:destOrig(destRx),cur:destCur,pln:moneyTxt(r.rx.priceHome),n:r.rx.shotsPerPen,k:pensNeeded}):"";
+    var trip=tripCard();
     var html='<div class="card"><h2>'+esc(I18N.t("opt.modeTravel"))+'</h2>'+rateNote
+      + (trip?'<div class="tgrid" style="margin-bottom:14px">'+trip+'</div>':'')
+      +'<div class="tsub">'+esc(I18N.t("trv.verdictTitle"))+'</div>'
+      +'<div class="tgrid two">'
+      + verdictCard("trv.vsSame", S, r.saveVsSame, r.saveVsSameWeek, r.saveVsSameMonth)
+      + (rxStr!==S ? verdictCard("trv.vsRx", rxStr, r.saveVsRx, r.saveVsRxWeek, r.saveVsRxMonth) : "")
+      +'</div>'
       +'<div class="tsub">'+esc(tx("trv.whatPay",{home:homeCur}))+'</div>'
       +'<div class="tgrid">'
       + scCard(tx("trv.rowHome",{s:S}), exHome, r.home)
       + scCard(tx("trv.rowSame",{s:S}), exSame, r.same)
       + (r.rx && rxStr!==S ? scCard(tx("trv.rowRx",{s:rxStr}), exRx, r.rx) : "")
-      +'</div>'
-      +'<div class="tsub">'+esc(I18N.t("trv.verdictTitle"))+'</div>'
-      +'<div class="tgrid two">'
-      + verdictCard("trv.vsSame", S, r.saveVsSame, r.saveVsSameMonth)
-      + (rxStr!==S ? verdictCard("trv.vsRx", rxStr, r.saveVsRx, r.saveVsRxMonth) : "")
       +'</div>';
     if(rxStr==null) html+='<div class="warnbox" style="margin-top:8px">'+esc(I18N.t("trv.rxNA"))+'</div>';
     html+='</div>';
@@ -1901,9 +1974,10 @@ var UI = (function(){
       var h=dest ? '<p class="sub">'+esc(I18N.t("set.pcDestHint"))+'</p>'
                      +'<div class="field" style="max-width:220px"><label>'+esc(I18N.t("trv.destCur"))+'</label>'+currencyInput("pcDestCur",st.settings.travel.currency)+'</div>'
                  : '<p class="sub">'+esc(I18N.t("set.penCostsHint"))+'</p>';
+      var curTag=cur?' <span class="cur">'+esc(cur)+'</span>':'';
       h+='<div class="pcgrid">'+STRENGTHS.map(function(v){
         var pc=costs?costs[String(v)]:null;
-        return '<div class="pcitem"><label>'+v+' mg</label><input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(cur)+'"></div>';
+        return '<div class="pcitem"><label>'+v+' mg'+curTag+'</label><input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(cur)+'"></div>';
       }).join("")+'</div>';
       $("#pcBody").innerHTML=h;
       $all(".penCost").forEach(function(inp){
