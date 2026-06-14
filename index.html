@@ -82,7 +82,7 @@
   .pcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
   @media(max-width:560px){.pcgrid{grid-template-columns:repeat(2,1fr)}}
   .pcitem{display:flex;flex-direction:column;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px}
-  .pcitem label{margin:0;font-size:12px;font-weight:700;color:var(--ink)}
+  .pcitem label{margin:0;font-size:12px;font-weight:700;color:var(--ink);display:flex;justify-content:space-between;align-items:baseline;gap:6px}
   .pcitem input{padding:7px 8px;font-size:14px;border-radius:8px}
   /* segmented toggle */
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--soft);margin:0 0 12px}
@@ -102,6 +102,7 @@
   .tcard .vmsg{font-size:15px;font-weight:800;margin:0 0 8px}
   /* per shot / week / month figure row */
   .pers{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0 4px}
+  .pers.two{grid-template-columns:repeat(2,1fr)}
   .per{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 6px;text-align:center}
   .per b{display:block;font-size:14px;font-weight:800;line-height:1.15}
   .per span{display:block;font-size:10.5px;color:var(--muted);margin-top:2px}
@@ -422,6 +423,10 @@ var I18N = (function(){
     "trv.lasts":{pl:"1 pen starcza na ~{w} tyg. (~{m} mies.)",en:"1 pen lasts ~{w} weeks (~{m} months)"},
     "trv.verdictHomeShort":{pl:"Taniej z domu",en:"Cheaper from home"},
     "trv.verdictDestShort":{pl:"Taniej na miejscu",en:"Cheaper in the destination"},
+    "trv.vsSameEx":{pl:"Przywozisz swój pen {s} mg z domu, zamiast kupować taki sam na miejscu. Ile oszczędzasz:",
+                    en:"Bringing your {s} mg pen from home instead of buying the same one there. What you save:"},
+    "trv.vsRxEx":{pl:"Przywozisz swój pen {s} mg z domu, zamiast kupować mniejsze peny {r} mg na miejscu. Ile oszczędzasz:",
+                  en:"Bringing your {s} mg pen from home instead of buying smaller {r} mg pens there. What you save:"},
     "trv.tripQ":{pl:"Jak długo Cię nie będzie?",en:"How long is your trip?"},
     "trv.weeks":{pl:"tygodni",en:"weeks"},
     "trv.months":{pl:"miesięcy",en:"months"},
@@ -438,8 +443,8 @@ var I18N = (function(){
     "trv.saveMonth":{pl:"/ miesiąc",en:"/ month"},
     "trv.cheaperHome":{pl:"Taniej z domu — opłaca się przywieźć",en:"Cheaper from home — worth bringing"},
     "trv.cheaperDest":{pl:"Taniej w kraju docelowym — kup na miejscu",en:"Cheaper in destination — buy there"},
-    "trv.rxNA":{pl:"Twoja dawka nie odpowiada gotowej mocy pena, więc porównanie „na receptę” pomijamy.",
-                en:"Your dose isn't a manufactured pen strength, so the “prescribed pen” comparison is skipped."},
+    "trv.rxNA":{pl:"Twoja dawka jest większa niż największy pen (15 mg), więc porównania „na receptę” nie liczymy.",
+                en:"Your dose is higher than the largest pen (15 mg), so the prescribed-pen comparison isn't shown."},
 
     "fx.toggle":{pl:"Automatyczne kursy walut (online)",en:"Auto-update FX rates (online)"},
     "fx.desc":{pl:"Domyślnie aplikacja jest w 100% offline. Po włączeniu będzie łączyć się z internetem, aby pobrać aktualne kursy walut.",
@@ -729,7 +734,7 @@ var DOMAIN = (function(){
     // total trip cost for each route (you buy whole pens).
     var trip=null;
     if(o.tripDays && o.tripDays>0){
-      var shotsTrip=Math.floor(o.tripDays/interval)+1;
+      var shotsTrip=Math.max(1,Math.ceil(o.tripDays/interval));
       function leg(sc){ if(!sc) return null; var pens=Math.max(1,Math.ceil(shotsTrip/sc.shotsPerPen)); return { pens:pens, cost:r3(pens*sc.priceHome) }; }
       var lh=leg(home), ls=leg(same), lr=leg(rx);
       trip={ days:o.tripDays, shots:shotsTrip, home:lh, same:ls, rx:lr,
@@ -1118,6 +1123,10 @@ var UI = (function(){
 
   /* ---- pen-strength chips (tap to choose) ---- */
   var STRENGTHS=[2.5,5,7.5,10,12.5,15];
+  // The pen a doctor would prescribe for a given dose: the smallest manufactured
+  // strength that is >= the dose (so a non-round dose like 3.3 mg still computes,
+  // using a 5 mg pen). Returns null only if the dose exceeds the largest pen.
+  function rxPenFor(D){ for(var i=0;i<STRENGTHS.length;i++){ if(STRENGTHS[i]>=D) return STRENGTHS[i]; } return null; }
   function chipRow(group, values, sel, unit){
     return '<div class="chips" data-chip="'+group+'">'+values.map(function(v){
       return '<button type="button" class="chip'+(sel==v?" on":"")+'" data-v="'+v+'">'
@@ -1549,7 +1558,7 @@ var UI = (function(){
     // Fields are built once and updated in place (no destructive re-render), so
     // editing a value never steals focus when the dependent labels change.
     function travelDose(){ var d=st.settings.travel.dose; return d!=null?d:(strength||5); }
-    function rxStrength(){ var D=travelDose(); return STRENGTHS.indexOf(D)>=0?D:null; }
+    function rxStrength(){ return rxPenFor(travelDose()); }
     function fieldsTravel(){
       var tv=st.settings.travel, D=travelDose();
       var tu=tv.tripUnit==="months"?"months":"weeks";
@@ -1706,13 +1715,15 @@ var UI = (function(){
     var st=s(), tv=st.settings.travel;
     var S=st.calc.strengthMg||5, D=(tv.dose!=null?tv.dose:S);
     var homeCur=st.settings.currency;
-    var rxStr=(STRENGTHS.indexOf(D)>=0?D:null);
+    var rxStr=rxPenFor(D);
     var destSame=(tv.penCosts?tv.penCosts[String(S)]:null);
     var destRx = rxStr==null ? null : (rxStr===S ? destSame : (tv.penCosts?tv.penCosts[String(rxStr)]:null));
     var homePrice = st.settings.penCosts ? st.settings.penCosts[String(S)] : null;
-    var tripDays = (tv.tripValue>0) ? (tv.tripUnit==="months" ? tv.tripValue*30.4 : tv.tripValue*7) : 0;
+    // A "month" here means 4 weeks (28 days) — the natural unit for a weekly pen,
+    // where one standard pen = 4 doses = 4 weeks ≈ one monthly supply.
+    var tripDays = (tv.tripValue>0) ? (tv.tripUnit==="months" ? tv.tripValue*28 : tv.tripValue*7) : 0;
     var r=DOMAIN.travelCompare({ homeStrength:S, dose:D, intervalDays:st.calc.intervalDays||7,
-      golden:st.settings.goldenDose, rate:tv.rate, homePrice:homePrice,
+      golden:st.settings.goldenDose, rate:tv.rate, homePrice:homePrice, monthDays:28,
       destPriceSame:destSame, destPriceRx:destRx, rxStrength:rxStr, tripDays:tripDays });
     if(!r.home || (!r.same && !r.rx)){
       $("#optResult").innerHTML='<div class="card"><div class="empty">'+esc(I18N.t("trv.needInputs"))+'</div></div>'; return;
@@ -1722,11 +1733,14 @@ var UI = (function(){
     function moneyTxt(n){ return fmtMoneyTxt(n,homeCur); }
     function destOrig(n){ return fmtNum(n,0); }
     function tx(key,map){ var t=I18N.t(key); for(var k in map){ t=t.split("{"+k+"}").join(map[k]); } return t; }
-    // a row of three period figures (per shot / per week / per month)
+    // a row of period figures. When dosing is weekly, per-shot == per-week, so we
+    // show just two cells (shot, month) to avoid two identical numbers.
+    var weekly=((st.calc.intervalDays||7)===7);
     function periods(perShot, perWeek, perMonth, col){
       var c=col?' style="color:'+col+'"':'';
       function cell(amt, unitKey){ return '<div class="per"><b'+c+'>'+money(amt)+'</b><span>'+esc(I18N.t(unitKey))+'</span></div>'; }
-      return '<div class="pers">'+cell(perShot,"trv.perShot2")+cell(perWeek,"trv.perWeek")+cell(perMonth,"trv.perMonth2")+'</div>';
+      return '<div class="pers'+(weekly?' two':'')+'">'+cell(perShot,"trv.perShot2")
+        +(weekly?'':cell(perWeek,"trv.perWeek"))+cell(perMonth,"trv.perMonth2")+'</div>';
     }
     // one full-width breakdown card: title, plain explanation, big pen price,
     // the three period costs and how long one pen lasts.
@@ -1737,12 +1751,13 @@ var UI = (function(){
         + periods(sc.perShot, sc.perWeek, sc.perMonth)
         +'<div class="meta">'+esc(tx("trv.lasts",{w:fmtNum(sc.coverWeeks,1),m:fmtNum(sc.coverMonths,1)}))+'</div></div>';
     }
-    function verdictCard(titleKey, titleS, perShot, perWeek, perMonth){
+    function verdictCard(titleKey, exKey, titleS, perShot, perWeek, perMonth){
       if(perShot==null) return "";
       var save=perShot>0, col=save?"var(--good)":"var(--bad)";
       var msg=save?I18N.t("trv.verdictHomeShort"):I18N.t("trv.verdictDestShort");
       return '<div class="tcard verdict" style="border-color:'+col+'">'
         +'<h3>'+esc(tx(titleKey,{s:titleS}))+'</h3>'
+        +'<p class="ex">'+esc(tx(exKey,{s:S,r:rxStr}))+'</p>'
         +'<div class="vmsg" style="color:'+col+'">'+esc(msg)+'</div>'
         + periods(Math.abs(perShot), Math.abs(perWeek), Math.abs(perMonth), col)+'</div>';
     }
@@ -1776,8 +1791,8 @@ var UI = (function(){
       + (trip?'<div class="tgrid" style="margin-bottom:14px">'+trip+'</div>':'')
       +'<div class="tsub">'+esc(I18N.t("trv.verdictTitle"))+'</div>'
       +'<div class="tgrid two">'
-      + verdictCard("trv.vsSame", S, r.saveVsSame, r.saveVsSameWeek, r.saveVsSameMonth)
-      + (rxStr!==S ? verdictCard("trv.vsRx", rxStr, r.saveVsRx, r.saveVsRxWeek, r.saveVsRxMonth) : "")
+      + verdictCard("trv.vsSame", "trv.vsSameEx", S, r.saveVsSame, r.saveVsSameWeek, r.saveVsSameMonth)
+      + (rxStr!==S ? verdictCard("trv.vsRx", "trv.vsRxEx", rxStr, r.saveVsRx, r.saveVsRxWeek, r.saveVsRxMonth) : "")
       +'</div>'
       +'<div class="tsub">'+esc(tx("trv.whatPay",{home:homeCur}))+'</div>'
       +'<div class="tgrid">'
@@ -1974,10 +1989,10 @@ var UI = (function(){
       var h=dest ? '<p class="sub">'+esc(I18N.t("set.pcDestHint"))+'</p>'
                      +'<div class="field" style="max-width:220px"><label>'+esc(I18N.t("trv.destCur"))+'</label>'+currencyInput("pcDestCur",st.settings.travel.currency)+'</div>'
                  : '<p class="sub">'+esc(I18N.t("set.penCostsHint"))+'</p>';
-      var curTag=cur?' <span class="cur">'+esc(cur)+'</span>':'';
+      var curTag=cur?'<span class="cur">'+esc(cur)+'</span>':'';
       h+='<div class="pcgrid">'+STRENGTHS.map(function(v){
         var pc=costs?costs[String(v)]:null;
-        return '<div class="pcitem"><label>'+v+' mg'+curTag+'</label><input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(cur)+'"></div>';
+        return '<div class="pcitem"><label><span>'+v+' mg</span>'+curTag+'</label><input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(cur)+'"></div>';
       }).join("")+'</div>';
       $("#pcBody").innerHTML=h;
       $all(".penCost").forEach(function(inp){
