@@ -950,30 +950,37 @@ var UI = (function(){
         bl=Math.round(ch(a,4)+(ch(b,4)-ch(a,4))*t);
     return "rgb("+r+","+g+","+bl+")";
   }
-  // Continuous green -> amber -> red as the cycle progresses (0 = just shot, 1 = due).
-  function urgencyColor(frac){
-    frac=Math.max(0,Math.min(1,frac));
-    return frac<0.5 ? lerpHex(RING_GREEN,RING_AMBER,frac/0.5)
-                    : lerpHex(RING_AMBER,RING_RED,(frac-0.5)/0.5);
+  // Continuous green -> amber -> red. Input 0 = green, 0.5 = amber, 1 = red.
+  function urgencyColor(m){
+    m=Math.max(0,Math.min(1,m));
+    return m<0.5 ? lerpHex(RING_GREEN,RING_AMBER,m/0.5)
+                 : lerpHex(RING_AMBER,RING_RED,(m-0.5)/0.5);
   }
+  // Bias the hot colour: stay green until ~60% of the cycle, then ramp to red.
+  function urgency(frac){ frac=Math.max(0,Math.min(1,frac)); return frac<=0.6 ? 0 : (frac-0.6)/0.4; }
   function ringSVG(frac, big, sub){
-    var R=85, C=2*Math.PI*R, off=C*(1-Math.max(0,Math.min(1,frac)));
-    var tip=urgencyColor(frac);
-    // gradientTransform rotate(90) cancels the circle's rotate(-90) so the
-    // gradient stays screen-vertical: green at the top (arc start), red at the
-    // bottom — the arc blends smoothly green->amber->red as it grows clockwise.
+    frac=Math.max(0,Math.min(1,frac));
+    var R=85, C=2*Math.PI*R, off=C*(1-frac);
+    var hot=urgencyColor(urgency(frac));
+    // Gradient follows the ARC, not the screen: green sits on the trailing part
+    // of the arc, the hot colour at the leading edge (the rounded cap). The
+    // vector is derived from frac so the cap is always the "business end" — no
+    // re-greening as the sweep returns to the top at due.
+    var a=2*Math.PI*frac, sa=Math.sin(a), ca=Math.cos(a);
+    var x1=(100-R*sa).toFixed(1), y1=(100+R*ca).toFixed(1),
+        x2=(100+R*sa).toFixed(1), y2=(100-R*ca).toFixed(1);
     return '<svg class="ring" viewBox="0 0 200 200" role="img">'
       +'<defs><linearGradient id="ringGrad" gradientUnits="userSpaceOnUse" '
-        +'x1="100" y1="15" x2="100" y2="185" gradientTransform="rotate(90 100 100)">'
+        +'x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'">'
         +'<stop offset="0%" stop-color="'+RING_GREEN+'"/>'
-        +'<stop offset="50%" stop-color="'+RING_AMBER+'"/>'
-        +'<stop offset="100%" stop-color="'+RING_RED+'"/>'
+        +'<stop offset="55%" stop-color="'+RING_GREEN+'"/>'
+        +'<stop offset="100%" stop-color="'+hot+'"/>'
       +'</linearGradient></defs>'
       +'<circle cx="100" cy="100" r="85" fill="none" stroke="var(--line)" stroke-width="14"/>'
       +'<circle cx="100" cy="100" r="85" fill="none" stroke="url(#ringGrad)" stroke-width="14" stroke-linecap="round" '
         +'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 100 100)" '
         +'style="transition:stroke-dashoffset .8s cubic-bezier(.22,1,.36,1)"/>'
-      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+tip+'" '
+      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+hot+'" '
         +'style="transition:fill .8s ease">'+esc(big)+'</text>'
       +'<text x="100" y="126" text-anchor="middle" font-size="12" fill="var(--muted)">'+esc(sub)+'</text>'
       +'</svg>';
