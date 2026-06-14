@@ -19,7 +19,10 @@ A free, ad-free, **privacy-first** weight tracker + Mounjaro (tirzepatide) KwikP
   - **Slow progression** — go from dose A to dose B on one pen; get several titration plans
     (longest/gentle, even, reach-then-maintain) with a week-by-week table.
   - **Golden dose** toggle (extra leftover clicks) — **off by default**, with a safety warning.
-- **Polish 🇵🇱 / English 🇬🇧** toggle.
+- **Polish 🇵🇱 / English 🇬🇧** toggle, **dark mode**.
+- **Installable PWA** — add to home screen, works offline.
+- **Optional linked file (auto-save)** on Chromium browsers — bind to a real `.json` file and
+  auto-save every change (see below).
 - **Mobile-first & responsive.**
 
 ## The click math
@@ -32,9 +35,27 @@ Every Mounjaro KwikPen = **240 clicks** = **4 labeled doses** (60 clicks per dos
 
 ## How to use it
 
-**Locally:** just double-click `index.html` — it opens in any browser and works offline.
+**Locally:** just double-click `index.html` — it opens in any browser and works offline. (The
+PWA/offline-cache and linked-file features only activate when the app is served over `https`,
+not from a local file — but the app itself is fully functional offline either way.)
 
-**Host for free (Netlify):** drag the folder onto <https://app.netlify.com/drop>. Done.
+### Host for free on Vercel (static, no build)
+
+1. Push this repo to GitHub (already done if you're reading this there).
+2. Go to <https://vercel.com> → **Add New… → Project** → import this repository.
+3. Framework Preset: **Other** (it's plain static files — no build command, no output dir).
+4. **Deploy.** You get an `https://…vercel.app` URL with global CDN + automatic HTTPS.
+5. Optional: add a free custom domain under **Project → Settings → Domains**.
+
+`vercel.json` ships strict security headers (a Content-Security-Policy that blocks any
+third-party network calls — reinforcing that nothing about you leaves your device).
+
+> Netlify works too: drag the folder onto <https://app.netlify.com/drop>.
+
+### Install as an app (PWA)
+
+Open the deployed `https` URL, then **Add to Home Screen** (Android/Chrome) or **Install**
+(desktop Chrome/Edge). It launches fullscreen and works offline.
 
 ## Where is my data? (Privacy)
 
@@ -43,9 +64,17 @@ Nothing is ever sent to a server. Other people who open the same page see **none
 
 ### Moving data between devices
 
-Because data is per-device, use **Settings → Export to file** to download a backup `.json`.
-Keep that file in a cloud folder that auto-syncs (e.g. **MEGA**, Dropbox), and on another
-device use **Settings → Import from file** to load it.
+**Every browser — manual backup:** use **Settings → Export to file** to download a backup `.json`.
+Keep that file in a cloud folder that auto-syncs (e.g. **MEGA**, Dropbox), and on another device
+use **Settings → Import from file** to load it.
+
+**Chromium browsers (Chrome, Edge, Vivaldi, Android Chrome) — linked file (auto-save):**
+In **Settings → Linked file** you can bind the app to a real `.json` file. After that, every
+change auto-saves to that file. Put the file in your MEGA/Dropbox folder and it roams between
+your devices; on each device, open the app and **Link existing file** (or it reconnects
+automatically after a one-tap permission per session). The app keeps the **newer** copy when the
+local data and the file disagree. *Not available on iPhone/Safari or Firefox — those use the
+manual Export/Import above.*
 
 ## Disclaimer
 
