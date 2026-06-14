@@ -75,6 +75,13 @@
   .chip .cv{display:block;font-weight:800;font-size:16px;line-height:1.1}
   .chip .cu{display:block;font-size:11px;color:var(--muted);margin-top:2px}
   .chip.on{border-color:var(--brand);background:rgba(14,165,164,.10);box-shadow:0 0 0 1px var(--brand) inset}
+
+  /* compact price tiles (per-pen costs) */
+  .pcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  @media(max-width:560px){.pcgrid{grid-template-columns:repeat(2,1fr)}}
+  .pcitem{display:flex;flex-direction:column;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px}
+  .pcitem label{margin:0;font-size:12px;font-weight:700;color:var(--ink)}
+  .pcitem input{padding:7px 8px;font-size:14px;border-radius:8px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 
   button.btn{
@@ -86,6 +93,8 @@
   button.btn.ghost{background:var(--soft);color:var(--ink);border:1px solid var(--line)}
   button.btn.danger{background:#fee2e2;color:var(--bad)}
   button.btn.sm{padding:8px 12px;font-size:13px}
+  /* Full/Half pattern toggles: fixed width so switching label never shifts layout */
+  button.fracBtn{min-width:104px;text-align:center}
 
   .toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
   .switch{width:44px;height:26px;border-radius:999px;background:#cbd5e1;position:relative;transition:background .2s}
@@ -361,6 +370,19 @@ var I18N = (function(){
     "trv.cheaperDest":{pl:"Taniej w kraju docelowym — kup na miejscu",en:"Cheaper in destination — buy there"},
     "trv.rxNA":{pl:"Twoja dawka nie odpowiada gotowej mocy pena, więc porównanie „na receptę” pomijamy.",
                 en:"Your dose isn't a manufactured pen strength, so the “prescribed pen” comparison is skipped."},
+
+    "fx.toggle":{pl:"Automatyczne kursy walut (online)",en:"Auto-update FX rates (online)"},
+    "fx.desc":{pl:"Domyślnie aplikacja jest w 100% offline. Po włączeniu będzie łączyć się z internetem, aby pobrać aktualne kursy walut.",
+               en:"By default the app is 100% offline. When enabled, it will connect to the internet to fetch current exchange rates."},
+    "fx.consent":{pl:"To zmienia tryb aplikacji: przestaje być w pełni offline i wykona połączenie sieciowe z open.er-api.com, aby pobrać kursy walut. Kursy są orientacyjne — zweryfikuj je. Włączyć?",
+                  en:"This changes the app's mode: it stops being fully offline and will make a network call to open.er-api.com to fetch exchange rates. Rates are indicative — verify them. Enable?"},
+    "fx.online":{pl:"Tryb online: kursy z open.er-api.com",en:"Online mode: rates from open.er-api.com"},
+    "fx.lastUpdate":{pl:"Ostatnia aktualizacja",en:"Last update"},
+    "fx.refresh":{pl:"Odśwież kursy",en:"Refresh rates"},
+    "fx.fetching":{pl:"Pobieranie kursów…",en:"Fetching rates…"},
+    "fx.error":{pl:"Nie udało się pobrać kursów (brak sieci?). Wpisz kurs ręcznie.",en:"Couldn't fetch rates (offline?). Enter the rate manually."},
+    "fx.badge":{pl:"auto · online",en:"auto · online"},
+    "fx.noPair":{pl:"Brak kursu dla tej waluty — wpisz ręcznie.",en:"No rate for this currency — enter manually."},
 
     "set.title":{pl:"Ustawienia i dane",en:"Settings & data"},
     "set.sub":{pl:"Dane są zapisywane tylko w tej przeglądarce. Nikt inny ich nie widzi.",en:"Data is stored only in this browser. No one else can see it."},
@@ -651,7 +673,8 @@ var STORE = (function(){
       schemaVersion:1,
       settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
-        travel:{ currency:"", rate:null, dose:null, penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } } },
+        travel:{ currency:"", rate:null, dose:null, penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
+        fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" } },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] },
@@ -1027,6 +1050,28 @@ var UI = (function(){
     return '<input type="text" list="curList" id="'+id+'" value="'+esc(value||"")+'" maxlength="4" autocomplete="off" placeholder="USD">';
   }
 
+  /* ---- opt-in online FX rates (off by default; only fires when enabled) ---- */
+  function fetchFx(base, cb){
+    base=(base||"").toUpperCase();
+    if(!base){ if(cb) cb(new Error("noBase")); return; }
+    fetch("https://open.er-api.com/v6/latest/"+encodeURIComponent(base))
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(j && j.result==="success" && j.rates){
+          STORE.state.settings.fx={ base:base, rates:j.rates, fetchedAt:Date.now(), updated:j.time_last_update_utc||"" };
+          STORE.save(); if(cb) cb(null, STORE.state.settings.fx);
+        } else if(cb) cb(new Error("bad"));
+      })
+      .catch(function(e){ if(cb) cb(e); });
+  }
+  // Cached home->dest rate (1 home = N dest), or null when unavailable.
+  function fxRate(home, dest){
+    var fx=STORE.state.settings.fx; home=(home||"").toUpperCase(); dest=(dest||"").toUpperCase();
+    if(!fx || !fx.rates || fx.base!==home) return null;
+    var r=fx.rates[dest];
+    return (typeof r==="number" && r>0) ? r : null;
+  }
+
   /* ---- toast ---- */
   function toast(msg){
     var t=$("#toast");
@@ -1293,7 +1338,7 @@ var UI = (function(){
     +'<div class="card"><p class="sub">'+esc(I18N.t("cost.sub"))+'</p>'
     +'<div class="grid g2">'
     +'<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+'</label><input type="number" inputmode="decimal" id="cPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label><input type="text" id="cCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("cCur",st.settings.currency)+'</div>'
     +'</div>'
     +'<div class="field"><label>'+esc(I18N.t("cost.penStrength"))+'</label>'+chipRow("cStr",STRENGTHS,st.calc.strengthMg||5,"mg")+'</div>'
     +'</div>'
@@ -1342,8 +1387,8 @@ var UI = (function(){
     +'</select></div>'
     +'<div id="oFields"></div>'
     +'<div class="grid g3">'
-    +  '<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
-    +  '<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label><input type="text" id="oCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +  '<div class="field"><label><span id="oPriceLbl">'+esc(I18N.t("cost.pricePerPen"))+'</span> <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
+    +  '<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("oCur",st.settings.currency)+'</div>'
     +  '<div class="field"><label>'+esc(I18N.t("opt.interval"))+'</label><input type="number" inputmode="numeric" id="oInterval" value="'+(st.calc.intervalDays||7)+'" min="1"></div>'
     +'</div>'
     +'<p class="tiny muted" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
@@ -1414,7 +1459,7 @@ var UI = (function(){
         +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trv.dose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oDose" value="'+D+'"></div>'
         +'<div class="grid g2">'
         +'<div class="field"><label>'+esc(I18N.t("trv.destCur"))+'</label>'+currencyInput("oDestCur",destCur)+'</div>'
-        +'<div class="field"><label>'+esc(I18N.t("trv.rate"))+' <span class="muted tiny" id="oRateHint"></span></label><input type="number" inputmode="decimal" id="oRate" value="'+(tv.rate!=null?tv.rate:"")+'" placeholder="1.0"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("trv.rate"))+' <span class="muted tiny" id="oRateHint"></span></label><div id="oRateWrap"></div></div>'
         +'</div>'
         +'<div class="field"><label id="oSameLbl"></label><input type="number" inputmode="decimal" id="oDestSame" value="'+(same!=null?same:"")+'" placeholder="'+esc(destCur||"")+'"></div>'
         +'<div class="field" id="oRxWrap"><label id="oRxLbl"></label><input type="number" inputmode="decimal" id="oDestRx" placeholder="'+esc(destCur||"")+'"></div>';
@@ -1436,6 +1481,43 @@ var UI = (function(){
         if(wrap) wrap.style.display="none";
       }
     }
+    function bindRateInput(){
+      var el=$("#oRate"); if(el) el.addEventListener("change",function(){ st.settings.travel.rate=this.value===""?null:parseFloat(this.value); STORE.save(); });
+    }
+    function doFetchForTravel(){
+      var note=$("#oFxNote"); if(note) note.textContent=I18N.t("fx.fetching");
+      fetchFx(st.settings.currency, function(err){
+        if(err){ var n=$("#oFxNote"); if(n) n.textContent=I18N.t("fx.error"); return; }
+        updateRateField();
+      });
+    }
+    // The exchange-rate control: read-only auto value when online FX is on and a
+    // rate is cached, otherwise a manual input (with a fetch when the cache misses).
+    function updateRateField(){
+      var wrap=$("#oRateWrap"); if(!wrap) return;
+      var tv=st.settings.travel, homeCur=st.settings.currency, destCur=tv.currency||"";
+      if(!st.settings.fxAuto){
+        wrap.innerHTML='<input type="number" inputmode="decimal" id="oRate" value="'+(tv.rate!=null?tv.rate:"")+'" placeholder="1.0">';
+        bindRateInput(); return;
+      }
+      var rate=fxRate(homeCur,destCur);
+      if(rate!=null){
+        tv.rate=rate; STORE.save();
+        var fx=st.settings.fx;
+        wrap.innerHTML='<div class="row" style="gap:8px;align-items:center"><input type="text" value="'+rate+'" readonly style="max-width:140px;background:var(--soft)">'
+          +'<span class="pill" style="background:rgba(14,165,164,.14);color:var(--brand)">'+esc(I18N.t("fx.badge"))+'</span>'
+          +'<button type="button" class="btn ghost sm" id="oFxRefresh">'+esc(I18N.t("fx.refresh"))+'</button></div>'
+          +'<div class="tiny muted" style="margin-top:5px">🌐 '+esc(I18N.t("fx.online"))+(fx&&fx.updated?' · '+esc(fx.updated):'')+'</div>';
+      } else {
+        wrap.innerHTML='<input type="number" inputmode="decimal" id="oRate" value="'+(tv.rate!=null?tv.rate:"")+'" placeholder="1.0">'
+          +'<div class="tiny muted" id="oFxNote" style="margin-top:5px">🌐 '+esc(I18N.t("fx.online"))+'</div>';
+        bindRateInput();
+        var fx2=st.settings.fx, baseOk=fx2&&fx2.rates&&fx2.base===(homeCur||"").toUpperCase();
+        if(!baseOk && homeCur){ doFetchForTravel(); }
+        else { var n=$("#oFxNote"); if(n) n.textContent=I18N.t("fx.noPair"); }
+      }
+      var fr=$("#oFxRefresh"); if(fr) fr.addEventListener("click",doFetchForTravel);
+    }
     // Picking a strength chip pre-fills the pen price from the per-pen cost saved
     // in Settings (when present); the inline value stays an editable per-calc override.
     function autofillPrice(v){
@@ -1447,11 +1529,10 @@ var UI = (function(){
     }
     function renderTravelFields(){
       $("#oFields").innerHTML = fieldsTravel();
-      travelLabels();
+      travelLabels(); updateRateField();
       bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; autofillPrice(v); STORE.save(); travelLabels(); });
       $("#oDose").addEventListener("change",function(){ st.settings.travel.dose=this.value===""?null:parseFloat(this.value); STORE.save(); travelLabels(); });
-      $("#oDestCur").addEventListener("change",function(){ st.settings.travel.currency=(this.value||"").toUpperCase(); STORE.save(); travelLabels(); });
-      $("#oRate").addEventListener("change",function(){ st.settings.travel.rate=this.value===""?null:parseFloat(this.value); STORE.save(); });
+      $("#oDestCur").addEventListener("change",function(){ st.settings.travel.currency=(this.value||"").toUpperCase(); STORE.save(); travelLabels(); updateRateField(); });
       $("#oDestSame").addEventListener("input",function(){ st.settings.travel.penCosts[String(strength)]=this.value===""?null:parseFloat(this.value); STORE.save(); });
       $("#oDestRx").addEventListener("input",function(){
         var rxStr=rxStrength(); if(rxStr!=null) st.settings.travel.penCosts[String(rxStr)]=this.value===""?null:parseFloat(this.value); STORE.save();
@@ -1459,6 +1540,7 @@ var UI = (function(){
     }
     function renderFields(){
       var mode=$("#oMode").value;
+      if($("#oPriceLbl")) $("#oPriceLbl").textContent = (mode==="travel") ? I18N.t("trv.homePrice") : I18N.t("cost.pricePerPen");
       if(mode==="travel"){ renderTravelFields(); return; }
       $("#oFields").innerHTML = mode==="stretch"?fieldsStretch():fieldsProg();
       bindStrengthChips();
@@ -1666,6 +1748,13 @@ var UI = (function(){
     }); });
     if((b=$("#linkUnlink"))) b.addEventListener("click",function(){ STORE.unlinkFile(function(){ updateBanner(); viewSettings(); }); });
   }
+  function fxStatusHTML(){
+    if(!s().settings.fxAuto) return "";
+    var fx=s().settings.fx, when=(fx&&fx.updated)?fx.updated:(fx&&fx.fetchedAt?new Date(fx.fetchedAt).toLocaleString():"—");
+    return '<div class="note" style="margin-top:10px">🌐 '+esc(I18N.t("fx.online"))
+      +'<br><span class="muted">'+esc(I18N.t("fx.lastUpdate"))+': '+esc(when)+'</span>'
+      +'<div style="margin-top:8px"><button class="btn ghost sm" id="setFxRefresh">'+esc(I18N.t("fx.refresh"))+'</button></div></div>';
+  }
   function viewSettings(){
     var st=s();
     var html=''
@@ -1676,16 +1765,20 @@ var UI = (function(){
       +'<option value="pl"'+(st.settings.lang==="pl"?" selected":"")+'>Polski</option>'
       +'<option value="en"'+(st.settings.lang==="en"?" selected":"")+'>English</option>'
     +'</select></div>'
-    +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label><input type="text" id="setCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label>'+currencyInput("setCur",st.settings.currency)+'</div>'
     +'</div></div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2><p class="sub">'+esc(I18N.t("set.penCostsHint"))+'</p>'
-    +'<div class="grid g3">'
+    +'<div class="pcgrid">'
     + STRENGTHS.map(function(v){
         var pc = st.settings.penCosts ? st.settings.penCosts[String(v)] : null;
-        return '<div class="field"><label>'+v+' mg</label>'
+        return '<div class="pcitem"><label>'+v+' mg</label>'
           +'<input type="number" inputmode="decimal" class="penCost" data-v="'+v+'" value="'+(pc!=null?pc:"")+'" placeholder="'+esc(st.settings.currency)+'"></div>';
       }).join("")
     +'</div></div>'
+    +'<div class="card"><h2>'+esc(I18N.t("fx.toggle"))+'</h2><p class="sub">'+esc(I18N.t("fx.desc"))+'</p>'
+    +'<label class="toggle"><input type="checkbox" id="setFxAuto"'+(st.settings.fxAuto?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("fx.toggle"))+'</span></label>'
+    + fxStatusHTML()
+    +'</div>'
     + linkCardHTML()
     +'<div class="card"><h2>'+esc(I18N.t("set.data"))+'</h2>'
     +'<p class="sub">'+esc(I18N.t("set.exportHint"))+'</p>'
@@ -1709,6 +1802,17 @@ var UI = (function(){
         st.settings.penCosts[inp.getAttribute("data-v")] = inp.value===""?null:parseFloat(inp.value);
         STORE.save();
       });
+    });
+    $("#setFxAuto").addEventListener("change",function(){
+      if(this.checked){
+        if(!confirm(I18N.t("fx.consent"))){ this.checked=false; return; }
+        st.settings.fxAuto=true; STORE.save();
+        fetchFx(st.settings.currency,function(err){ if(err) toast(I18N.t("fx.error")); render(); });
+        render();
+      } else { st.settings.fxAuto=false; STORE.save(); render(); }
+    });
+    var fxr=$("#setFxRefresh"); if(fxr) fxr.addEventListener("click",function(){
+      fetchFx(st.settings.currency,function(err){ if(err) toast(I18N.t("fx.error")); render(); });
     });
     $("#setExport").addEventListener("click",function(){ STORE.exportFile(); });
     $("#setImportBtn").addEventListener("click",function(){ $("#setImport").click(); });
