@@ -124,6 +124,7 @@
   .gauge .labels{display:flex;font-size:10px;color:var(--muted);margin-top:4px;text-align:center}
   .gauge .labels span{flex:1}
 
+  svg.ring{width:min(260px,72%);height:auto;display:block;margin:8px auto 4px}
   svg.chart{width:100%;height:auto;display:block;touch-action:pan-y}
   .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
   .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
@@ -153,6 +154,7 @@
 </main>
 
 <nav class="tabs" id="tabs">
+  <a href="#jab"       data-tab="jab"><span class="ic">💉</span><span data-i="tab.jab">Zastrzyk</span></a>
   <a href="#weight"    data-tab="weight"><span class="ic">📉</span><span data-i="tab.weight">Waga</span></a>
   <a href="#bmi"       data-tab="bmi"><span class="ic">⚖️</span><span data-i="tab.bmi">BMI</span></a>
   <a href="#cost"      data-tab="cost"><span class="ic">💷</span><span data-i="tab.cost">Koszt</span></a>
@@ -167,6 +169,22 @@
    ========================================================================= */
 var I18N = (function(){
   var dict = {
+    "tab.jab":{pl:"Zastrzyk",en:"Shot"},
+    "jab.title":{pl:"Następny zastrzyk",en:"Next shot"},
+    "jab.sub":{pl:"Zaznacz dzień zastrzyku, a aplikacja policzy, kiedy zrobić następny.",en:"Mark the day of your shot and the app counts down to the next one."},
+    "jab.freq":{pl:"Co ile dni zastrzyk",en:"Days between shots"},
+    "jab.logToday":{pl:"Zrobiłem/am dziś zastrzyk",en:"I took my shot today"},
+    "jab.logDate":{pl:"Zapisz zastrzyk z dnia",en:"Log a shot on"},
+    "jab.add":{pl:"Zapisz",en:"Log"},
+    "jab.undo":{pl:"Cofnij ostatni",en:"Undo last"},
+    "jab.daysLeft":{pl:"dni do następnego",en:"days to next"},
+    "jab.dueToday":{pl:"Dziś termin zastrzyku!",en:"Shot due today!"},
+    "jab.overdue":{pl:"po terminie",en:"overdue"},
+    "jab.nextOn":{pl:"Termin",en:"Due"},
+    "jab.lastOn":{pl:"Ostatni zastrzyk",en:"Last shot"},
+    "jab.firstHint":{pl:"Brak zapisanych zastrzyków. Zaznacz pierwszy, aby uruchomić licznik.",en:"No shots logged yet. Mark your first to start the countdown."},
+    "jab.history":{pl:"Historia zastrzyków",en:"Shot history"},
+    "jab.confirmDel":{pl:"Usunąć ten zastrzyk?",en:"Delete this shot?"},
     "tab.weight":{pl:"Waga",en:"Weight"},
     "tab.bmi":{pl:"BMI",en:"BMI"},
     "tab.cost":{pl:"Koszt",en:"Cost"},
@@ -557,7 +575,8 @@ var STORE = (function(){
       settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
-      calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] }
+      calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] },
+      jab:{ history:[] }
     };
   }
   var state = defaults();
@@ -767,6 +786,8 @@ function fmtMoney(n, currency){
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function addDaysISO(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function daysBetweenISO(aISO,bISO){ return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000); }
 // color scale for dose 0..15mg -> teal(low) to indigo/red(high)
 function doseColor(mg){
   if(mg==null) return "#94a3b8";
@@ -851,6 +872,80 @@ var UI = (function(){
     }
     t.textContent=msg; t.style.opacity="1";
     clearTimeout(t._t); t._t=setTimeout(function(){ t.style.opacity="0"; },1500);
+  }
+
+  /* ============ JAB (next-shot countdown ring) ============ */
+  function ringSVG(frac, big, sub, color){
+    var R=85, C=2*Math.PI*R, off=C*(1-Math.max(0,Math.min(1,frac)));
+    return '<svg class="ring" viewBox="0 0 200 200" role="img">'
+      +'<circle cx="100" cy="100" r="85" fill="none" stroke="var(--line)" stroke-width="14"/>'
+      +'<circle cx="100" cy="100" r="85" fill="none" stroke="'+color+'" stroke-width="14" stroke-linecap="round" '
+        +'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 100 100)" style="transition:stroke-dashoffset .6s ease"/>'
+      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+color+'">'+esc(big)+'</text>'
+      +'<text x="100" y="126" text-anchor="middle" font-size="12" fill="var(--muted)">'+esc(sub)+'</text>'
+      +'</svg>';
+  }
+  function viewJab(){
+    var st=s();
+    var every = Math.max(1, st.calc.intervalDays||7);
+    var hist = (st.jab.history||[]).slice().sort();
+    var last = hist.length ? hist[hist.length-1] : null;
+    var today = todayISO();
+
+    var html='<h1 class="page">'+esc(I18N.t("jab.title"))+'</h1>'
+    + '<div class="card"><p class="sub">'+esc(I18N.t("jab.sub"))+'</p>'
+    + '<div class="field" style="max-width:220px"><label>'+esc(I18N.t("jab.freq"))+'</label><input type="number" inputmode="numeric" id="jEvery" min="1" value="'+every+'"></div>';
+
+    if(last){
+      var elapsed = daysBetweenISO(last, today);
+      var remaining = every - elapsed;
+      var next = addDaysISO(last, every);
+      var frac = elapsed/every;
+      var big, sub, color;
+      if(remaining > 0){ big=String(remaining); sub=I18N.t("jab.daysLeft"); color="var(--brand)"; }
+      else if(remaining === 0){ big="0"; sub=I18N.t("jab.dueToday"); color="var(--warn)"; frac=1; }
+      else { big=String(remaining); sub=Math.abs(remaining)+" "+I18N.t("opt.days")+" "+I18N.t("jab.overdue"); color="var(--bad)"; frac=1; }
+      html+= ringSVG(frac, big, sub, color);
+      html+='<div class="stats" style="margin-top:6px">'
+        + '<div class="stat"><span class="k">'+esc(I18N.t("jab.nextOn"))+'</span><span class="v" style="font-size:16px">'+esc(next)+'</span></div>'
+        + '<div class="stat"><span class="k">'+esc(I18N.t("jab.lastOn"))+'</span><span class="v" style="font-size:16px">'+esc(last)+'</span></div>'
+        + '</div>';
+    } else {
+      html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
+    }
+    html+='<div class="row" style="margin-top:14px"><button class="btn" id="jToday">💉 '+esc(I18N.t("jab.logToday"))+'</button>';
+    if(last) html+='<button class="btn ghost" id="jUndo">'+esc(I18N.t("jab.undo"))+'</button>';
+    html+='</div>';
+    html+='<div class="row" style="margin-top:10px;align-items:flex-end">'
+      +'<div class="field" style="margin:0;flex:1;min-width:160px"><label>'+esc(I18N.t("jab.logDate"))+'</label><input type="date" id="jDate" value="'+today+'"></div>'
+      +'<button class="btn ghost" id="jAdd">'+esc(I18N.t("jab.add"))+'</button></div>';
+    html+='</div>';
+
+    if(hist.length){
+      html+='<div class="card"><h2>'+esc(I18N.t("jab.history"))+'</h2><div class="scroll"><table><tbody>';
+      hist.slice().reverse().forEach(function(dt){
+        html+='<tr><td>'+esc(dt)+'</td><td class="num"><button class="btn ghost sm jDel" data-d="'+esc(dt)+'">✕</button></td></tr>';
+      });
+      html+='</tbody></table></div></div>';
+    }
+    app.innerHTML=html;
+
+    function addJab(dt){
+      if(!dt) return;
+      if(st.jab.history.indexOf(dt)===-1) st.jab.history.push(dt);
+      st.jab.history.sort();
+      STORE.save(); toast(I18N.t("common.saved")); viewJab();
+    }
+    $("#jEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewJab(); });
+    $("#jToday").addEventListener("click",function(){ addJab(todayISO()); });
+    $("#jAdd").addEventListener("click",function(){ addJab($("#jDate").value); });
+    if($("#jUndo")) $("#jUndo").addEventListener("click",function(){ st.jab.history.pop(); STORE.save(); viewJab(); });
+    $all(".jDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("jab.confirmDel"))) return;
+      var dt=b.getAttribute("data-d");
+      st.jab.history = st.jab.history.filter(function(x){return x!==dt;});
+      STORE.save(); viewJab();
+    });});
   }
 
   /* ============ WEIGHT ============ */
@@ -1330,10 +1425,10 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ weight:viewWeight, bmi:viewBMI, cost:viewCost, optimizer:viewOpt, settings:viewSettings };
+  var routes={ jab:viewJab, weight:viewWeight, bmi:viewBMI, cost:viewCost, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
-    var h=(location.hash||"#weight").replace("#","");
-    return routes[h]?h:"weight";
+    var h=(location.hash||"#jab").replace("#","");
+    return routes[h]?h:"jab";
   }
   function render(){
     var tab=currentTab();
@@ -1389,7 +1484,7 @@ var UI = (function(){
       });
     });
     window.addEventListener("hashchange",render);
-    if(!location.hash) location.hash="#weight";
+    if(!location.hash) location.hash="#jab";
     render();
     // Restore a previously linked file (async; Chromium only). May pull in newer data.
     STORE.restoreLink(function(status){
