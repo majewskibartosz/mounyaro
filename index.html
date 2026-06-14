@@ -335,6 +335,33 @@ var I18N = (function(){
     "opt.targetGt":{pl:"Dawka docelowa musi być większa od obecnej.",en:"Target dose must be greater than the current dose."},
     "opt.enterPrice":{pl:"Podaj cenę pena w zakładce Koszt, aby zobaczyć kwoty.",en:"Enter pen price in the Cost tab to see amounts."},
 
+    "opt.modeTravel":{pl:"Podróż / import (oszczędności)",en:"Travel / import (savings)"},
+    "trv.intro":{pl:"Porównaj koszt rozciągania pena z domu z zakupem w kraju docelowym. Kurs wpisujesz ręcznie — aplikacja działa offline.",
+                 en:"Compare stretching a pen from home against buying in your destination country. You enter the rate manually — the app stays offline."},
+    "trv.homePrice":{pl:"Cena pena w domu",en:"Home pen price"},
+    "trv.dose":{pl:"Twoja dawka na zastrzyk (mg)",en:"Your dose per shot (mg)"},
+    "trv.destCur":{pl:"Waluta kraju docelowego",en:"Destination currency"},
+    "trv.rate":{pl:"Kurs wymiany",en:"Exchange rate"},
+    "trv.rateHint":{pl:"1 {home} = ile {dest}",en:"1 {home} = how many {dest}"},
+    "trv.destPriceSame":{pl:"Cena w kraju docelowym — pen {s} mg",en:"Destination price — {s} mg pen"},
+    "trv.destPriceRx":{pl:"Cena w kraju docelowym — pen {s} mg (na receptę)",en:"Destination price — {s} mg pen (prescribed)"},
+    "trv.calc":{pl:"Porównaj",en:"Compare"},
+    "trv.needInputs":{pl:"Uzupełnij cenę pena w domu, kurs i ceny w kraju docelowym, aby zobaczyć porównanie.",
+                      en:"Fill in your home pen price, the rate and destination prices to see the comparison."},
+    "trv.rowHome":{pl:"Dom: pen {s} mg, rozciągany",en:"Home: {s} mg pen, stretched"},
+    "trv.rowSame":{pl:"Cel: ten sam pen {s} mg",en:"Destination: same {s} mg pen"},
+    "trv.rowRx":{pl:"Cel: pen {s} mg na receptę (bez rozciągania)",en:"Destination: {s} mg prescribed pen (no stretching)"},
+    "trv.perShot":{pl:"Koszt / zastrzyk",en:"Cost / shot"},
+    "trv.perMonth":{pl:"Koszt / miesiąc",en:"Cost / month"},
+    "trv.covers":{pl:"1 pen starcza na",en:"1 pen covers"},
+    "trv.saveSame":{pl:"Oszczędność vs ten sam pen w kraju docelowym",en:"Saving vs same pen in destination"},
+    "trv.saveRx":{pl:"Oszczędność vs pen na receptę w kraju docelowym",en:"Saving vs prescribed pen in destination"},
+    "trv.saveMonth":{pl:"/ miesiąc",en:"/ month"},
+    "trv.cheaperHome":{pl:"Taniej z domu — opłaca się przywieźć",en:"Cheaper from home — worth bringing"},
+    "trv.cheaperDest":{pl:"Taniej w kraju docelowym — kup na miejscu",en:"Cheaper in destination — buy there"},
+    "trv.rxNA":{pl:"Twoja dawka nie odpowiada gotowej mocy pena, więc porównanie „na receptę” pomijamy.",
+                en:"Your dose isn't a manufactured pen strength, so the “prescribed pen” comparison is skipped."},
+
     "set.title":{pl:"Ustawienia i dane",en:"Settings & data"},
     "set.sub":{pl:"Dane są zapisywane tylko w tej przeglądarce. Nikt inny ich nie widzi.",en:"Data is stored only in this browser. No one else can see it."},
     "set.language":{pl:"Język",en:"Language"},
@@ -581,12 +608,35 @@ var DOMAIN = (function(){
     return { min: 18.5*h*h, max: 24.9*h*h };
   }
 
+  // Travel / import comparison: stretch a home pen vs buying in a destination
+  // country. All home-currency amounts; destination prices converted via rate
+  // (1 home = rate destination). Any scenario whose inputs are missing → null.
+  function travelCompare(o){
+    var budget = budgetClicks(o.golden), D=o.dose, S=o.homeStrength;
+    var monthDays = o.monthDays || 30.4, interval = Math.max(1, o.intervalDays||7);
+    var rate = (o.rate!=null && o.rate>0) ? o.rate : null;
+    function shots(str){ var cps=clicksForDose(D,str); return cps>0 ? Math.floor(budget/cps) : 0; }
+    function scenario(str, priceHome){
+      if(priceHome==null || !(D>0) || !(str>0)) return null;
+      var sp=shots(str); if(sp<=0) return null;
+      var per=priceHome/sp;
+      return { strength:str, priceHome:r3(priceHome), shotsPerPen:sp,
+        perShot:r3(per), perMonth:r3(per*monthDays/interval), coverMonths:r3(sp*interval/monthDays) };
+    }
+    function toHome(p){ return (p!=null && rate) ? p/rate : null; }
+    var home=scenario(S, o.homePrice), same=scenario(S, toHome(o.destPriceSame)), rx=scenario(o.rxStrength, toHome(o.destPriceRx));
+    function dS(x){ return (home&&x)?r3(x.perShot-home.perShot):null; }
+    function dM(x){ return (home&&x)?r3(x.perMonth-home.perMonth):null; }
+    return { home:home, same:same, rx:rx, needRate:!rate,
+      saveVsSame:dS(same), saveVsSameMonth:dM(same), saveVsRx:dS(rx), saveVsRxMonth:dM(rx) };
+  }
+
   return {
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
-    healthyWeightRange:healthyWeightRange
+    healthyWeightRange:healthyWeightRange, travelCompare:travelCompare
   };
 })();
 
@@ -600,7 +650,8 @@ var STORE = (function(){
     return {
       schemaVersion:1,
       settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8},
-        penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
+        penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
+        travel:{ currency:"", rate:null, dose:null, penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } } },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] },
@@ -962,6 +1013,20 @@ var UI = (function(){
     });
   }
 
+  /* ---- searchable currency picker (offline, native datalist) ---- */
+  var CURRENCIES=["PLN","EUR","GBP","USD","CHF","CZK","SEK","NOK","DKK","HUF","RON","UAH",
+    "THB","VND","IDR","MYR","SGD","PHP","INR","CNY","JPY","KRW","HKD","TWD","AED","TRY",
+    "AUD","NZD","CAD","MXN","BRL","ZAR","EGP","ILS","SAR","QAR"];
+  function ensureCurrencyList(){
+    if($("#curList")) return;
+    var dl=el("datalist",{id:"curList"});
+    dl.innerHTML=CURRENCIES.map(function(c){return '<option value="'+c+'"></option>';}).join("");
+    document.body.appendChild(dl);
+  }
+  function currencyInput(id, value){
+    return '<input type="text" list="curList" id="'+id+'" value="'+esc(value||"")+'" maxlength="4" autocomplete="off" placeholder="USD">';
+  }
+
   /* ---- toast ---- */
   function toast(msg){
     var t=$("#toast");
@@ -1273,6 +1338,7 @@ var UI = (function(){
     +'<div class="field"><label>'+esc(I18N.t("opt.mode"))+'</label><select id="oMode">'
       +'<option value="stretch">'+esc(I18N.t("opt.modeStretch"))+'</option>'
       +'<option value="prog">'+esc(I18N.t("opt.modeProg"))+'</option>'
+      +'<option value="travel">'+esc(I18N.t("opt.modeTravel"))+'</option>'
     +'</select></div>'
     +'<div id="oFields"></div>'
     +'<div class="grid g3">'
@@ -1335,6 +1401,41 @@ var UI = (function(){
         +'<div class="field"><label>'+esc(I18N.t("opt.toDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTo" value="5"></div>'
         +'</div>';
     }
+    // ---- travel / import mode ----
+    // Fields are built once and updated in place (no destructive re-render), so
+    // editing a value never steals focus when the dependent labels change.
+    function travelDose(){ var d=st.settings.travel.dose; return d!=null?d:(strength||5); }
+    function rxStrength(){ var D=travelDose(); return STRENGTHS.indexOf(D)>=0?D:null; }
+    function fieldsTravel(){
+      var tv=st.settings.travel, D=travelDose(), destCur=tv.currency||"";
+      var same=(tv.penCosts?tv.penCosts[String(strength)]:null);
+      return '<div class="note" style="margin:0 0 12px">'+esc(I18N.t("trv.intro"))+'</div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
+        +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trv.dose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oDose" value="'+D+'"></div>'
+        +'<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("trv.destCur"))+'</label>'+currencyInput("oDestCur",destCur)+'</div>'
+        +'<div class="field"><label>'+esc(I18N.t("trv.rate"))+' <span class="muted tiny" id="oRateHint"></span></label><input type="number" inputmode="decimal" id="oRate" value="'+(tv.rate!=null?tv.rate:"")+'" placeholder="1.0"></div>'
+        +'</div>'
+        +'<div class="field"><label id="oSameLbl"></label><input type="number" inputmode="decimal" id="oDestSame" value="'+(same!=null?same:"")+'" placeholder="'+esc(destCur||"")+'"></div>'
+        +'<div class="field" id="oRxWrap"><label id="oRxLbl"></label><input type="number" inputmode="decimal" id="oDestRx" placeholder="'+esc(destCur||"")+'"></div>';
+    }
+    function travelLabels(){
+      var tv=st.settings.travel, destCur=tv.currency||"";
+      var hint=I18N.t("trv.rateHint").replace("{home}",st.settings.currency).replace("{dest}",destCur||"?");
+      if($("#oRateHint")) $("#oRateHint").textContent="("+hint+")";
+      if($("#oSameLbl")) $("#oSameLbl").textContent=I18N.t("trv.destPriceSame").replace("{s}",strength);
+      if($("#oDestCur")) $("#oDestCur").placeholder="USD";
+      ["oDestSame","oDestRx"].forEach(function(id){ if($("#"+id)) $("#"+id).placeholder=destCur||""; });
+      var rxStr=rxStrength(), wrap=$("#oRxWrap");
+      if(rxStr!=null && rxStr!==strength){
+        if(wrap) wrap.style.display="";
+        if($("#oRxLbl")) $("#oRxLbl").textContent=I18N.t("trv.destPriceRx").replace("{s}",rxStr);
+        if($("#oDestSame")) $("#oDestSame").value=(tv.penCosts&&tv.penCosts[String(strength)]!=null)?tv.penCosts[String(strength)]:"";
+        if($("#oDestRx")) $("#oDestRx").value=(tv.penCosts&&tv.penCosts[String(rxStr)]!=null)?tv.penCosts[String(rxStr)]:"";
+      } else {
+        if(wrap) wrap.style.display="none";
+      }
+    }
     // Picking a strength chip pre-fills the pen price from the per-pen cost saved
     // in Settings (when present); the inline value stays an editable per-calc override.
     function autofillPrice(v){
@@ -1344,10 +1445,24 @@ var UI = (function(){
     function bindStrengthChips(){
       bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; autofillPrice(v); STORE.save(); });
     }
+    function renderTravelFields(){
+      $("#oFields").innerHTML = fieldsTravel();
+      travelLabels();
+      bindChips("oStr",function(v){ strength=v; st.calc.strengthMg=v; autofillPrice(v); STORE.save(); travelLabels(); });
+      $("#oDose").addEventListener("change",function(){ st.settings.travel.dose=this.value===""?null:parseFloat(this.value); STORE.save(); travelLabels(); });
+      $("#oDestCur").addEventListener("change",function(){ st.settings.travel.currency=(this.value||"").toUpperCase(); STORE.save(); travelLabels(); });
+      $("#oRate").addEventListener("change",function(){ st.settings.travel.rate=this.value===""?null:parseFloat(this.value); STORE.save(); });
+      $("#oDestSame").addEventListener("input",function(){ st.settings.travel.penCosts[String(strength)]=this.value===""?null:parseFloat(this.value); STORE.save(); });
+      $("#oDestRx").addEventListener("input",function(){
+        var rxStr=rxStrength(); if(rxStr!=null) st.settings.travel.penCosts[String(rxStr)]=this.value===""?null:parseFloat(this.value); STORE.save();
+      });
+    }
     function renderFields(){
-      $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg();
+      var mode=$("#oMode").value;
+      if(mode==="travel"){ renderTravelFields(); return; }
+      $("#oFields").innerHTML = mode==="stretch"?fieldsStretch():fieldsProg();
       bindStrengthChips();
-      if($("#oMode").value==="stretch"){
+      if(mode==="stretch"){
         renderPattern();
         $("#oCycle").addEventListener("change",renderPattern);
         $("#oBase").addEventListener("change",function(){ st.calc.baseDose = this.value===""?null:parseFloat(this.value); STORE.save(); });
@@ -1377,8 +1492,50 @@ var UI = (function(){
       st.calc.strengthMg = strength;
       if($("#oBase")) st.calc.baseDose = $("#oBase").value===""?null:parseFloat($("#oBase").value);
       STORE.save();
-      if($("#oMode").value==="stretch") runPlan(); else runProg();
+      var m=$("#oMode").value;
+      if(m==="stretch") runPlan(); else if(m==="prog") runProg(); else runTravel();
     });
+  }
+  function runTravel(){
+    var st=s(), tv=st.settings.travel;
+    var S=st.calc.strengthMg||5, D=(tv.dose!=null?tv.dose:S);
+    var homeCur=st.settings.currency;
+    var rxStr=(STRENGTHS.indexOf(D)>=0?D:null);
+    var destSame=(tv.penCosts?tv.penCosts[String(S)]:null);
+    var destRx = rxStr==null ? null : (rxStr===S ? destSame : (tv.penCosts?tv.penCosts[String(rxStr)]:null));
+    var r=DOMAIN.travelCompare({ homeStrength:S, dose:D, intervalDays:st.calc.intervalDays||7,
+      golden:st.settings.goldenDose, rate:tv.rate, homePrice:st.calc.costPerPen,
+      destPriceSame:destSame, destPriceRx:destRx, rxStrength:rxStr });
+    if(!r.home || (!r.same && !r.rx)){
+      $("#optResult").innerHTML='<div class="card"><div class="empty">'+esc(I18N.t("trv.needInputs"))+'</div></div>'; return;
+    }
+    function scCard(label, sc){
+      if(!sc) return "";
+      return '<div class="stat"><span class="k">'+esc(label)+'</span>'
+        +'<span class="v">'+fmtMoney(sc.perMonth,homeCur)+'<span class="muted tiny" style="font-weight:600"> / '+esc(I18N.t("opt.months"))+'</span></span>'
+        +'<span class="muted tiny">'+fmtMoney(sc.perShot,homeCur)+' / '+esc(I18N.t("opt.injections"))+' · '+esc(I18N.t("trv.covers"))+' '+fmtNum(sc.coverMonths,1)+' '+esc(I18N.t("opt.months"))+'</span></div>';
+    }
+    function saveCard(labelKey, perShot, perMonth){
+      if(perShot==null) return "";
+      var save=perShot>0, col=save?"var(--good)":"var(--bad)";
+      var msg=save?I18N.t("trv.cheaperHome"):I18N.t("trv.cheaperDest");
+      return '<div class="stat"><span class="k">'+esc(I18N.t(labelKey))+'</span>'
+        +'<span class="v" style="color:'+col+'">'+(save?"":"−")+fmtMoney(Math.abs(perMonth),homeCur)+' <span class="tiny" style="font-weight:600">'+esc(I18N.t("trv.saveMonth"))+'</span></span>'
+        +'<span class="muted tiny" style="color:'+col+'">'+fmtMoney(Math.abs(perShot),homeCur)+' / '+esc(I18N.t("opt.injections"))+' · '+esc(msg)+'</span></div>';
+    }
+    var html='<div class="card"><h2>'+esc(I18N.t("opt.modeTravel"))+'</h2>'
+      +'<div class="stats">'
+      + scCard(I18N.t("trv.rowHome").replace("{s}",S), r.home)
+      + scCard(I18N.t("trv.rowSame").replace("{s}",S), r.same)
+      + (r.rx && rxStr!==S ? scCard(I18N.t("trv.rowRx").replace("{s}",rxStr), r.rx) : "")
+      +'</div>'
+      +'<div class="stats" style="margin-top:12px">'
+      + saveCard("trv.saveSame", r.saveVsSame, r.saveVsSameMonth)
+      + (rxStr!==S ? saveCard("trv.saveRx", r.saveVsRx, r.saveVsRxMonth) : "")
+      +'</div>';
+    if(rxStr==null) html+='<div class="warnbox" style="margin-top:12px">'+esc(I18N.t("trv.rxNA"))+'</div>';
+    html+='</div>';
+    $("#optResult").innerHTML=html;
   }
   function runPlan(){
     var st=s();
@@ -1613,6 +1770,7 @@ var UI = (function(){
 
   function init(){
     app=$("#app");
+    ensureCurrencyList();
     // language
     I18N.setLang(STORE.state.settings.lang||"pl");
     document.documentElement.lang=I18N.lang;
