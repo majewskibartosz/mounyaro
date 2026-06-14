@@ -1952,10 +1952,27 @@ var UI = (function(){
 STORE.load();
 UI.init();
 
-/* PWA: register the service worker only when served over http(s) (not file://) */
+/* PWA: register the service worker only when served over http(s) (not file://).
+   Auto-update: when a new version is deployed, the new SW (which calls
+   skipWaiting + clients.claim) takes control and we reload once so an
+   already-open app shows the fresh version without the user tapping refresh.
+   We only reload if a SW was already controlling the page (so the very first
+   install on a fresh visit doesn't trigger a needless reload). */
 if("serviceWorker" in navigator && location.protocol.indexOf("http")===0){
+  if(navigator.serviceWorker.controller){
+    var __reloading=false;
+    navigator.serviceWorker.addEventListener("controllerchange",function(){
+      if(__reloading) return; __reloading=true; window.location.reload();
+    });
+  }
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js").catch(function(){ /* offline mode unavailable; app still works */ });
+    navigator.serviceWorker.register("sw.js").then(function(reg){
+      // Proactively look for a new deploy: on focus/return to the tab and hourly.
+      function checkUpdate(){ if(reg && reg.update) reg.update()["catch"](function(){}); }
+      window.addEventListener("focus",checkUpdate);
+      document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") checkUpdate(); });
+      setInterval(checkUpdate, 60*60*1000);
+    })["catch"](function(){ /* offline mode unavailable; app still works */ });
   });
 }
 </script>
