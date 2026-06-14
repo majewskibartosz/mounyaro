@@ -261,6 +261,9 @@ var I18N = (function(){
     "opt.schReach":{pl:"Szybko do celu, potem utrzymanie",en:"Reach target, then maintain"},
     "opt.schReachD":{pl:"Po 1 tygodniu na każdym kroku resztę kliknięć zużywasz na dawce docelowej.",en:"One week per step, then spend the rest at the target dose."},
     "opt.totalWeeks":{pl:"Łącznie tygodni",en:"Total weeks"},
+    "opt.totalCost":{pl:"Koszt (1 pen)",en:"Total cost (1 pen)"},
+    "opt.costShared":{pl:"Cena i moc pena są wspólne z zakładką Koszt — ustawiasz raz, działa w obu miejscach.",
+                      en:"Pen price and strength are shared with the Cost tab — set once, used in both places."},
     "opt.clicksUsed":{pl:"Zużyte kliknięcia",en:"Clicks used"},
     "opt.coarsened":{pl:"Krok dopasowano do",en:"Step adjusted to"},
     "opt.infeasible":{pl:"Nawet 1 tydzień na dawce startowej + 1 tydzień na docelowej nie mieści się w jednym penie. Włącz dawkę „golden” lub wybierz mocniejszego pena.",
@@ -838,6 +841,11 @@ var UI = (function(){
       +'<option value="prog">'+esc(I18N.t("opt.modeProg"))+'</option>'
     +'</select></div>'
     +'<div id="oFields"></div>'
+    +'<div class="grid g2">'
+    +  '<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
+    +  '<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label><input type="text" id="oCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +'</div>'
+    +'<p class="tiny muted" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
     +'<label class="toggle" style="margin:8px 0 12px"><input type="checkbox" id="oGold"'+(g.enabled?" checked":"")+'><span class="switch"></span>'
       +'<span>'+esc(I18N.t("opt.golden"))+'</span></label>'
     +'<div id="oGoldRow" class="'+(g.enabled?"":"hidden")+'">'
@@ -870,9 +878,16 @@ var UI = (function(){
         +'<div class="field"><label>'+esc(I18N.t("opt.toDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTo" value="5"></div>'
         +'</div>';
     }
-    function renderFields(){ $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg(); }
+    function bindStrength(){
+      var el=$("#oStr"); if(!el) return;
+      el.addEventListener("change",function(){ st.calc.strengthMg=parseFloat(this.value); STORE.save(); });
+    }
+    function renderFields(){ $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg(); bindStrength(); }
     renderFields();
     $("#oMode").addEventListener("change",function(){ renderFields(); $("#optResult").innerHTML=""; });
+    // price + currency shared with the Cost tab
+    $("#oPrice").addEventListener("input",function(){ st.calc.costPerPen = this.value===""?null:parseFloat(this.value); STORE.save(); });
+    $("#oCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
     $("#oGold").addEventListener("change",function(){
       st.settings.goldenDose.enabled=this.checked;
       $("#oGoldRow").className = this.checked?"":"hidden";
@@ -884,6 +899,9 @@ var UI = (function(){
     $("#oCalc").addEventListener("click",function(){
       st.settings.goldenDose.enabled = $("#oGold").checked;
       if($("#oGoldClicks")) st.settings.goldenDose.extraClicks=Math.max(0,parseInt($("#oGoldClicks").value,10)||0);
+      st.calc.costPerPen = $("#oPrice").value===""?null:parseFloat($("#oPrice").value);
+      st.settings.currency = ($("#oCur").value||"PLN").toUpperCase();
+      if($("#oStr")) st.calc.strengthMg=parseFloat($("#oStr").value);
       STORE.save();
       if($("#oMode").value==="stretch") runStretch(); else runProg();
     });
@@ -929,6 +947,9 @@ var UI = (function(){
     var names={gentle:["opt.schGentle","opt.schGentleD"],longest:["opt.schLongest","opt.schLongestD"],reach:["opt.schReach","opt.schReachD"]};
     var html='<div class="card"><h2>'+esc(I18N.t("opt.schedules"))+'</h2>'
       +'<div class="note">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b></div></div>';
+    if(P!=null && !isNaN(P)){
+      html+='<div class="card"><h2>'+esc(I18N.t("cost.title"))+'</h2>'+renderCost(P,S,cur)+'</div>';
+    }
     r.candidates.forEach(function(cand){
       var res=cand.res, nm=names[cand.key];
       html+='<div class="card"><h2>'+esc(I18N.t(nm[0]))+'</h2><p class="sub">'+esc(I18N.t(nm[1]))+'</p>';
@@ -936,6 +957,7 @@ var UI = (function(){
       html+='<div class="stats" style="margin-bottom:12px">'
         +'<div class="stat"><span class="k">'+esc(I18N.t("opt.totalWeeks"))+'</span><span class="v">'+res.totalWeeks+'</span></div>'
         +'<div class="stat"><span class="k">'+esc(I18N.t("opt.clicksUsed"))+'</span><span class="v">'+res.clicksUsed+'/'+r.budget+'</span></div>'
+        +(res.totalCost!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.totalCost"))+'</span><span class="v">'+fmtMoney(res.totalCost,cur)+'</span></div>':'')
         +(res.costPerWeek!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.costPerWeek"))+'</span><span class="v">'+fmtMoney(res.costPerWeek,cur)+'</span></div>':'')
         +'</div>';
       html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("common.dose"))+'</th><th class="num">'+esc(I18N.t("common.clicks"))+'</th><th class="num">'+esc(I18N.t("common.weeks"))+'</th></tr></thead><tbody>';
