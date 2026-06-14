@@ -818,6 +818,75 @@ var STORE = (function(){
 })();
 
 /* =========================================================================
+   GDRIVE — Google auth (GIS token model) + Drive appData file I/O.
+   Knows Google; knows nothing about app state. Token lives in memory only.
+   ========================================================================= */
+var GDRIVE = (function(){
+  var SCOPES = "https://www.googleapis.com/auth/drive.appdata openid email";
+  var FILENAME = "mounjaro.json";
+  var tokenClient=null, accessToken=null, tokenExp=0, email=null, pending=null;
+
+  function supported(){ return !!GOOGLE_CLIENT_ID; }
+  function tokenValid(){ return accessToken && Date.now() < tokenExp; }
+
+  function ensureGis(cb){
+    if(window.google && google.accounts && google.accounts.oauth2){ cb(true); return; }
+    var s=document.createElement("script");
+    s.src="https://accounts.google.com/gsi/client"; s.async=true; s.defer=true;
+    s.onload=function(){ cb(!!(window.google&&google.accounts&&google.accounts.oauth2)); };
+    s.onerror=function(){ cb(false); };
+    document.head.appendChild(s);
+  }
+  function ensureClient(cb){
+    if(tokenClient){ cb(true); return; }
+    if(!supported()){ cb(false); return; }
+    ensureGis(function(ok){
+      if(!ok){ cb(false); return; }
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID, scope: SCOPES,
+        callback: function(resp){
+          if(resp && resp.access_token){
+            accessToken=resp.access_token;
+            tokenExp=Date.now()+((resp.expires_in||3600)*1000)-60000;
+            var done=pending; pending=null;
+            fetchEmail(function(){ done&&done(true); });
+          } else { var d=pending; pending=null; d&&d(false); }
+        },
+        error_callback: function(){ var d=pending; pending=null; d&&d(false); }
+      });
+      cb(true);
+    });
+  }
+  function fetchEmail(cb){
+    fetch("https://www.googleapis.com/oauth2/v3/userinfo",
+      {headers:{Authorization:"Bearer "+accessToken}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(j){ if(j&&j.email) email=j.email; cb&&cb(); })
+      .catch(function(){ cb&&cb(); });
+  }
+  function requestToken(prompt, cb){
+    ensureClient(function(ok){
+      if(!ok){ cb&&cb(false); return; }
+      pending=cb; try{ tokenClient.requestAccessToken({prompt:prompt}); }
+      catch(e){ pending=null; cb&&cb(false); }
+    });
+  }
+  function signIn(cb){ requestToken("consent", cb); }
+  function restoreSilent(cb){ requestToken("", cb); }
+  function signOut(cb){
+    if(accessToken && window.google && google.accounts && google.accounts.oauth2){
+      try{ google.accounts.oauth2.revoke(accessToken, function(){}); }catch(e){}
+    }
+    accessToken=null; tokenExp=0; email=null; cb&&cb();
+  }
+  function isSignedIn(){ return tokenValid(); }
+  function account(){ return email; }
+
+  return { supported:supported, signIn:signIn, restoreSilent:restoreSilent,
+           signOut:signOut, isSignedIn:isSignedIn, account:account };
+})();
+
+/* =========================================================================
    Helpers
    ========================================================================= */
 function $(sel,root){ return (root||document).querySelector(sel); }
