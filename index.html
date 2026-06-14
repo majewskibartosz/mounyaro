@@ -952,18 +952,18 @@ var UI = (function(){
     return m<0.5 ? lerpRGB(GREEN_RGB,AMBER_RGB,m/0.5)
                  : lerpRGB(AMBER_RGB,RED_RGB,(m-0.5)/0.5);
   }
-  // Bias the hot colour: stay green until ~60% of the cycle, then ramp to red.
-  function urgency(frac){ frac=Math.max(0,Math.min(1,frac)); return frac<=0.6 ? 0 : (frac-0.6)/0.4; }
   function ringSVG(frac, big, sub){
     frac=Math.max(0,Math.min(1,frac));
-    var R=85, cx=100, cy=100, hot=urgencyColor(urgency(frac)), hotCss=rgbCss(hot);
+    // Hot colour tracks frac directly so the cap is a live progress readout:
+    // it shifts a little every day (green -> amber -> red), never flat-green.
+    var R=85, cx=100, cy=100, hot=urgencyColor(frac), hotCss=rgbCss(hot);
     // The blend runs ALONG the arc (relative to the ring's own path), not across
-    // the screen: green on the older trailing part, the hot colour riding the
-    // moving leading cap. Built from many short arc segments coloured by their
-    // position p in [0,1] along the drawn arc — an SVG linearGradient can only
-    // interpolate along a straight screen line, which is what we're avoiding.
+    // the screen: green on the freshly-injected trailing end, fluidly blending
+    // to the hot colour at the moving leading cap. Built from many short arc
+    // segments coloured by position p in [0,1] along the drawn arc — an SVG
+    // linearGradient can only interpolate along a straight screen line.
     function pt(t){ var ang=(-90+t*frac*360)*Math.PI/180; return [cx+R*Math.cos(ang),cy+R*Math.sin(ang)]; }
-    function colorAt(p){ return p<=0.55 ? RING_GREEN : rgbCss(lerpRGB(GREEN_RGB,hot,(p-0.55)/0.45)); }
+    function colorAt(p){ return rgbCss(lerpRGB(GREEN_RGB,hot,p)); }
     var arc="";
     if(frac>0){
       var N=Math.max(2,Math.ceil(frac*96));

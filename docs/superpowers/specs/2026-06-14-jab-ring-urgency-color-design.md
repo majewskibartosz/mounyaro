@@ -20,9 +20,11 @@ urgency signal:
 
 ## Goal
 
-Mostly calm (green) for the bulk of the cycle; the leading edge warms through
-amber to a clear red only as the deadline approaches, and stays red when
-overdue. Keep the gradient-painted-arc look (not a single flat color).
+The color is a **live progress readout**: it shifts smoothly and continuously
+every day — green when freshly injected, warming through amber to red at the
+deadline — so you can read where you are in the cycle at a glance. No long flat
+plateau where it stays green. Keep the gradient-painted-arc look (not a single
+flat color).
 
 ## Design
 
@@ -46,34 +48,35 @@ angle(t) = (-90 + t · frac · 360)°
 pt(t)    = (100 + 85·cos angle, 100 + 85·sin angle)
 ```
 
-### 2. Stretch the calm band
+### 2. Blend the full arc, green → hot
 
 Each segment is colored by its position `p` (midpoint of `t0..t1`) along the
-drawn arc: `p ≤ 0.55 → green`, else lerp `green → hotColor` over `(p-0.55)/0.45`.
-The bulk of the arc stays green; the color shift is compressed into the last
-stretch near the leading cap.
+drawn arc, blended continuously across the **whole** arc — no flat band:
+
+```
+colorAt(p) = lerpRGB(green, hotColor, p)   // p=0 trailing (fresh) … p=1 leading cap
+```
 
 Color helpers work in RGB (`hex2rgb` / `lerpRGB` / `rgbCss`) so segments can
 blend toward the dynamic `hotColor`.
 
-### 3. Gate the hot color by a biased curve
+### 3. Hot color tracks frac directly
 
-The leading-edge ("hot") color stays green until ~60% of the cycle, then ramps
-amber→red:
+The leading-cap ("hot") color is a direct, ungated readout of progress so it
+shifts a little every day:
 
 ```
-m = frac <= 0.6 ? 0 : (frac - 0.6) / 0.4   // 0..1, clamped
-hotColor = urgencyColor(m)                  // 0=green, 0.5=amber, 1=red
+hotColor = urgencyColor(frac)   // 0=green, 0.5=amber, 1=red
 ```
 
-Result on a 7-day interval: green until ≈ day 4.2, amber around day 6, full red
-at due. Overdue keeps `frac = 1` → full red.
+Result on a 7-day interval: green-gold mid-cycle, orange with a few days left
+(day 4 ≈ orange, not green), red at due. Overdue keeps `frac = 1` → full red.
 
-The big number text color uses the **same** `m` so number and ring agree
-(today it uses raw `frac`, which now disagrees with the band).
+The big number text color uses the same `hotColor` so number and ring agree.
 
 ## Verification
 
 Serve over HTTP, open `#jab`, log a shot, and check the ring at several
-simulated elapsed values (edit history date) at mobile + desktop widths:
-calm green early, amber mid-late, red at/after due. Bump `CACHE` in `sw.js`.
+simulated elapsed values (edit history date) at mobile + desktop widths: color
+shifts smoothly green→amber→red across the cycle, visibly different each day,
+red at/after due. Bump `CACHE` in `sw.js`.
