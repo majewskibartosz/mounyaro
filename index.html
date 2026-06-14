@@ -923,13 +923,41 @@ var UI = (function(){
   }
 
   /* ============ JAB (next-shot countdown ring) ============ */
-  function ringSVG(frac, big, sub, color){
+  // Urgency palette: green (just injected) -> amber -> red (shot due).
+  var RING_GREEN="#16a34a", RING_AMBER="#f59e0b", RING_RED="#dc2626";
+  function lerpHex(a,b,t){
+    function ch(s,i){ return parseInt(s.slice(i,i+2),16); }
+    a=a.replace("#",""); b=b.replace("#","");
+    var r=Math.round(ch(a,0)+(ch(b,0)-ch(a,0))*t),
+        g=Math.round(ch(a,2)+(ch(b,2)-ch(a,2))*t),
+        bl=Math.round(ch(a,4)+(ch(b,4)-ch(a,4))*t);
+    return "rgb("+r+","+g+","+bl+")";
+  }
+  // Continuous green -> amber -> red as the cycle progresses (0 = just shot, 1 = due).
+  function urgencyColor(frac){
+    frac=Math.max(0,Math.min(1,frac));
+    return frac<0.5 ? lerpHex(RING_GREEN,RING_AMBER,frac/0.5)
+                    : lerpHex(RING_AMBER,RING_RED,(frac-0.5)/0.5);
+  }
+  function ringSVG(frac, big, sub){
     var R=85, C=2*Math.PI*R, off=C*(1-Math.max(0,Math.min(1,frac)));
+    var tip=urgencyColor(frac);
+    // gradientTransform rotate(90) cancels the circle's rotate(-90) so the
+    // gradient stays screen-vertical: green at the top (arc start), red at the
+    // bottom — the arc blends smoothly green->amber->red as it grows clockwise.
     return '<svg class="ring" viewBox="0 0 200 200" role="img">'
+      +'<defs><linearGradient id="ringGrad" gradientUnits="userSpaceOnUse" '
+        +'x1="100" y1="15" x2="100" y2="185" gradientTransform="rotate(90 100 100)">'
+        +'<stop offset="0%" stop-color="'+RING_GREEN+'"/>'
+        +'<stop offset="50%" stop-color="'+RING_AMBER+'"/>'
+        +'<stop offset="100%" stop-color="'+RING_RED+'"/>'
+      +'</linearGradient></defs>'
       +'<circle cx="100" cy="100" r="85" fill="none" stroke="var(--line)" stroke-width="14"/>'
-      +'<circle cx="100" cy="100" r="85" fill="none" stroke="'+color+'" stroke-width="14" stroke-linecap="round" '
-        +'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 100 100)" style="transition:stroke-dashoffset .6s ease"/>'
-      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+color+'">'+esc(big)+'</text>'
+      +'<circle cx="100" cy="100" r="85" fill="none" stroke="url(#ringGrad)" stroke-width="14" stroke-linecap="round" '
+        +'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 100 100)" '
+        +'style="transition:stroke-dashoffset .8s cubic-bezier(.22,1,.36,1)"/>'
+      +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+tip+'" '
+        +'style="transition:fill .8s ease">'+esc(big)+'</text>'
       +'<text x="100" y="126" text-anchor="middle" font-size="12" fill="var(--muted)">'+esc(sub)+'</text>'
       +'</svg>';
   }
@@ -949,11 +977,11 @@ var UI = (function(){
       var remaining = every - elapsed;
       var next = addDaysISO(last, every);
       var frac = elapsed/every;
-      var big, sub, color;
-      if(remaining > 0){ big=String(remaining); sub=I18N.t("jab.daysLeft"); color="var(--brand)"; }
-      else if(remaining === 0){ big="0"; sub=I18N.t("jab.dueToday"); color="var(--warn)"; frac=1; }
-      else { big=String(remaining); sub=Math.abs(remaining)+" "+I18N.t("opt.days")+" "+I18N.t("jab.overdue"); color="var(--bad)"; frac=1; }
-      html+= ringSVG(frac, big, sub, color);
+      var big, sub;
+      if(remaining > 0){ big=String(remaining); sub=I18N.t("jab.daysLeft"); }
+      else if(remaining === 0){ big="0"; sub=I18N.t("jab.dueToday"); frac=1; }
+      else { big=String(remaining); sub=Math.abs(remaining)+" "+I18N.t("opt.days")+" "+I18N.t("jab.overdue"); frac=1; }
+      html+= ringSVG(frac, big, sub);
       html+='<div class="stats" style="margin-top:6px">'
         + '<div class="stat"><span class="k">'+esc(I18N.t("jab.nextOn"))+'</span><span class="v" style="font-size:16px">'+esc(next)+'</span></div>'
         + '<div class="stat"><span class="k">'+esc(I18N.t("jab.lastOn"))+'</span><span class="v" style="font-size:16px">'+esc(last)+'</span></div>'
