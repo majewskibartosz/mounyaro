@@ -43,4 +43,4 @@ Commit and push automatically as you work — no need to wait for the user to as
 - After each **logical** change (one feature, fix, or refactor), make a commit with a Conventional Commit message and `git push`.
 - One logical unit per commit — split unrelated changes into separate commits rather than batching everything.
 - Commit only when the change is complete and verified, not mid-edit.
-- The default branch is `claude/mounjaro-tracker-app-wf1qkd`; push there.
+- The default branch is `main`; push there.
