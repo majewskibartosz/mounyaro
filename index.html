@@ -84,6 +84,18 @@
   .pcitem{display:flex;flex-direction:column;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px}
   .pcitem label{margin:0;font-size:12px;font-weight:700;color:var(--ink)}
   .pcitem input{padding:7px 8px;font-size:14px;border-radius:8px}
+
+  /* travel comparison: full-width cards on mobile, multi-column on desktop */
+  .tgrid{display:grid;gap:10px;grid-template-columns:1fr;margin:0 0 8px}
+  @media(min-width:620px){ .tgrid{grid-template-columns:repeat(3,1fr)} .tgrid.two{grid-template-columns:repeat(2,1fr)} }
+  .tcard{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .tcard h3{margin:0 0 6px;font-size:14px}
+  .tcard .ex{margin:0 0 10px;font-size:12.5px;color:var(--muted);line-height:1.45}
+  .tcard .big{font-size:21px;font-weight:800;line-height:1.1}
+  .tcard .big small{font-size:12px;font-weight:600;color:var(--muted)}
+  .tcard .meta{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.5}
+  .tcard.verdict{border-width:1px}
+  .tsub{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 8px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 
   button.btn{
@@ -369,6 +381,24 @@ var I18N = (function(){
     "trv.perShot":{pl:"Koszt / zastrzyk",en:"Cost / shot"},
     "trv.perMonth":{pl:"Koszt / miesiąc",en:"Cost / month"},
     "trv.covers":{pl:"1 pen starcza na",en:"1 pen covers"},
+    "trv.perPen":{pl:"za pen",en:"per pen"},
+    "trv.rateUsed":{pl:"Przelicznik: 1 {home} = {rate} {dest} — wszystkie kwoty poniżej są w {home}.",
+                    en:"Rate: 1 {home} = {rate} {dest} — all amounts below are in {home}."},
+    "trv.whatPay":{pl:"Ile faktycznie płacisz (w {home})",en:"What you actually pay (in {home})"},
+    "trv.verdictTitle":{pl:"Wniosek",en:"Verdict"},
+    "trv.shotsPerPen":{pl:"zastrz./pen",en:"shots/pen"},
+    "trv.exHome":{pl:"Przywozisz 1 pen {s} mg z domu i dawkujesz {d} mg na zastrzyk — wystarcza na {n} zastrzyków (~{m} mies.).",
+                  en:"You bring one {s} mg pen from home and dose {d} mg per shot — it lasts {n} shots (~{m} months)."},
+    "trv.exSame":{pl:"Ten sam pen {s} mg kupiony na miejscu kosztuje {orig} {cur}, czyli {pln}. Dawkujesz tak samo ({n} zastrzyków).",
+                  en:"The same {s} mg pen bought there costs {orig} {cur} = {pln}. Dosed the same way ({n} shots)."},
+    "trv.exRx":{pl:"Jeśli lekarz przepisze tylko pen {s} mg ({orig} {cur} = {pln}), daje {n} zastrzyków — na ten sam czas potrzebujesz ok. {k} penów.",
+                en:"If the doctor only prescribes a {s} mg pen ({orig} {cur} = {pln}), it gives {n} shots — you'd need about {k} pens to cover the same time."},
+    "trv.vsSame":{pl:"vs ten sam pen {s} mg na miejscu",en:"vs the same {s} mg pen abroad"},
+    "trv.vsRx":{pl:"vs przepisane peny {s} mg na miejscu",en:"vs prescribed {s} mg pens abroad"},
+    "trv.saveLine":{pl:"Taniej z domu o {pm} / mies. ({ps} / zastrzyk). Opłaca się przywieźć.",
+                    en:"Cheaper from home by {pm} / month ({ps} / shot). Worth bringing."},
+    "trv.costLine":{pl:"Taniej na miejscu o {pm} / mies. ({ps} / zastrzyk). Kup na miejscu.",
+                    en:"Cheaper there by {pm} / month ({ps} / shot). Buy locally."},
     "trv.saveSame":{pl:"Oszczędność vs ten sam pen w kraju docelowym",en:"Saving vs same pen in destination"},
     "trv.saveRx":{pl:"Oszczędność vs pen na receptę w kraju docelowym",en:"Saving vs prescribed pen in destination"},
     "trv.saveMonth":{pl:"/ miesiąc",en:"/ month"},
@@ -1597,31 +1627,49 @@ var UI = (function(){
     if(!r.home || (!r.same && !r.rx)){
       $("#optResult").innerHTML='<div class="card"><div class="empty">'+esc(I18N.t("trv.needInputs"))+'</div></div>'; return;
     }
-    function scCard(label, sc){
+    var destCur=tv.currency||"";
+    function money(n){ return fmtMoney(n,homeCur); }
+    function destOrig(n){ return fmtNum(n,0); }
+    function tx(key,map){ var t=I18N.t(key); for(var k in map){ t=t.split("{"+k+"}").join(map[k]); } return t; }
+    // one full-width breakdown card: title, plain explanation, big pen price, meta
+    function scCard(title, ex, sc){
       if(!sc) return "";
-      return '<div class="stat"><span class="k">'+esc(label)+'</span>'
-        +'<span class="v">'+fmtMoney(sc.perMonth,homeCur)+'<span class="muted tiny" style="font-weight:600"> / '+esc(I18N.t("opt.months"))+'</span></span>'
-        +'<span class="muted tiny">'+fmtMoney(sc.perShot,homeCur)+' / '+esc(I18N.t("opt.injections"))+' · '+esc(I18N.t("trv.covers"))+' '+fmtNum(sc.coverMonths,1)+' '+esc(I18N.t("opt.months"))+'</span></div>';
+      return '<div class="tcard"><h3>'+esc(title)+'</h3><p class="ex">'+esc(ex)+'</p>'
+        +'<div class="big">'+money(sc.priceHome)+' <small>'+esc(I18N.t("trv.perPen"))+'</small></div>'
+        +'<div class="meta">'+money(sc.perMonth)+' / '+esc(I18N.t("opt.months"))
+          +' · '+sc.shotsPerPen+' '+esc(I18N.t("trv.shotsPerPen"))
+          +' · '+esc(I18N.t("trv.covers"))+' '+fmtNum(sc.coverMonths,1)+' '+esc(I18N.t("opt.months"))+'</div></div>';
     }
-    function saveCard(labelKey, perShot, perMonth){
+    function verdictCard(titleKey, titleS, perShot, perMonth){
       if(perShot==null) return "";
       var save=perShot>0, col=save?"var(--good)":"var(--bad)";
-      var msg=save?I18N.t("trv.cheaperHome"):I18N.t("trv.cheaperDest");
-      return '<div class="stat"><span class="k">'+esc(I18N.t(labelKey))+'</span>'
-        +'<span class="v" style="color:'+col+'">'+(save?"":"−")+fmtMoney(Math.abs(perMonth),homeCur)+' <span class="tiny" style="font-weight:600">'+esc(I18N.t("trv.saveMonth"))+'</span></span>'
-        +'<span class="muted tiny" style="color:'+col+'">'+fmtMoney(Math.abs(perShot),homeCur)+' / '+esc(I18N.t("opt.injections"))+' · '+esc(msg)+'</span></div>';
+      var line=tx(save?"trv.saveLine":"trv.costLine",{pm:money(Math.abs(perMonth)),ps:money(Math.abs(perShot))});
+      return '<div class="tcard verdict" style="border-color:'+col+'">'
+        +'<h3>'+esc(tx(titleKey,{s:titleS}))+'</h3>'
+        +'<div class="big" style="color:'+col+'">'+money(Math.abs(perMonth))+' <small style="color:'+col+'">/ '+esc(I18N.t("opt.months"))+'</small></div>'
+        +'<div class="meta" style="color:'+col+'">'+esc(line)+'</div></div>';
     }
-    var html='<div class="card"><h2>'+esc(I18N.t("opt.modeTravel"))+'</h2>'
-      +'<div class="stats">'
-      + scCard(I18N.t("trv.rowHome").replace("{s}",S), r.home)
-      + scCard(I18N.t("trv.rowSame").replace("{s}",S), r.same)
-      + (r.rx && rxStr!==S ? scCard(I18N.t("trv.rowRx").replace("{s}",rxStr), r.rx) : "")
+    var rateNote="";
+    if(tv.rate!=null && tv.rate>0 && destCur){
+      rateNote='<p class="tiny muted" style="margin:-4px 0 12px">'+esc(tx("trv.rateUsed",{home:homeCur,rate:fmtNum(tv.rate,4),dest:destCur}))+'</p>';
+    }
+    var pensNeeded = (r.rx&&r.home)?Math.max(1,Math.ceil(r.home.shotsPerPen/r.rx.shotsPerPen)):0;
+    var exHome=tx("trv.exHome",{s:S,d:D,n:r.home.shotsPerPen,m:fmtNum(r.home.coverMonths,1)});
+    var exSame=r.same?tx("trv.exSame",{s:S,orig:destOrig(destSame),cur:destCur,pln:money(r.same.priceHome),n:r.same.shotsPerPen}):"";
+    var exRx=r.rx?tx("trv.exRx",{s:rxStr,orig:destOrig(destRx),cur:destCur,pln:money(r.rx.priceHome),n:r.rx.shotsPerPen,k:pensNeeded}):"";
+    var html='<div class="card"><h2>'+esc(I18N.t("opt.modeTravel"))+'</h2>'+rateNote
+      +'<div class="tsub">'+esc(tx("trv.whatPay",{home:homeCur}))+'</div>'
+      +'<div class="tgrid">'
+      + scCard(tx("trv.rowHome",{s:S}), exHome, r.home)
+      + scCard(tx("trv.rowSame",{s:S}), exSame, r.same)
+      + (r.rx && rxStr!==S ? scCard(tx("trv.rowRx",{s:rxStr}), exRx, r.rx) : "")
       +'</div>'
-      +'<div class="stats" style="margin-top:12px">'
-      + saveCard("trv.saveSame", r.saveVsSame, r.saveVsSameMonth)
-      + (rxStr!==S ? saveCard("trv.saveRx", r.saveVsRx, r.saveVsRxMonth) : "")
+      +'<div class="tsub">'+esc(I18N.t("trv.verdictTitle"))+'</div>'
+      +'<div class="tgrid two">'
+      + verdictCard("trv.vsSame", S, r.saveVsSame, r.saveVsSameMonth)
+      + (rxStr!==S ? verdictCard("trv.vsRx", rxStr, r.saveVsRx, r.saveVsRxMonth) : "")
       +'</div>';
-    if(rxStr==null) html+='<div class="warnbox" style="margin-top:12px">'+esc(I18N.t("trv.rxNA"))+'</div>';
+    if(rxStr==null) html+='<div class="warnbox" style="margin-top:8px">'+esc(I18N.t("trv.rxNA"))+'</div>';
     html+='</div>';
     $("#optResult").innerHTML=html;
   }
