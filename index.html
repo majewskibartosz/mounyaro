@@ -766,6 +766,33 @@ var STORE = (function(){
       }).catch(function(){ cb&&cb("denied"); });
     }catch(e){ cb&&cb("denied"); }
   }
+  // A read attempt failed mid-session. Cloud clients (MEGA/Dropbox) often
+  // replace the file atomically, which can invalidate the handle or drop the
+  // permission grant. Figure out which, so the UI can prompt a reconnect.
+  function handleLost(cb){
+    try{
+      linkedHandle.queryPermission({mode:"readwrite"}).then(function(p){
+        if(p!=="granted"){ linkedReady=false; cb&&cb("needsPermission"); }
+        else cb&&cb("error");
+      }).catch(function(){ linkedReady=false; cb&&cb("needsPermission"); });
+    }catch(e){ linkedReady=false; cb&&cb("needsPermission"); }
+  }
+  // Passive re-read of the linked file (e.g. when the tab regains focus and a
+  // cloud sync may have pulled in a newer copy). Read-only: it adopts the file
+  // only when the file is strictly newer, and never writes back — so a routine
+  // refresh can't clobber the synced file. cb: "loaded" | "nochange" |
+  // "needsPermission" | "error" | "inactive".
+  function refreshFromHandle(cb){
+    if(!linkedHandle || !linkedReady){ cb&&cb("inactive"); return; }
+    try{
+      linkedHandle.getFile().then(function(f){ return f.text(); }).then(function(txt){
+        var fileState=null; try{ fileState=JSON.parse(txt); }catch(e){}
+        if(fileState && (fileState.updatedAt||0) > (state.updatedAt||0)){
+          adoptParsed(fileState); cb&&cb("loaded");
+        } else { cb&&cb("nochange"); }
+      }).catch(function(){ handleLost(cb); });
+    }catch(e){ handleLost(cb); }
+  }
   function unlinkFile(cb){
     linkedHandle=null; linkedReady=false;
     if(writeTimer){ clearTimeout(writeTimer); writeTimer=null; }
@@ -780,7 +807,7 @@ var STORE = (function(){
 
   return {
     load:load, save:save, exportFile:exportFile, importFile:importFile, clearAll:clearAll,
-    fsaSupported:fsaSupported, restoreLink:restoreLink, reconnect:reconnect,
+    fsaSupported:fsaSupported, restoreLink:restoreLink, reconnect:reconnect, refreshFromHandle:refreshFromHandle,
     linkFileNew:linkFileNew, linkFileExisting:linkFileExisting, unlinkFile:unlinkFile, linkInfo:linkInfo,
     get state(){return state;}, get memoryOnly(){return memoryOnly;}
   };
@@ -1365,7 +1392,7 @@ var UI = (function(){
     var info = STORE.linkInfo();
     var h = '<div class="card"><h2>'+esc(I18N.t("set.linkTitle"))+'</h2>';
     if(!info.supported){
-      return h + '<div class="note">'+esc(I18N.t("set.linkUnsupported"))+'</div></div>';
+      return h + '<div class="warnbox">'+esc(I18N.t("set.linkUnsupported"))+'</div></div>';
     }
     h += '<p class="sub">'+esc(I18N.t("set.linkDesc"))+'</p>';
     if(info.linked){
@@ -1509,6 +1536,22 @@ var UI = (function(){
       });
     });
     window.addEventListener("hashchange",render);
+    // When the tab becomes visible/focused again, re-read the linked file: a
+    // cloud sync (MEGA/Dropbox) may have pulled in a newer copy while we were
+    // away, and the File System Access handle is otherwise only read at startup.
+    function refreshLinked(){
+      if(document.visibilityState!=="visible") return;
+      STORE.refreshFromHandle(function(status){
+        if(status==="loaded"){
+          I18N.setLang(STORE.state.settings.lang); document.documentElement.lang=STORE.state.settings.lang;
+          applyTheme(); applyStatic(); render();
+        } else if(status==="needsPermission"){
+          linkBannerOn=true; updateBanner();
+        }
+      });
+    }
+    document.addEventListener("visibilitychange",refreshLinked);
+    window.addEventListener("focus",refreshLinked);
     if(!location.hash) location.hash="#jab";
     render();
     // Restore a previously linked file (async; Chromium only). May pull in newer data.
