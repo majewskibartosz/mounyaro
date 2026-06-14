@@ -236,8 +236,27 @@ var I18N = (function(){
     "opt.sub":{pl:"Każdy pen = 240 kliknięć = 4 dawki nominalne (60 kliknięć/dawkę). mg/klik = moc pena ÷ 60.",
                en:"Every pen = 240 clicks = 4 labeled doses (60 clicks/dose). mg/click = pen strength ÷ 60."},
     "opt.mode":{pl:"Tryb",en:"Mode"},
-    "opt.modeStretch":{pl:"Rozciągnij / oszczędzaj",en:"Stretch / save"},
+    "opt.modeStretch":{pl:"Plan / oszczędzaj",en:"Plan / save"},
     "opt.modeProg":{pl:"Powolna progresja",en:"Slow progression"},
+    "opt.interval":{pl:"Co ile dni robisz zastrzyk",en:"Days between shots"},
+    "opt.baseDose":{pl:"Pełna dawka (mg)",en:"Full dose (mg)"},
+    "opt.cycleLen":{pl:"Zastrzyków w cyklu",en:"Shots per cycle"},
+    "opt.pattern":{pl:"Wzór dawek (cykl się powtarza)",en:"Dose pattern (cycle repeats)"},
+    "opt.full":{pl:"Pełna",en:"Full"},
+    "opt.half":{pl:"Połowa",en:"Half"},
+    "opt.shot":{pl:"Zastrzyk",en:"Shot"},
+    "opt.perShot":{pl:"Koszt / zastrzyk",en:"Cost / shot"},
+    "opt.shotsPerPen":{pl:"Zastrzyków z 1 pena",en:"Shots per pen"},
+    "opt.lasts":{pl:"Pen wystarcza na",en:"Pen lasts"},
+    "opt.days":{pl:"dni",en:"days"},
+    "opt.months":{pl:"mies.",en:"months"},
+    "opt.avgWeeklyMg":{pl:"Śr. dawka / tydzień",en:"Avg dose / week"},
+    "opt.monthlyCost":{pl:"Koszt / miesiąc",en:"Cost / month"},
+    "opt.extraDays":{pl:"vs standard (28 dni)",en:"vs standard (28 days)"},
+    "opt.planInfeasible":{pl:"Najmniejszy zastrzyk nie mieści się w jednym penie. Zmniejsz dawkę, wybierz mocniejszego pena albo włącz dawkę „golden”.",
+                          en:"The smallest shot does not fit in one pen. Lower the dose, pick a stronger pen, or enable the “golden” dose."},
+    "opt.injections":{pl:"zastrzyków",en:"shots"},
+    "opt.duration":{pl:"Czas trwania",en:"Duration"},
     "opt.penStrength":{pl:"Moc pena, który masz (mg)",en:"Strength of the pen you have (mg)"},
     "opt.targetDose":{pl:"Docelowa dawka tygodniowa (mg)",en:"Target weekly dose (mg)"},
     "opt.fromDose":{pl:"Obecna dawka (mg)",en:"Current dose (mg)"},
@@ -368,6 +387,59 @@ var DOMAIN = (function(){
     };
   }
 
+  // Regimen planner: base dose + repeating full/half pattern, on a custom day interval.
+  // fractions: array of multipliers (1 = full, 0.5 = half). intervalDays: days between shots.
+  function planRegimen(S, baseDose, fractions, intervalDays, P, golden){
+    if(!baseDose || baseDose<=0) return {error:"badInput"};
+    if(!fractions || !fractions.length) fractions=[1];
+    if(!intervalDays || intervalDays<=0) intervalDays=7;
+    var budget = budgetClicks(golden);
+    var pc = (P!=null) ? P/CLICKS_PER_PEN : null;
+
+    var shots = fractions.map(function(f){
+      var dose = r3(baseDose*f);
+      var clicks = clicksForDose(dose, S);
+      return { fraction:f, dose:dose, clicks:clicks, actualMg:r3(mgForClicks(clicks,S)),
+               costPerShot: pc!=null ? clicks*pc : null };
+    });
+    var cycleClicks = shots.reduce(function(a,b){return a+b.clicks;},0);
+    var cycleShots = shots.length;
+    var cycleMg = shots.reduce(function(a,b){return a+b.actualMg;},0);
+
+    // smallest shot must fit at least once
+    var minClicks = Math.min.apply(null, shots.map(function(x){return x.clicks;}));
+    if(minClicks<=0 || minClicks>budget){
+      return { infeasible:true, budget:budget, shots:shots, minClicks:minClicks };
+    }
+
+    // fill sequentially through the repeating pattern
+    var fullCycles = Math.floor(budget / cycleClicks);
+    var used = fullCycles * cycleClicks;
+    var totalShots = fullCycles * cycleShots;
+    var i = 0;
+    while(used + shots[i % cycleShots].clicks <= budget){
+      used += shots[i % cycleShots].clicks; totalShots++; i++;
+    }
+    var leftover = budget - used;
+    var totalDays = totalShots * intervalDays;
+    var weeks = totalDays/7, months = totalDays/30.44;
+
+    var weeklyClicks = cycleClicks/(cycleShots*intervalDays)*7;
+    return {
+      budget:budget, shots:shots, cycleClicks:cycleClicks, cycleShots:cycleShots,
+      totalShots:totalShots, clicksUsed:used, leftover:leftover,
+      totalDays:totalDays, weeks:weeks, months:months,
+      intervalDays:intervalDays,
+      avgWeeklyMg: r3(cycleMg/(cycleShots*intervalDays)*7),
+      totalCost: P!=null ? P : null,
+      weeklyCost: pc!=null ? weeklyClicks*pc : null,
+      monthlyCost: pc!=null ? weeklyClicks*pc*30.44/7 : null,
+      baselineWeeklyCost: P!=null ? P/DOSES_PER_PEN : null,
+      savingPerWeek: pc!=null ? (P/DOSES_PER_PEN - weeklyClicks*pc) : null,
+      extraDays: totalDays - (DOSES_PER_PEN*7)
+    };
+  }
+
   // Build discrete dose levels from A to B by step inc (mg)
   function buildLevels(A,B,inc){
     var levels=[];
@@ -468,7 +540,7 @@ var DOMAIN = (function(){
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost,
-    stretch:stretch, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
+    stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange
   };
 })();
@@ -485,7 +557,7 @@ var STORE = (function(){
       settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8} },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
-      calc:{ costPerPen:null, strengthMg:null }
+      calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] }
     };
   }
   var state = defaults();
@@ -979,9 +1051,10 @@ var UI = (function(){
       +'<option value="prog">'+esc(I18N.t("opt.modeProg"))+'</option>'
     +'</select></div>'
     +'<div id="oFields"></div>'
-    +'<div class="grid g2">'
+    +'<div class="grid g3">'
     +  '<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
     +  '<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label><input type="text" id="oCur" value="'+esc(st.settings.currency)+'" maxlength="4"></div>'
+    +  '<div class="field"><label>'+esc(I18N.t("opt.interval"))+'</label><input type="number" inputmode="numeric" id="oInterval" value="'+(st.calc.intervalDays||7)+'" min="1"></div>'
     +'</div>'
     +'<p class="tiny muted" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
     +'<label class="toggle" style="margin:8px 0 12px"><input type="checkbox" id="oGold"'+(g.enabled?" checked":"")+'><span class="switch"></span>'
@@ -996,13 +1069,41 @@ var UI = (function(){
     app.innerHTML=html;
 
     var strength = st.calc.strengthMg || 5;
+    function strengthSelect(){
+      return '<select id="oStr">'
+        +[2.5,5,7.5,10,12.5,15].map(function(v){return '<option value="'+v+'"'+(strength==v?" selected":"")+'>'+v+' mg</option>';}).join("")
+        +'</select>';
+    }
     function fieldsStretch(){
-      return '<div class="grid g2">'
-        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label><select id="oStr">'
-          +[2.5,5,7.5,10,12.5,15].map(function(v){return '<option value="'+v+'"'+(strength==v?" selected":"")+'>'+v+' mg</option>';}).join("")
+      var base = st.calc.baseDose!=null ? st.calc.baseDose : strength;
+      var cyc = st.calc.cycleLen || 1;
+      return '<div class="grid g3">'
+        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthSelect()+'</div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.baseDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oBase" value="'+base+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.cycleLen"))+'</label><select id="oCycle">'
+          +[1,2,3,4,5,6,7,8].map(function(v){return '<option value="'+v+'"'+(cyc==v?" selected":"")+'>'+v+'</option>';}).join("")
         +'</select></div>'
-        +'<div class="field"><label>'+esc(I18N.t("opt.targetDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTarget" value="2.5"></div>'
-        +'</div>';
+        +'</div>'
+        +'<div class="field" id="oPatternWrap"><label>'+esc(I18N.t("opt.pattern"))+'</label><div id="oPattern" class="row"></div></div>';
+    }
+    // Render the per-shot Full/Half toggles from the saved pattern (padded/trimmed to cycleLen).
+    function renderPattern(){
+      var wrap=$("#oPattern"); if(!wrap) return;
+      var n = parseInt(($("#oCycle")||{}).value,10) || 1;
+      var pat = (st.calc.pattern||[]).slice(0,n);
+      while(pat.length<n) pat.push(1);
+      st.calc.pattern = pat; st.calc.cycleLen = n;
+      wrap.innerHTML = pat.map(function(f,i){
+        return '<button type="button" class="btn '+(f===0.5?"ghost":"")+' sm fracBtn" data-i="'+i+'">'
+          +'#'+(i+1)+' '+esc(f===0.5?I18N.t("opt.half"):I18N.t("opt.full"))+'</button>';
+      }).join("");
+      $all(".fracBtn", wrap).forEach(function(b){
+        b.addEventListener("click",function(){
+          var i=+b.getAttribute("data-i");
+          st.calc.pattern[i] = (st.calc.pattern[i]===0.5)?1:0.5;
+          STORE.save(); renderPattern();
+        });
+      });
     }
     function fieldsProg(){
       return '<div class="grid g2">'
@@ -1020,12 +1121,21 @@ var UI = (function(){
       var el=$("#oStr"); if(!el) return;
       el.addEventListener("change",function(){ st.calc.strengthMg=parseFloat(this.value); STORE.save(); });
     }
-    function renderFields(){ $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg(); bindStrength(); }
+    function renderFields(){
+      $("#oFields").innerHTML = $("#oMode").value==="stretch"?fieldsStretch():fieldsProg();
+      bindStrength();
+      if($("#oMode").value==="stretch"){
+        renderPattern();
+        $("#oCycle").addEventListener("change",renderPattern);
+        $("#oBase").addEventListener("change",function(){ st.calc.baseDose = this.value===""?null:parseFloat(this.value); STORE.save(); });
+      }
+    }
     renderFields();
     $("#oMode").addEventListener("change",function(){ renderFields(); $("#optResult").innerHTML=""; });
-    // price + currency shared with the Cost tab
+    // price + currency shared with the Cost tab; interval shared by both modes
     $("#oPrice").addEventListener("input",function(){ st.calc.costPerPen = this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#oCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
+    $("#oInterval").addEventListener("change",function(){ st.calc.intervalDays = Math.max(1, parseInt(this.value,10)||7); STORE.save(); });
     $("#oGold").addEventListener("change",function(){
       st.settings.goldenDose.enabled=this.checked;
       $("#oGoldRow").className = this.checked?"":"hidden";
@@ -1039,29 +1149,51 @@ var UI = (function(){
       if($("#oGoldClicks")) st.settings.goldenDose.extraClicks=Math.max(0,parseInt($("#oGoldClicks").value,10)||0);
       st.calc.costPerPen = $("#oPrice").value===""?null:parseFloat($("#oPrice").value);
       st.settings.currency = ($("#oCur").value||"PLN").toUpperCase();
+      st.calc.intervalDays = Math.max(1, parseInt($("#oInterval").value,10)||7);
       if($("#oStr")) st.calc.strengthMg=parseFloat($("#oStr").value);
+      if($("#oBase")) st.calc.baseDose = $("#oBase").value===""?null:parseFloat($("#oBase").value);
       STORE.save();
-      if($("#oMode").value==="stretch") runStretch(); else runProg();
+      if($("#oMode").value==="stretch") runPlan(); else runProg();
     });
   }
-  function runStretch(){
+  function runPlan(){
     var st=s();
-    var S=parseFloat($("#oStr").value), D=parseFloat($("#oTarget").value);
+    var S=parseFloat($("#oStr").value);
+    var base=parseFloat($("#oBase").value);
+    var interval=Math.max(1, parseInt($("#oInterval").value,10)||7);
+    var pattern=(st.calc.pattern&&st.calc.pattern.length)?st.calc.pattern:[1];
     var P=st.calc.costPerPen, cur=st.settings.currency;
-    var r=DOMAIN.stretch(S,D,P,st.settings.goldenDose);
+    var r=DOMAIN.planRegimen(S, base, pattern, interval, P, st.settings.goldenDose);
     if(r.error){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.targetGt"))+'</div></div>'; return; }
     function stat(k,v,col){ return '<div class="stat"><span class="k">'+esc(k)+'</span><span class="v"'+(col?' style="color:'+col+'"':'')+'>'+v+'</span></div>'; }
-    var html='<div class="card"><h2>'+esc(I18N.t("opt.modeStretch"))+'</h2><div class="stats">'
-      + stat(I18N.t("opt.clicksPerWeek"), r.clicksPerWeek)
-      + stat(I18N.t("opt.weeksPerPen"), r.weeks+" "+I18N.t("common.weeks"))
-      + stat(I18N.t("opt.actualDose"), fmtNum(r.actualMg,2)+" mg")
+    if(r.infeasible){
+      $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.planInfeasible"))+'</div></div>';
+      return;
+    }
+    var html='<div class="card"><h2>'+esc(I18N.t("opt.modeStretch"))+'</h2>';
+    // per-shot table
+    html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("opt.shot"))+'</th><th>'+esc(I18N.t("common.dose"))+'</th>'
+        +'<th class="num">'+esc(I18N.t("common.clicks"))+'</th>'
+        +(P!=null?'<th class="num">'+esc(I18N.t("opt.perShot"))+'</th>':'')+'</tr></thead><tbody>';
+    r.shots.forEach(function(sh,i){
+      html+='<tr><td>#'+(i+1)+' <span class="muted tiny">'+esc(sh.fraction===0.5?I18N.t("opt.half"):I18N.t("opt.full"))+'</span></td>'
+          +'<td><span class="pill" style="background:'+doseColor(sh.dose)+'22;color:'+doseColor(sh.dose)+'">'+fmtNum(sh.actualMg,2)+' mg</span></td>'
+          +'<td class="num">'+sh.clicks+'</td>'
+          +(P!=null?'<td class="num">'+fmtMoney(sh.costPerShot,cur)+'</td>':'')+'</tr>';
+    });
+    html+='</tbody></table></div>';
+    html+='<div class="stats" style="margin-top:14px">'
+      + stat(I18N.t("opt.shotsPerPen"), r.totalShots)
+      + stat(I18N.t("opt.lasts"), r.totalDays+" "+I18N.t("opt.days")+" · "+fmtNum(r.weeks,1)+" "+I18N.t("common.weeks"))
+      + stat(I18N.t("opt.avgWeeklyMg"), fmtNum(r.avgWeeklyMg,2)+" mg")
       + stat(I18N.t("opt.leftover"), r.leftover+" "+I18N.t("common.clicks"))
       + '</div>';
-    html+='<div class="note" style="margin-top:12px">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b></div>';
+    html+='<div class="note" style="margin-top:12px">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b> · '+fmtNum(r.months,1)+' '+I18N.t("opt.months")+'</div>';
     if(P!=null){
       html+='<div class="stats" style="margin-top:12px">'
-        + stat(I18N.t("opt.costPerWeek"), fmtMoney(r.costPerWeek,cur))
-        + stat(I18N.t("opt.savingsWeeks"), (r.extraWeeks>=0?"+":"")+r.extraWeeks, r.extraWeeks>0?"var(--good)":"")
+        + stat(I18N.t("opt.costPerWeek"), fmtMoney(r.weeklyCost,cur))
+        + stat(I18N.t("opt.monthlyCost"), fmtMoney(r.monthlyCost,cur))
+        + stat(I18N.t("opt.extraDays"), (r.extraDays>=0?"+":"")+r.extraDays+" "+I18N.t("opt.days"), r.extraDays>0?"var(--good)":"")
         + stat(I18N.t("opt.savingsMoney"), fmtMoney(r.savingPerWeek,cur), r.savingPerWeek>0?"var(--good)":"")
         + '</div>';
     } else {
@@ -1074,6 +1206,7 @@ var UI = (function(){
     var st=s();
     var S=parseFloat($("#oStr").value), A=parseFloat($("#oFrom").value), B=parseFloat($("#oTo").value);
     var step=parseFloat($("#oStep").value), P=st.calc.costPerPen, cur=st.settings.currency;
+    var interval=Math.max(1, parseInt(($("#oInterval")||{}).value,10) || (st.calc.intervalDays||7));
     var r=DOMAIN.progression(A,B,S,step,st.settings.goldenDose,P);
     if(r.error){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.targetGt"))+'</div></div>'; return; }
     if(!r.feasible){
@@ -1092,13 +1225,15 @@ var UI = (function(){
       var res=cand.res, nm=names[cand.key];
       html+='<div class="card"><h2>'+esc(I18N.t(nm[0]))+'</h2><p class="sub">'+esc(I18N.t(nm[1]))+'</p>';
       if(res.coarsenStep){ html+='<div class="note" style="margin-bottom:12px">'+esc(I18N.t("opt.coarsened"))+' <b>'+fmtNum(res.coarsenStep,2)+' mg</b></div>'; }
+      var durDays=res.totalWeeks*interval;
       html+='<div class="stats" style="margin-bottom:12px">'
-        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.totalWeeks"))+'</span><span class="v">'+res.totalWeeks+'</span></div>'
+        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.injections"))+'</span><span class="v">'+res.totalWeeks+'</span></div>'
+        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.duration"))+'</span><span class="v" style="font-size:16px">'+durDays+' '+I18N.t("opt.days")+' · '+fmtNum(durDays/7,1)+' '+I18N.t("common.weeks")+'</span></div>'
         +'<div class="stat"><span class="k">'+esc(I18N.t("opt.clicksUsed"))+'</span><span class="v">'+res.clicksUsed+'/'+r.budget+'</span></div>'
         +(res.totalCost!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.totalCost"))+'</span><span class="v">'+fmtMoney(res.totalCost,cur)+'</span></div>':'')
-        +(res.costPerWeek!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.costPerWeek"))+'</span><span class="v">'+fmtMoney(res.costPerWeek,cur)+'</span></div>':'')
+        +(res.costPerWeek!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.perShot"))+'</span><span class="v">'+fmtMoney(res.costPerWeek,cur)+'</span></div>':'')
         +'</div>';
-      html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("common.dose"))+'</th><th class="num">'+esc(I18N.t("common.clicks"))+'</th><th class="num">'+esc(I18N.t("common.weeks"))+'</th></tr></thead><tbody>';
+      html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("common.dose"))+'</th><th class="num">'+esc(I18N.t("common.clicks"))+'</th><th class="num">'+esc(I18N.t("opt.injections"))+'</th></tr></thead><tbody>';
       res.schedule.forEach(function(row){
         if(row.weeks<=0) return;
         html+='<tr><td><span class="pill" style="background:'+doseColor(row.mg)+'22;color:'+doseColor(row.mg)+'">'+fmtNum(row.mg,2)+' mg</span></td>'
