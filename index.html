@@ -366,8 +366,8 @@ var I18N = (function(){
     "opt.schReachD":{pl:"Po 1 tygodniu na każdym kroku resztę kliknięć zużywasz na dawce docelowej.",en:"One week per step, then spend the rest at the target dose."},
     "opt.totalWeeks":{pl:"Łącznie tygodni",en:"Total weeks"},
     "opt.totalCost":{pl:"Koszt (1 pen)",en:"Total cost (1 pen)"},
-    "opt.costShared":{pl:"Koszt uzupełnia się z cen penów ustawionych w Ustawieniach. Zmiany tutaj dotyczą tylko tego wyliczenia.",
-                      en:"Cost auto-fills from your per-pen prices in Settings. Edits here apply to this calculation only."},
+    "opt.costShared":{pl:"Cena pena pochodzi z Twoich cen penów w Ustawieniach (dla wybranej mocy).",
+                      en:"The pen price comes from your per-pen prices in Settings (for the chosen strength)."},
     "opt.clicksUsed":{pl:"Zużyte kliknięcia",en:"Clicks used"},
     "opt.coarsened":{pl:"Krok dopasowano do",en:"Step adjusted to"},
     "opt.infeasible":{pl:"Nawet 1 tydzień na dawce startowej + 1 tydzień na docelowej nie mieści się w jednym penie. Włącz dawkę „golden” lub wybierz mocniejszego pena.",
@@ -1788,8 +1788,9 @@ var UI = (function(){
     function renderFields(){
       var mode=$("#oMode").value, travel=(mode==="travel");
       // In travel mode the home price comes from Settings (or the inline override),
-      // so hide the shared price field + its note to keep the form simple.
-      if($("#oPriceField")) $("#oPriceField").style.display = travel?"none":"";
+      // Pen price always comes from Settings (per-pen costs for the chosen
+      // strength) — never an input here. Hide the price field in every mode.
+      if($("#oPriceField")) $("#oPriceField").style.display = "none";
       if($("#oCostShared")) $("#oCostShared").style.display = travel?"none":"";
       if(travel){ renderTravelFields(); return; }
       $("#oFields").innerHTML = mode==="stretch"?fieldsStretch():fieldsProg();
@@ -1912,7 +1913,7 @@ var UI = (function(){
     var base=parseFloat($("#oBase").value);
     var interval=Math.max(1, parseInt($("#oInterval").value,10)||7);
     var pattern=(st.calc.pattern&&st.calc.pattern.length)?st.calc.pattern:[1];
-    var P=st.calc.costPerPen, cur=st.settings.currency;
+    var P=(st.settings.penCosts?st.settings.penCosts[String(S)]:null), cur=st.settings.currency;
     var r=DOMAIN.planRegimen(S, base, pattern, interval, P, st.settings.goldenDose);
     if(r.error){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.targetGt"))+'</div></div>'; return; }
     function stat(k,v,col){ return '<div class="stat"><span class="k">'+esc(k)+'</span><span class="v"'+(col?' style="color:'+col+'"':'')+'>'+v+'</span></div>'; }
@@ -1954,7 +1955,8 @@ var UI = (function(){
   }
   function runProg(){
     var st=s(), pg=st.calc.prog;
-    var S=st.calc.strengthMg||5, from=pg.from, to=pg.to, P=st.calc.costPerPen, cur=st.settings.currency;
+    var S=st.calc.strengthMg||5, from=pg.from, to=pg.to, cur=st.settings.currency;
+    var P=(st.settings.penCosts?st.settings.penCosts[String(S)]:null);
     function warn(msg){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(msg)+'</div></div>'; }
     var levels=null, computedStep=null, wps=1;
     if(pg.method==="manual"){
