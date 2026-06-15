@@ -1565,7 +1565,7 @@ var UI = (function(){
     +'<div id="oFields"></div>'
     +'<div class="grid g3">'
     +  '<div class="field" id="oPriceField"><label><span id="oPriceLbl">'+esc(I18N.t("cost.pricePerPen"))+'</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
-    +  '<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("oCur",st.settings.currency)+'</div>'
+    +  '<div class="field" id="oCurField"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("oCur",st.settings.currency)+'</div>'
     +  '<div class="field"><label>'+esc(I18N.t("opt.interval"))+'</label><input type="number" inputmode="numeric" id="oInterval" value="'+(st.calc.intervalDays||7)+'" min="1"></div>'
     +'</div>'
     +'<p class="tiny muted" id="oCostShared" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
@@ -1791,6 +1791,7 @@ var UI = (function(){
       // Pen price always comes from Settings (per-pen costs for the chosen
       // strength) — never an input here. Hide the price field in every mode.
       if($("#oPriceField")) $("#oPriceField").style.display = "none";
+      if($("#oCurField")) $("#oCurField").style.display = "none";
       if($("#oCostShared")) $("#oCostShared").style.display = travel?"none":"";
       if(travel){ renderTravelFields(); return; }
       $("#oFields").innerHTML = mode==="stretch"?fieldsStretch():fieldsProg();
