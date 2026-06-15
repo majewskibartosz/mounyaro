@@ -278,6 +278,7 @@ var I18N = (function(){
     "weight.history":{pl:"Historia",en:"History"},
     "weight.change":{pl:"Zmiana",en:"Change"},
     "weight.total":{pl:"Łączna zmiana",en:"Total change"},
+    "weight.totalPct":{pl:"Zmiana od startu (%)",en:"Change from start (%)"},
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
 
@@ -1303,8 +1304,27 @@ var UI = (function(){
     var st=s();
     var last = st.weightLog.length ? st.weightLog[0].doseMg : null;
     var html=''
-    + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>'
-    + '<div class="card">'
+    + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>';
+
+    // chart card (on top)
+    html+='<div class="card"><h2>'+esc(I18N.t("weight.chartTitle"))+'</h2>'
+        + '<div id="chartHolder">'+CHART.render(st.weightLog)+'</div>';
+    if(st.weightLog.length){
+      var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
+      var diff=cur-first;
+      var pct = first>0 ? diff/first*100 : 0;
+      var col = diff<=0?"var(--good)":"var(--bad)";
+      html+='<div class="legend"><span>'+esc(I18N.t("weight.legendDose"))+'</span></div>'
+          + '<div class="stats" style="margin-top:12px">'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+col+'">'+(diff>0?"+":"")+fmtNum(diff,1)+' kg</span></div>'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.totalPct"))+'</span><span class="v" style="color:'+col+'">'+(pct>0?"+":"")+fmtNum(pct,1)+'%</span></div>'
+          + '</div>';
+    }
+    html+='</div>';
+
+    // logging form card (below the chart)
+    html+= '<div class="card">'
     +   '<p class="sub">'+esc(I18N.t("weight.sub"))+'</p>'
     +   '<div class="grid g3">'
     +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+todayISO()+'"></div>'
@@ -1314,20 +1334,6 @@ var UI = (function(){
     +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80"></div>'
     +   '<button class="btn" id="wAdd">'+esc(I18N.t("weight.add"))+'</button>'
     + '</div>';
-
-    // chart card
-    html+='<div class="card"><h2>'+esc(I18N.t("weight.chartTitle"))+'</h2>'
-        + '<div id="chartHolder">'+CHART.render(st.weightLog)+'</div>';
-    if(st.weightLog.length){
-      var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
-      var diff=cur-first;
-      html+='<div class="legend"><span>'+esc(I18N.t("weight.legendDose"))+'</span></div>'
-          + '<div class="stats" style="margin-top:12px">'
-          + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
-          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+(diff<=0?"var(--good)":"var(--bad)")+'">'+(diff>0?"+":"")+fmtNum(diff,1)+' kg</span></div>'
-          + '</div>';
-    }
-    html+='</div>';
 
     // history
     if(st.weightLog.length){
