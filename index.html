@@ -376,6 +376,27 @@ var I18N = (function(){
     "opt.targetGt":{pl:"Dawka docelowa musi być większa od obecnej.",en:"Target dose must be greater than the current dose."},
     "opt.enterPrice":{pl:"Podaj cenę pena w zakładce Koszt, aby zobaczyć kwoty.",en:"Enter pen price in the Cost tab to see amounts."},
 
+    "prog.intro":{pl:"Powolne, stopniowe zwiększanie dawki tydzień po tygodniu — bez nagłych skoków.",
+                  en:"A slow, gradual step-up week by week — no abrupt jumps."},
+    "prog.method":{pl:"Jak zwiększać",en:"How to step up"},
+    "prog.mStep":{pl:"O stały krok",en:"By fixed step"},
+    "prog.mTime":{pl:"W zadanym czasie",en:"Over a set time"},
+    "prog.mManual":{pl:"Ręcznie co tydzień",en:"Set each week"},
+    "prog.stepSize":{pl:"Krok dawki (mg / etap)",en:"Step size (mg / step)"},
+    "prog.custom":{pl:"inny",en:"custom"},
+    "prog.weeksPerStep":{pl:"Tygodni na każdej dawce",en:"Weeks at each dose"},
+    "prog.weeksToReach":{pl:"W ile tygodni osiągnąć cel",en:"Weeks to reach the target"},
+    "prog.manualHint":{pl:"Wpisz dawkę (mg) na każdy tydzień — po przecinku lub jedna na linię.",
+                       en:"Enter the dose (mg) for each week — comma-separated or one per line."},
+    "prog.reachesIn":{pl:"Osiągasz {to} mg w tygodniu {n}",en:"Reaches {to} mg in week {n}"},
+    "prog.computedStep":{pl:"Krok ≈ {s} mg / tydzień",en:"Step ≈ {s} mg / week"},
+    "prog.totalWeeks":{pl:"Łącznie tygodni",en:"Total weeks"},
+    "prog.totalMg":{pl:"Łącznie leku",en:"Total medicine"},
+    "prog.planTitle":{pl:"Plan zwiększania dawki",en:"Dose step-up plan"},
+    "prog.week":{pl:"Tydzień",en:"Week"},
+    "prog.needTarget":{pl:"Dawka docelowa musi być większa niż obecna.",en:"The target dose must be higher than the current dose."},
+    "prog.needManual":{pl:"Wpisz przynajmniej jedną dawkę tygodniową.",en:"Enter at least one weekly dose."},
+
     "opt.modeTravel":{pl:"Podróż / import (oszczędności)",en:"Travel / import (savings)"},
     "trv.intro":{pl:"Porównaj koszt rozciągania pena z domu z zakupem w kraju docelowym. Kurs wpisujesz ręcznie — aplikacja działa offline.",
                  en:"Compare stretching a pen from home against buying in your destination country. You enter the rate manually — the app stays offline."},
@@ -694,6 +715,43 @@ var DOMAIN = (function(){
     return { feasible:true, budget:budget, candidates:candidates };
   }
 
+  // ---- gradual titration planner (time-based, not crammed into one pen) ----
+  // Build the ladder of weekly doses for a fixed step size.
+  function rampLevelsByStep(from, to, step){
+    if(!(to>from) || !(step>0)) return null;
+    var levels=[], d=from, guard=0;
+    while(d < to - 1e-9 && guard<400){ levels.push(r3(d)); d+=step; guard++; }
+    levels.push(r3(to));
+    return levels;
+  }
+  // Build an evenly-spaced ladder that reaches the target in exactly `weeks` weeks.
+  function rampLevelsByWeeks(from, to, weeks){
+    weeks=Math.max(2, Math.round(weeks));
+    if(!(to>from)) return null;
+    var step=(to-from)/(weeks-1), levels=[];
+    for(var i=0;i<weeks;i++) levels.push(r3(from+i*step));
+    levels[weeks-1]=r3(to);
+    return { levels:levels, step:r3(step) };
+  }
+  // Turn a list of weekly doses into a costed schedule. weeksPerStep = how long
+  // each dose is held. Each step is gradual, so there's never an infeasible jump.
+  function rampSchedule(levels, weeksPerStep, S, golden, P){
+    if(!levels || !levels.length) return {error:"badInput"};
+    weeksPerStep=Math.max(1, Math.round(weeksPerStep||1));
+    var pc=(P!=null)?P/CLICKS_PER_PEN:null, budget=budgetClicks(golden);
+    var sched=levels.map(function(mg){
+      var clicks=clicksForDose(mg,S);
+      return { mg:r3(mg), weeks:weeksPerStep, clicks:clicks,
+        feasible: clicks<=budget, costPerWeek: pc!=null?r3(clicks*pc):null };
+    });
+    var totalWeeks=levels.length*weeksPerStep;
+    var weeksToTarget=(levels.length-1)*weeksPerStep+1;
+    var totalMg=0,totalCost=0;
+    for(var i=0;i<levels.length;i++){ totalMg+=levels[i]*weeksPerStep; if(pc!=null) totalCost+=sched[i].clicks*weeksPerStep*pc; }
+    return { schedule:sched, totalWeeks:totalWeeks, weeksToTarget:weeksToTarget,
+      target:r3(levels[levels.length-1]), totalMg:r3(totalMg), totalCost:pc!=null?r3(totalCost):null, budget:budget };
+  }
+
   function bmi(weightKg, heightCm){
     if(!weightKg || !heightCm) return null;
     var h = heightCm/100;
@@ -754,7 +812,8 @@ var DOMAIN = (function(){
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
-    healthyWeightRange:healthyWeightRange, travelCompare:travelCompare
+    healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
+    rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule
   };
 })();
 
@@ -773,7 +832,8 @@ var STORE = (function(){
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" } },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],
-      calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1] },
+      calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
+        prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
       jab:{ history:[] }
     };
   }
@@ -1554,14 +1614,62 @@ var UI = (function(){
       });
     }
     function fieldsProg(){
-      return '<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
+      var pg=st.calc.prog;
+      var methods=[["step","prog.mStep"],["time","prog.mTime"],["manual","prog.mManual"]];
+      return '<div class="note" style="margin:0 0 12px">'+esc(I18N.t("prog.intro"))+'</div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+strengthChips()+'</div>'
         +'<div class="grid g2">'
-        +'<div class="field"><label>'+esc(I18N.t("opt.step"))+'</label><select id="oStep">'
-          +[0.25,0.5,1].map(function(v){return '<option value="'+v+'"'+(v===0.5?" selected":"")+'>'+v+' mg</option>';}).join("")
-        +'</select></div>'
-        +'<div class="field"><label>'+esc(I18N.t("opt.fromDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oFrom" value="2.5"></div>'
-        +'<div class="field"><label>'+esc(I18N.t("opt.toDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTo" value="5"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.fromDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oFrom" value="'+pg.from+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("opt.toDose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="oTo" value="'+pg.to+'"></div>'
+        +'</div>'
+        +'<div class="field"><label>'+esc(I18N.t("prog.method"))+'</label><div class="seg" id="oProgSeg">'
+          +methods.map(function(m){return '<button type="button" class="'+(pg.method===m[0]?"on":"")+'" data-m="'+m[0]+'">'+esc(I18N.t(m[1]))+'</button>';}).join("")
+        +'</div></div>'
+        +'<div id="oProgMethod"></div>';
+    }
+    function progMethodHTML(){
+      var pg=st.calc.prog;
+      if(pg.method==="time"){
+        return '<div class="field" style="max-width:260px"><label>'+esc(I18N.t("prog.weeksToReach"))+'</label><input type="number" inputmode="numeric" id="oProgWeeks" min="2" value="'+(pg.weeks||8)+'"></div>';
+      }
+      if(pg.method==="manual"){
+        return '<div class="field"><label>'+esc(I18N.t("prog.manualHint"))+'</label><textarea id="oProgManual" rows="3" placeholder="2.5, 2.75, 3, 3.5, 4, 5">'+esc(pg.manual||"")+'</textarea></div>';
+      }
+      var steps=[0.25,0.5,1], onChip=(steps.indexOf(pg.step)>=0);
+      return '<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("prog.stepSize"))+'</label>'
+          +'<div class="chips" data-chip="oProgStep" style="grid-template-columns:repeat(3,1fr)">'
+          +steps.map(function(v){return '<button type="button" class="chip'+(pg.step==v?" on":"")+'" data-v="'+v+'"><span class="cv">'+v+'</span><span class="cu">mg</span></button>';}).join("")
+          +'</div>'
+          +'<input type="number" inputmode="decimal" step="0.05" id="oProgStepCustom" value="'+(onChip?"":pg.step)+'" placeholder="'+esc(I18N.t("prog.custom"))+'" style="margin-top:6px">'
+        +'</div>'
+        +'<div class="field"><label>'+esc(I18N.t("prog.weeksPerStep"))+'</label><input type="number" inputmode="numeric" id="oProgWPS" min="1" value="'+(pg.weeksPerStep||1)+'"></div>'
         +'</div>';
+    }
+    function renderProgMethod(){
+      $("#oProgMethod").innerHTML=progMethodHTML();
+      var pg=st.calc.prog;
+      if(pg.method==="step"){
+        bindChips("oProgStep",function(v){ pg.step=v; var c=$("#oProgStepCustom"); if(c) c.value=""; STORE.save(); });
+        var sc=$("#oProgStepCustom"); if(sc) sc.addEventListener("input",function(){
+          if(this.value!==""){ pg.step=parseFloat(this.value)||pg.step; $all('[data-chip="oProgStep"] .chip').forEach(function(x){x.classList.remove("on");}); STORE.save(); }
+        });
+        $("#oProgWPS").addEventListener("change",function(){ pg.weeksPerStep=Math.max(1,parseInt(this.value,10)||1); STORE.save(); });
+      } else if(pg.method==="time"){
+        $("#oProgWeeks").addEventListener("change",function(){ pg.weeks=Math.max(2,parseInt(this.value,10)||8); STORE.save(); });
+      } else {
+        $("#oProgManual").addEventListener("input",function(){ pg.manual=this.value; STORE.save(); });
+      }
+    }
+    function bindProg(){
+      var pg=st.calc.prog;
+      $("#oFrom").addEventListener("change",function(){ pg.from=this.value===""?0:parseFloat(this.value); STORE.save(); });
+      $("#oTo").addEventListener("change",function(){ pg.to=this.value===""?0:parseFloat(this.value); STORE.save(); });
+      $all("#oProgSeg button").forEach(function(b){ b.addEventListener("click",function(){
+        $all("#oProgSeg button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on");
+        pg.method=b.getAttribute("data-m"); STORE.save(); renderProgMethod();
+      });});
+      renderProgMethod();
     }
     // ---- travel / import mode ----
     // Fields are built once and updated in place (no destructive re-render), so
@@ -1690,7 +1798,7 @@ var UI = (function(){
         renderPattern();
         $("#oCycle").addEventListener("change",renderPattern);
         $("#oBase").addEventListener("change",function(){ st.calc.baseDose = this.value===""?null:parseFloat(this.value); STORE.save(); });
-      }
+      } else { bindProg(); }
     }
     renderFields();
     autofillPrice(strength);
@@ -1845,44 +1953,49 @@ var UI = (function(){
     $("#optResult").innerHTML=html;
   }
   function runProg(){
-    var st=s();
-    var S=s().calc.strengthMg||5, A=parseFloat($("#oFrom").value), B=parseFloat($("#oTo").value);
-    var step=parseFloat($("#oStep").value), P=st.calc.costPerPen, cur=st.settings.currency;
-    var interval=Math.max(1, parseInt(($("#oInterval")||{}).value,10) || (st.calc.intervalDays||7));
-    var r=DOMAIN.progression(A,B,S,step,st.settings.goldenDose,P);
-    if(r.error){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.targetGt"))+'</div></div>'; return; }
-    if(!r.feasible){
-      $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(I18N.t("opt.infeasible"))
-        +'<br><b>'+esc(I18N.t("opt.needBudget"))+': '+r.minNeed+' '+I18N.t("common.clicks")+'</b> · '
-        +esc(I18N.t("opt.budget"))+': '+r.budget+'</div></div>';
-      return;
+    var st=s(), pg=st.calc.prog;
+    var S=st.calc.strengthMg||5, from=pg.from, to=pg.to, P=st.calc.costPerPen, cur=st.settings.currency;
+    function warn(msg){ $("#optResult").innerHTML='<div class="card"><div class="warnbox">'+esc(msg)+'</div></div>'; }
+    var levels=null, computedStep=null, wps=1;
+    if(pg.method==="manual"){
+      levels=(pg.manual||"").split(/[\s,;]+/).map(parseFloat).filter(function(x){return !isNaN(x)&&x>0;});
+      if(!levels.length){ warn(I18N.t("prog.needManual")); return; }
+    } else if(pg.method==="time"){
+      if(!(to>from)){ warn(I18N.t("prog.needTarget")); return; }
+      var rl=DOMAIN.rampLevelsByWeeks(from,to,pg.weeks); levels=rl.levels; computedStep=rl.step;
+    } else {
+      if(!(to>from)){ warn(I18N.t("prog.needTarget")); return; }
+      wps=Math.max(1,pg.weeksPerStep||1);
+      levels=DOMAIN.rampLevelsByStep(from,to,pg.step);
     }
-    var names={gentle:["opt.schGentle","opt.schGentleD"],longest:["opt.schLongest","opt.schLongestD"],reach:["opt.schReach","opt.schReachD"]};
-    var html='<div class="card"><h2>'+esc(I18N.t("opt.schedules"))+'</h2>'
-      +'<div class="note">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b></div></div>';
-    if(P!=null && !isNaN(P)){
-      html+='<div class="card"><h2>'+esc(I18N.t("cost.title"))+'</h2>'+renderCost(P,S,cur)+'</div>';
+    var r=DOMAIN.rampSchedule(levels, wps, S, st.settings.goldenDose, P);
+    if(r.error){ warn(I18N.t("prog.needTarget")); return; }
+    var infeasible=r.schedule.filter(function(d){return !d.feasible;});
+    function stat(k,v,col){ return '<div class="stat"><span class="k">'+esc(k)+'</span><span class="v"'+(col?' style="color:'+col+'"':'')+'>'+v+'</span></div>'; }
+    var html='<div class="card"><h2>'+esc(I18N.t("prog.planTitle"))+'</h2>'
+      +'<div class="note" style="margin-bottom:12px">'+esc(I18N.t("prog.reachesIn").replace("{to}",fmtNum(r.target,2)).replace("{n}",r.weeksToTarget))
+        +(computedStep!=null?' · '+esc(I18N.t("prog.computedStep").replace("{s}",fmtNum(computedStep,2))):'')+'</div>'
+      +'<div class="stats" style="margin-bottom:12px">'
+      + stat(I18N.t("prog.totalWeeks"), r.totalWeeks+" "+I18N.t("common.weeks"))
+      + stat(I18N.t("prog.totalMg"), fmtNum(r.totalMg,1)+" mg")
+      + (r.totalCost!=null?stat(I18N.t("opt.totalCost"), fmtMoney(r.totalCost,cur)):"")
+      +'</div>';
+    if(infeasible.length){
+      html+='<div class="warnbox" style="margin-bottom:12px">'+esc(I18N.t("opt.planInfeasible"))+'</div>';
     }
-    r.candidates.forEach(function(cand){
-      var res=cand.res, nm=names[cand.key];
-      html+='<div class="card"><h2>'+esc(I18N.t(nm[0]))+'</h2><p class="sub">'+esc(I18N.t(nm[1]))+'</p>';
-      if(res.coarsenStep){ html+='<div class="note" style="margin-bottom:12px">'+esc(I18N.t("opt.coarsened"))+' <b>'+fmtNum(res.coarsenStep,2)+' mg</b></div>'; }
-      var durDays=res.totalWeeks*interval;
-      html+='<div class="stats" style="margin-bottom:12px">'
-        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.injections"))+'</span><span class="v">'+res.totalWeeks+'</span></div>'
-        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.duration"))+'</span><span class="v" style="font-size:16px">'+durDays+' '+I18N.t("opt.days")+' · '+fmtNum(durDays/7,1)+' '+I18N.t("common.weeks")+'</span></div>'
-        +'<div class="stat"><span class="k">'+esc(I18N.t("opt.clicksUsed"))+'</span><span class="v">'+res.clicksUsed+'/'+r.budget+'</span></div>'
-        +(res.totalCost!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.totalCost"))+'</span><span class="v">'+fmtMoney(res.totalCost,cur)+'</span></div>':'')
-        +(res.costPerWeek!=null?'<div class="stat"><span class="k">'+esc(I18N.t("opt.perShot"))+'</span><span class="v">'+fmtMoney(res.costPerWeek,cur)+'</span></div>':'')
-        +'</div>';
-      html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("common.dose"))+'</th><th class="num">'+esc(I18N.t("common.clicks"))+'</th><th class="num">'+esc(I18N.t("opt.injections"))+'</th></tr></thead><tbody>';
-      res.schedule.forEach(function(row){
-        if(row.weeks<=0) return;
-        html+='<tr><td><span class="pill" style="background:'+doseColor(row.mg)+'22;color:'+doseColor(row.mg)+'">'+fmtNum(row.mg,2)+' mg</span></td>'
-            +'<td class="num">'+row.clicks+'</td><td class="num">'+row.weeks+'</td></tr>';
-      });
-      html+='</tbody></table></div></div>';
+    // week-by-week schedule (one row per week)
+    html+='<div class="scroll"><table><thead><tr><th>'+esc(I18N.t("prog.week"))+'</th><th>'+esc(I18N.t("common.dose"))+'</th><th class="num">'+esc(I18N.t("common.clicks"))+'</th>'
+      +(P!=null&&!isNaN(P)?'<th class="num">'+esc(I18N.t("opt.costPerWeek"))+'</th>':'')+'</tr></thead><tbody>';
+    var wk=0;
+    r.schedule.forEach(function(d){
+      for(var i=0;i<d.weeks;i++){ wk++;
+        html+='<tr><td>'+wk+'</td>'
+          +'<td><span class="pill" style="background:'+doseColor(d.mg)+'22;color:'+doseColor(d.mg)+'">'+fmtNum(d.mg,2)+' mg</span></td>'
+          +'<td class="num">'+d.clicks+(d.feasible?'':' ⚠')+'</td>'
+          +(P!=null&&!isNaN(P)?'<td class="num">'+fmtMoney(d.costPerWeek,cur)+'</td>':'')+'</tr>';
+      }
     });
+    html+='</tbody></table></div></div>';
     $("#optResult").innerHTML=html;
   }
 
