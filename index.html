@@ -1644,7 +1644,6 @@ var UI = (function(){
     +'<div class="card"><p class="sub">'+esc(I18N.t("opt.sub"))+'</p>'
     +'<div class="field"><label>'+esc(I18N.t("opt.mode"))+'</label><select id="oMode">'
       +'<option value="stretch">'+esc(I18N.t("opt.modeStretch"))+'</option>'
-      +'<option value="prog">'+esc(I18N.t("opt.modeProg"))+'</option>'
       +'<option value="travel">'+esc(I18N.t("opt.modeTravel"))+'</option>'
     +'</select></div>'
     +'<div id="oFields"></div>'
@@ -1879,13 +1878,11 @@ var UI = (function(){
       if($("#oCurField")) $("#oCurField").style.display = "none";
       if($("#oCostShared")) $("#oCostShared").style.display = travel?"none":"";
       if(travel){ renderTravelFields(); return; }
-      $("#oFields").innerHTML = mode==="stretch"?fieldsStretch():fieldsProg();
+      $("#oFields").innerHTML = fieldsStretch();
       bindStrengthChips();
-      if(mode==="stretch"){
-        renderPattern();
-        $("#oCycle").addEventListener("change",renderPattern);
-        $("#oBase").addEventListener("change",function(){ st.calc.baseDose = this.value===""?null:parseFloat(this.value); STORE.save(); });
-      } else { bindProg(); }
+      renderPattern();
+      $("#oCycle").addEventListener("change",renderPattern);
+      $("#oBase").addEventListener("change",function(){ st.calc.baseDose = this.value===""?null:parseFloat(this.value); STORE.save(); });
     }
     renderFields();
     autofillPrice(strength);
@@ -1912,7 +1909,7 @@ var UI = (function(){
       if($("#oBase")) st.calc.baseDose = $("#oBase").value===""?null:parseFloat($("#oBase").value);
       STORE.save();
       var m=$("#oMode").value;
-      if(m==="stretch") runPlan(); else if(m==="prog") runProg(); else runTravel();
+      if(m==="travel") runTravel(); else runPlan();
     });
   }
   function runTravel(){
