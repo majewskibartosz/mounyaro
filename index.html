@@ -215,7 +215,7 @@
 <nav class="tabs" id="tabs">
   <a href="#jab" data-tab="jab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.jab">Zastrzyk</span></a>
   <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span><span data-i="tab.weight">Waga</span></a>
-  <a href="#cost" data-tab="cost"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg></span><span data-i="tab.cost">Koszt</span></a>
+  <a href="#bp" data-tab="bp"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></span><span data-i="tab.bp">Ciśnienie</span></a>
   <a href="#optimizer" data-tab="optimizer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M8 18h.01M12 18h.01"/></svg></span><span data-i="tab.optimizer">Kalkulator</span></a>
   <a href="#settings" data-tab="settings"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span data-i="tab.settings">Ustawienia</span></a>
 </nav>
@@ -245,9 +245,26 @@ var I18N = (function(){
     "jab.confirmDel":{pl:"Usunąć ten zastrzyk?",en:"Delete this shot?"},
     "tab.weight":{pl:"Waga",en:"Weight"},
     "tab.bmi":{pl:"BMI",en:"BMI"},
-    "tab.cost":{pl:"Koszt",en:"Cost"},
+    "tab.bp":{pl:"Ciśnienie",en:"BP"},
     "tab.optimizer":{pl:"Kalkulator",en:"Calculator"},
     "tab.settings":{pl:"Ustawienia",en:"Settings"},
+
+    "bp.title":{pl:"Ciśnienie krwi",en:"Blood pressure"},
+    "bp.sub":{pl:"Zapisuj pomiary — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log readings — the date and time are captured automatically when you save."},
+    "bp.sys":{pl:"Skurczowe / górne",en:"Systolic / top"},
+    "bp.dia":{pl:"Rozkurczowe / dolne",en:"Diastolic / bottom"},
+    "bp.pulse":{pl:"Tętno (bpm)",en:"Pulse (bpm)"},
+    "bp.fasting":{pl:"Pomiar na czczo",en:"Fasting reading"},
+    "bp.add":{pl:"Dodaj pomiar",en:"Add reading"},
+    "bp.chartTitle":{pl:"Wykres ciśnienia",en:"Blood pressure trend"},
+    "bp.empty":{pl:"Brak pomiarów. Dodaj pierwszy powyżej.",en:"No readings yet. Add your first above."},
+    "bp.history":{pl:"Historia pomiarów",en:"Reading history"},
+    "bp.latest":{pl:"Ostatni pomiar",en:"Latest reading"},
+    "bp.reading":{pl:"Pomiar",en:"Reading"},
+    "bp.legend":{pl:"● Górne  ● Dolne  ● Tętno",en:"● Systolic  ● Diastolic  ● Pulse"},
+    "bp.fastingTag":{pl:"na czczo",en:"fasting"},
+    "bp.confirmDel":{pl:"Usunąć ten pomiar?",en:"Delete this reading?"},
+    "bp.when":{pl:"Kiedy",en:"When"},
 
     "common.save":{pl:"Zapisz",en:"Save"},
     "common.add":{pl:"Dodaj",en:"Add"},
@@ -841,7 +858,8 @@ var STORE = (function(){
       weightLog:[],
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
         prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
-      jab:{ history:[] }
+      jab:{ history:[] },
+      bp:{ log:[] }
     };
   }
   var state = defaults();
@@ -1113,6 +1131,7 @@ function fmtMoneyTxt(n, currency){
   return num+" "+cur;
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDateTime(ts){ try{ return new Date(ts).toLocaleString(I18N.lang==="en"?"en-GB":"pl-PL",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(ts); } }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function addDaysISO(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function daysBetweenISO(aISO,bISO){ return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000); }
@@ -1182,7 +1201,54 @@ var CHART = (function(){
     svg+='</svg>';
     return svg;
   }
-  return { render:render };
+
+  // Blood-pressure chart: systolic + diastolic (+ pulse) over time, irregular timestamps OK.
+  function renderBP(log){
+    var data = log.slice().filter(function(e){return e.sys!=null&&e.dia!=null;})
+                  .sort(function(a,b){ return a.ts<b.ts?-1:a.ts>b.ts?1:0; });
+    if(data.length===0) return '<div class="empty">'+esc(I18N.t("bp.empty"))+'</div>';
+    var W=320,H=210,mL=30,mR=12,mT=12,mB=26, iw=W-mL-mR, ih=H-mT-mB;
+    var xs=data.map(function(e){ return new Date(e.ts).getTime(); });
+    var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+    var vals=[]; data.forEach(function(e){ vals.push(e.sys,e.dia); if(e.pulse!=null) vals.push(e.pulse); });
+    var minY=Math.min.apply(null,vals), maxY=Math.max.apply(null,vals);
+    if(minY===maxY){ minY-=10; maxY+=10; }
+    var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
+    function X(t){ return maxX===minX ? mL+iw/2 : mL+(t-minX)/(maxX-minX)*iw; }
+    function Y(v){ return mT+(1-(v-minY)/(maxY-minY))*ih; }
+    var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="blood pressure chart">';
+    var rows=4;
+    for(var r=0;r<=rows;r++){
+      var val=minY+(maxY-minY)*r/rows, y=Y(val);
+      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
+      svg+='<text x="'+(mL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+Math.round(val)+'</text>';
+    }
+    function dlabel(t){ var d=new Date(t); return d.getDate()+"."+(d.getMonth()+1); }
+    var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0,Math.floor((data.length-1)/2),data.length-1];
+    idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
+    function line(key,color,dash){
+      var pts=data.filter(function(e){return e[key]!=null;});
+      if(pts.length>1){
+        var p=pts.map(function(e){ return X(new Date(e.ts).getTime()).toFixed(1)+","+Y(e[key]).toFixed(1); }).join(" ");
+        svg+='<polyline points="'+p+'" fill="none" stroke="'+color+'" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"'+(dash?' stroke-dasharray="4 3"':'')+'/>';
+      }
+    }
+    line("pulse","#94a3b8",true);
+    line("dia","#0284c7",false);
+    line("sys","#dc2626",false);
+    data.forEach(function(e,i){
+      var x=X(xs[i]).toFixed(1);
+      var tip=fmtDateTime(e.ts)+" · "+e.sys+"/"+e.dia+(e.pulse!=null?" · "+e.pulse+" bpm":"")+(e.fasting?" · "+I18N.t("bp.fastingTag"):"")+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
+      svg+='<g><title>'+esc(tip)+'</title>';
+      svg+='<circle cx="'+x+'" cy="'+Y(e.sys).toFixed(1)+'" r="3.6" fill="#dc2626" stroke="#fff" stroke-width="1.2"/>';
+      svg+='<circle cx="'+x+'" cy="'+Y(e.dia).toFixed(1)+'" r="3.6" fill="#0284c7" stroke="#fff" stroke-width="1.2"/>';
+      if(e.pulse!=null) svg+='<circle cx="'+x+'" cy="'+Y(e.pulse).toFixed(1)+'" r="3" fill="#94a3b8" stroke="#fff" stroke-width="1.2"/>';
+      svg+='</g>';
+    });
+    svg+='</svg>';
+    return svg;
+  }
+  return { render:render, renderBP:renderBP };
 })();
 
 /* =========================================================================
@@ -1486,46 +1552,81 @@ var UI = (function(){
   }
 
   /* ============ COST ============ */
-  function viewCost(){
+  /* ============ BLOOD PRESSURE ============ */
+  function viewBP(){
     var st=s();
+    var log = st.bp.log || [];
+    var lastDose = log.length ? log[0].doseMg : null;
+    var morning = new Date().getHours() < 12;   // sensible default: morning = fasting
     var html=''
-    +'<h1 class="page">'+esc(I18N.t("cost.title"))+'</h1>'
-    +'<div class="card"><p class="sub">'+esc(I18N.t("cost.sub"))+'</p>'
-    +'<div class="grid g2">'
-    +'<div class="field"><label>'+esc(I18N.t("cost.pricePerPen"))+'</label><input type="number" inputmode="decimal" id="cPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("cCur",st.settings.currency)+'</div>'
-    +'</div>'
-    +'<div class="field"><label>'+esc(I18N.t("cost.penStrength"))+'</label>'+chipRow("cStr",STRENGTHS,st.calc.strengthMg||5,"mg")+'</div>'
-    +'</div>'
-    +'<div class="card" id="costResult"></div>';
+    + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
+
+    // chart card (on top)
+    html+='<div class="card"><h2>'+esc(I18N.t("bp.chartTitle"))+'</h2>'
+        + '<div id="bpChart">'+CHART.renderBP(log)+'</div>';
+    if(log.length){
+      var L=log[0];
+      html+='<div class="legend"><span>'+esc(I18N.t("bp.legend"))+'</span></div>'
+          + '<div class="stats" style="margin-top:12px">'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("bp.latest"))+'</span><span class="v">'+L.sys+'/'+L.dia+'</span></div>'
+          + (L.pulse!=null?'<div class="stat"><span class="k">'+esc(I18N.t("bp.pulse"))+'</span><span class="v">'+L.pulse+'</span></div>':'')
+          + '<div class="stat"><span class="k">'+esc(I18N.t("bp.when"))+'</span><span class="v" style="font-size:14px">'+esc(fmtDateTime(L.ts))+'</span></div>'
+          + '</div>';
+    }
+    html+='</div>';
+
+    // entry form
+    html+='<div class="card"><p class="sub">'+esc(I18N.t("bp.sub"))+'</p>'
+    + '<div class="grid g3">'
+    +   '<div class="field"><label>'+esc(I18N.t("bp.sys"))+'</label><input type="number" inputmode="numeric" id="bpSys" placeholder="120"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("bp.pulse"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bpPulse" placeholder="70"></div>'
+    + '</div>'
+    + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+(morning?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
+    + '<div class="grid g2">'
+    +   '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="bpDose" placeholder="'+(lastDose!=null?lastDose:"")+'"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80"></div>'
+    + '</div>'
+    + '<button class="btn" id="bpAdd">'+esc(I18N.t("bp.add"))+'</button>'
+    + '</div>';
+
+    // history
+    if(log.length){
+      html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><thead><tr>'
+          + '<th>'+esc(I18N.t("bp.when"))+'</th><th class="num">'+esc(I18N.t("bp.reading"))+'</th>'
+          + '<th class="num">bpm</th><th>'+esc(I18N.t("common.dose"))+'</th><th></th>'
+          + '</tr></thead><tbody>';
+      log.forEach(function(e){
+        html+='<tr><td>'+esc(fmtDateTime(e.ts))+(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
+            +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
+            + '<td class="num"><b>'+e.sys+'/'+e.dia+'</b></td>'
+            + '<td class="num">'+(e.pulse!=null?e.pulse:'—')+'</td>'
+            + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
+            + '<td class="num"><button class="btn ghost sm bpDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+      });
+      html+='</tbody></table></div></div>';
+    }
     app.innerHTML=html;
 
-    var selStr = st.calc.strengthMg||5;
-    function recompute(){
-      var P=parseFloat($("#cPrice").value);
-      var cur=($("#cCur").value||"PLN").toUpperCase();
-      st.calc.costPerPen = isNaN(P)?null:P;
-      st.calc.strengthMg = selStr;
-      st.settings.currency = cur;
-      STORE.save();
-      $("#costResult").innerHTML = renderCost(P,selStr,cur);
-    }
-    ["cPrice","cCur"].forEach(function(id){
-      $("#"+id).addEventListener("input",recompute); $("#"+id).addEventListener("change",recompute);
+    $("#bpAdd").addEventListener("click",function(){
+      var sys=parseInt($("#bpSys").value,10), dia=parseInt($("#bpDia").value,10);
+      if(isNaN(sys)||sys<=0){ $("#bpSys").focus(); return; }
+      if(isNaN(dia)||dia<=0){ $("#bpDia").focus(); return; }
+      var pulse=$("#bpPulse").value===""?null:parseInt($("#bpPulse").value,10);
+      var dose=$("#bpDose").value===""?null:parseFloat($("#bpDose").value);
+      var entry={ id:uid(), ts:new Date().toISOString(), sys:sys, dia:dia,
+                  pulse:(pulse==null||isNaN(pulse))?null:pulse, fasting:$("#bpFast").checked,
+                  doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#bpNote").value||"").trim() };
+      st.bp.log.push(entry);
+      st.bp.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      STORE.save(); toast(I18N.t("common.saved")); viewBP();
     });
-    bindChips("cStr",function(v){ selStr=v; recompute(); });
-    recompute();
-  }
-  function renderCost(P,S,cur){
-    if(isNaN(P)||P<=0||isNaN(S)) return '<div class="empty">'+esc(I18N.t("cost.enterPrice"))+'</div>';
-    var c=DOMAIN.cost(P,S);
-    function row(k,v){ return '<div class="stat"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'; }
-    return '<div class="stats">'
-      + row(I18N.t("cost.perLabeledDose"), fmtMoney(c.perLabeledDose,cur))
-      + row(I18N.t("cost.perMg"), fmtMoney(c.perMg,cur))
-      + row(I18N.t("cost.perClick"), fmtMoney(c.perClick,cur))
-      + row(I18N.t("cost.totalMg"), fmtNum(DOMAIN.totalMgPerPen(S),1)+' mg')
-      + '</div>';
+    $all(".bpDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("bp.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.bp.log = st.bp.log.filter(function(e){return e.id!==id;});
+      STORE.save(); viewBP();
+    });});
   }
 
   /* ============ OPTIMIZER ============ */
@@ -2049,10 +2150,7 @@ var UI = (function(){
       +'<option value="f"'+(st.profile.sex==="f"?" selected":"")+'>'+esc(I18N.t("bmi.female"))+'</option>'
       +'<option value="m"'+(st.profile.sex==="m"?" selected":"")+'>'+esc(I18N.t("bmi.male"))+'</option>'
     +'</select></div>'
-    +'</div>'
-    +'<div id="setBmiPreview" style="margin-top:6px"></div>'
-    +'<p class="tiny muted" style="margin-top:8px">'+esc(I18N.t("bmi.ageSexNote"))+'</p>'
-    +'</div>'
+    +'</div></div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2>'
     +'<div class="seg" id="pcSeg">'
       +'<button type="button" class="on" data-pc="home">'+esc(I18N.t("set.pcHome"))+'</button>'
@@ -2081,18 +2179,9 @@ var UI = (function(){
       document.documentElement.lang=this.value; applyStatic(); render();
     });
     $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); renderPenCosts(pcMode); });
-    function renderSetBmi(){
-      var el=$("#setBmiPreview"); if(!el) return;
-      var w = st.weightLog.length ? st.weightLog[0].weightKg : null;
-      var h = st.profile.heightCm;
-      el.innerHTML = (w==null) ? '<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>'
-                   : (!h)      ? '<div class="empty">'+esc(I18N.t("bmi.needHeight"))+'</div>'
-                   :             renderBMI(h, w);
-    }
-    $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); renderSetBmi(); });
+    $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
-    renderSetBmi();
     // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
     var pcMode="home";
     function renderPenCosts(mode){
@@ -2154,7 +2243,7 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ jab:viewJab, weight:viewWeight, cost:viewCost, optimizer:viewOpt, settings:viewSettings };
+  var routes={ jab:viewJab, weight:viewWeight, bp:viewBP, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
     var h=(location.hash||"#jab").replace("#","");
     return routes[h]?h:"jab";
