@@ -264,7 +264,8 @@ var I18N = (function(){
     "bp.legend":{pl:"● Górne  ● Dolne  ● Tętno",en:"● Systolic  ● Diastolic  ● Pulse"},
     "bp.fastingTag":{pl:"na czczo",en:"fasting"},
     "bp.confirmDel":{pl:"Usunąć ten pomiar?",en:"Delete this reading?"},
-    "bp.when":{pl:"Kiedy",en:"When"},
+    "bp.when":{pl:"Czas pomiaru",en:"Reading time"},
+    "bp.whenHint":{pl:"domyślnie teraz — zmień, aby dodać wstecz",en:"defaults to now — change to backfill"},
 
     "common.save":{pl:"Zapisz",en:"Save"},
     "common.add":{pl:"Dodaj",en:"Add"},
@@ -1132,6 +1133,7 @@ function fmtMoneyTxt(n, currency){
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDateTime(ts){ try{ return new Date(ts).toLocaleString(I18N.lang==="en"?"en-GB":"pl-PL",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(ts); } }
+function nowLocalDT(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function addDaysISO(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function daysBetweenISO(aISO,bISO){ return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000); }
@@ -1582,6 +1584,7 @@ var UI = (function(){
     +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80"></div>'
     +   '<div class="field"><label>'+esc(I18N.t("bp.pulse"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bpPulse" placeholder="70"></div>'
     + '</div>'
+    + '<div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="datetime-local" id="bpWhen" value="'+nowLocalDT()+'"></div>'
     + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+(morning?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
     + '<div class="grid g2">'
     +   '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="bpDose" placeholder="'+(lastDose!=null?lastDose:"")+'"></div>'
@@ -1614,7 +1617,10 @@ var UI = (function(){
       if(isNaN(dia)||dia<=0){ $("#bpDia").focus(); return; }
       var pulse=$("#bpPulse").value===""?null:parseInt($("#bpPulse").value,10);
       var dose=$("#bpDose").value===""?null:parseFloat($("#bpDose").value);
-      var entry={ id:uid(), ts:new Date().toISOString(), sys:sys, dia:dia,
+      var whenVal=$("#bpWhen").value;
+      var when=whenVal?new Date(whenVal):new Date();
+      if(isNaN(when.getTime())) when=new Date();
+      var entry={ id:uid(), ts:when.toISOString(), sys:sys, dia:dia,
                   pulse:(pulse==null||isNaN(pulse))?null:pulse, fasting:$("#bpFast").checked,
                   doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#bpNote").value||"").trim() };
       st.bp.log.push(entry);
