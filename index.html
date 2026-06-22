@@ -286,6 +286,7 @@ var I18N = (function(){
     "bmi.autoSub":{pl:"Liczone automatycznie z ostatniej zapisanej wagi i Twojego wzrostu.",en:"Calculated automatically from your latest logged weight and your height."},
     "bmi.needHeight":{pl:"Podaj swój wzrost, aby zobaczyć BMI.",en:"Enter your height to see your BMI."},
     "bmi.setHeight":{pl:"Ustaw swój wzrost w zakładce Ustawienia, aby zobaczyć BMI.",en:"Set your height in Settings to see your BMI."},
+    "bmi.ageSexNote":{pl:"Wiek i płeć nie wpływają na BMI (BMI = waga ÷ wzrost²). Liczą się tylko wzrost i ostatnia waga.",en:"Age and sex don't affect BMI (BMI = weight ÷ height²). Only height and your latest weight matter."},
     "bmi.needWeight":{pl:"Dodaj pomiar wagi powyżej, aby policzyć BMI.",en:"Add a weight entry above to calculate BMI."},
     "bmi.usingWeight":{pl:"Użyta waga",en:"Weight used"},
     "bmi.height":{pl:"Wzrost (cm)",en:"Height (cm)"},
@@ -2048,7 +2049,10 @@ var UI = (function(){
       +'<option value="f"'+(st.profile.sex==="f"?" selected":"")+'>'+esc(I18N.t("bmi.female"))+'</option>'
       +'<option value="m"'+(st.profile.sex==="m"?" selected":"")+'>'+esc(I18N.t("bmi.male"))+'</option>'
     +'</select></div>'
-    +'</div></div>'
+    +'</div>'
+    +'<div id="setBmiPreview" style="margin-top:6px"></div>'
+    +'<p class="tiny muted" style="margin-top:8px">'+esc(I18N.t("bmi.ageSexNote"))+'</p>'
+    +'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2>'
     +'<div class="seg" id="pcSeg">'
       +'<button type="button" class="on" data-pc="home">'+esc(I18N.t("set.pcHome"))+'</button>'
@@ -2077,9 +2081,18 @@ var UI = (function(){
       document.documentElement.lang=this.value; applyStatic(); render();
     });
     $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); renderPenCosts(pcMode); });
-    $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); });
+    function renderSetBmi(){
+      var el=$("#setBmiPreview"); if(!el) return;
+      var w = st.weightLog.length ? st.weightLog[0].weightKg : null;
+      var h = st.profile.heightCm;
+      el.innerHTML = (w==null) ? '<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>'
+                   : (!h)      ? '<div class="empty">'+esc(I18N.t("bmi.needHeight"))+'</div>'
+                   :             renderBMI(h, w);
+    }
+    $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); renderSetBmi(); });
     $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
+    renderSetBmi();
     // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
     var pcMode="home";
     function renderPenCosts(mode){
