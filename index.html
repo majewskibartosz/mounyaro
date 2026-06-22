@@ -285,6 +285,7 @@ var I18N = (function(){
     "bmi.sub":{pl:"BMI wg standardów WHO. Wzrost i waga są wymagane.",en:"BMI by WHO standards. Height and weight required."},
     "bmi.autoSub":{pl:"Liczone automatycznie z ostatniej zapisanej wagi i Twojego wzrostu.",en:"Calculated automatically from your latest logged weight and your height."},
     "bmi.needHeight":{pl:"Podaj swój wzrost, aby zobaczyć BMI.",en:"Enter your height to see your BMI."},
+    "bmi.setHeight":{pl:"Ustaw swój wzrost w zakładce Ustawienia, aby zobaczyć BMI.",en:"Set your height in Settings to see your BMI."},
     "bmi.needWeight":{pl:"Dodaj pomiar wagi powyżej, aby policzyć BMI.",en:"Add a weight entry above to calculate BMI."},
     "bmi.usingWeight":{pl:"Użyta waga",en:"Weight used"},
     "bmi.height":{pl:"Wzrost (cm)",en:"Height (cm)"},
@@ -491,6 +492,8 @@ var I18N = (function(){
     "set.sub":{pl:"Dane są zapisywane tylko w tej przeglądarce. Nikt inny ich nie widzi.",en:"Data is stored only in this browser. No one else can see it."},
     "set.language":{pl:"Język",en:"Language"},
     "set.currency":{pl:"Domyślna waluta",en:"Default currency"},
+    "set.profile":{pl:"Profil (do BMI)",en:"Profile (for BMI)"},
+    "set.profileHint":{pl:"Te dane służą do automatycznego liczenia BMI w zakładce Waga.",en:"Used to auto-calculate your BMI on the Weight tab."},
     "set.penCosts":{pl:"Ceny penów",en:"Pen costs"},
     "set.penCostsHint":{pl:"Ustaw cenę dla każdej mocy raz — kalkulator sam ją podstawi po wybraniu pena.",
                         en:"Set a price for each strength once — the calculator fills it in automatically when you pick a pen."},
@@ -1413,24 +1416,19 @@ var UI = (function(){
       html+='</tbody></table></div></div>';
     }
 
-    // BMI — auto-computed from the latest logged weight + your height (entered once)
+    // BMI — display only; pulls weight from the log and height/age/sex from Settings
     var bmiW = st.weightLog.length ? st.weightLog[0].weightKg : null;
+    var bmiH = st.profile.heightCm;
+    var bmiBody = (bmiW==null) ? '<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>'
+                : (!bmiH)      ? '<div class="empty">'+esc(I18N.t("bmi.setHeight"))+'</div>'
+                :                renderBMI(bmiH, bmiW);
     html+='<div class="card"><h2>'+esc(I18N.t("bmi.title"))+'</h2>'
       +'<p class="sub">'+esc(I18N.t("bmi.autoSub"))+'</p>'
-      +'<div class="field" style="max-width:220px"><label>'+esc(I18N.t("bmi.height"))+'</label>'
-      +'<input type="number" inputmode="decimal" id="wH" value="'+(st.profile.heightCm!=null?st.profile.heightCm:"")+'" placeholder="170"></div>'
-      +(bmiW!=null?'<p class="tiny muted" style="margin:-4px 0 8px">'+esc(I18N.t("bmi.usingWeight"))+': <b>'+fmtNum(bmiW,1)+' kg</b></p>':'')
-      +'<div id="bmiResult">'+(bmiW==null?'<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>':renderBMI(st.profile.heightCm,bmiW))+'</div>'
+      +((bmiW!=null&&bmiH)?'<p class="tiny muted" style="margin:0 0 8px">'+esc(I18N.t("bmi.usingWeight"))+': <b>'+fmtNum(bmiW,1)+' kg</b></p>':'')
+      +'<div id="bmiResult">'+bmiBody+'</div>'
       +'</div>';
 
     app.innerHTML=html;
-
-    if($("#wH")) $("#wH").addEventListener("input",function(){
-      st.profile.heightCm = this.value===""?null:parseFloat(this.value);
-      STORE.save();
-      var w = st.weightLog.length ? st.weightLog[0].weightKg : null;
-      $("#bmiResult").innerHTML = (w==null)?'<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>':renderBMI(st.profile.heightCm,w);
-    });
 
     $("#wAdd").addEventListener("click",function(){
       var kg=parseFloat($("#wKg").value);
@@ -2041,6 +2039,16 @@ var UI = (function(){
     +'</select></div>'
     +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label>'+currencyInput("setCur",st.settings.currency)+'</div>'
     +'</div></div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.profile"))+'</h2><p class="sub">'+esc(I18N.t("set.profileHint"))+'</p>'
+    +'<div class="grid g3">'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.height"))+'</label><input type="number" inputmode="decimal" id="setH" value="'+(st.profile.heightCm!=null?st.profile.heightCm:"")+'" placeholder="170"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.age"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="setAge" value="'+(st.profile.age!=null?st.profile.age:"")+'" placeholder="40"></div>'
+    +'<div class="field"><label>'+esc(I18N.t("bmi.sex"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><select id="setSex">'
+      +'<option value=""></option>'
+      +'<option value="f"'+(st.profile.sex==="f"?" selected":"")+'>'+esc(I18N.t("bmi.female"))+'</option>'
+      +'<option value="m"'+(st.profile.sex==="m"?" selected":"")+'>'+esc(I18N.t("bmi.male"))+'</option>'
+    +'</select></div>'
+    +'</div></div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2>'
     +'<div class="seg" id="pcSeg">'
       +'<button type="button" class="on" data-pc="home">'+esc(I18N.t("set.pcHome"))+'</button>'
@@ -2069,6 +2077,9 @@ var UI = (function(){
       document.documentElement.lang=this.value; applyStatic(); render();
     });
     $("#setCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); renderPenCosts(pcMode); });
+    $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); });
+    $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
+    $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
     // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
     var pcMode="home";
     function renderPenCosts(mode){
