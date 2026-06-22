@@ -215,7 +215,6 @@
 <nav class="tabs" id="tabs">
   <a href="#jab" data-tab="jab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.jab">Zastrzyk</span></a>
   <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span><span data-i="tab.weight">Waga</span></a>
-  <a href="#bmi" data-tab="bmi"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span><span data-i="tab.bmi">BMI</span></a>
   <a href="#cost" data-tab="cost"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg></span><span data-i="tab.cost">Koszt</span></a>
   <a href="#optimizer" data-tab="optimizer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M8 18h.01M12 18h.01"/></svg></span><span data-i="tab.optimizer">Kalkulator</span></a>
   <a href="#settings" data-tab="settings"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span data-i="tab.settings">Ustawienia</span></a>
@@ -282,8 +281,12 @@ var I18N = (function(){
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
 
-    "bmi.title":{pl:"Kalkulator BMI",en:"BMI calculator"},
+    "bmi.title":{pl:"Twoje BMI",en:"Your BMI"},
     "bmi.sub":{pl:"BMI wg standardów WHO. Wzrost i waga są wymagane.",en:"BMI by WHO standards. Height and weight required."},
+    "bmi.autoSub":{pl:"Liczone automatycznie z ostatniej zapisanej wagi i Twojego wzrostu.",en:"Calculated automatically from your latest logged weight and your height."},
+    "bmi.needHeight":{pl:"Podaj swój wzrost, aby zobaczyć BMI.",en:"Enter your height to see your BMI."},
+    "bmi.needWeight":{pl:"Dodaj pomiar wagi powyżej, aby policzyć BMI.",en:"Add a weight entry above to calculate BMI."},
+    "bmi.usingWeight":{pl:"Użyta waga",en:"Weight used"},
     "bmi.height":{pl:"Wzrost (cm)",en:"Height (cm)"},
     "bmi.weight":{pl:"Waga (kg)",en:"Weight (kg)"},
     "bmi.age":{pl:"Wiek",en:"Age"},
@@ -1409,7 +1412,25 @@ var UI = (function(){
       });
       html+='</tbody></table></div></div>';
     }
+
+    // BMI — auto-computed from the latest logged weight + your height (entered once)
+    var bmiW = st.weightLog.length ? st.weightLog[0].weightKg : null;
+    html+='<div class="card"><h2>'+esc(I18N.t("bmi.title"))+'</h2>'
+      +'<p class="sub">'+esc(I18N.t("bmi.autoSub"))+'</p>'
+      +'<div class="field" style="max-width:220px"><label>'+esc(I18N.t("bmi.height"))+'</label>'
+      +'<input type="number" inputmode="decimal" id="wH" value="'+(st.profile.heightCm!=null?st.profile.heightCm:"")+'" placeholder="170"></div>'
+      +(bmiW!=null?'<p class="tiny muted" style="margin:-4px 0 8px">'+esc(I18N.t("bmi.usingWeight"))+': <b>'+fmtNum(bmiW,1)+' kg</b></p>':'')
+      +'<div id="bmiResult">'+(bmiW==null?'<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>':renderBMI(st.profile.heightCm,bmiW))+'</div>'
+      +'</div>';
+
     app.innerHTML=html;
+
+    if($("#wH")) $("#wH").addEventListener("input",function(){
+      st.profile.heightCm = this.value===""?null:parseFloat(this.value);
+      STORE.save();
+      var w = st.weightLog.length ? st.weightLog[0].weightKg : null;
+      $("#bmiResult").innerHTML = (w==null)?'<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>':renderBMI(st.profile.heightCm,w);
+    });
 
     $("#wAdd").addEventListener("click",function(){
       var kg=parseFloat($("#wKg").value);
@@ -1429,50 +1450,8 @@ var UI = (function(){
     });});
   }
 
-  /* ============ BMI ============ */
-  function viewBMI(){
-    var st=s();
-    var latest = st.weightLog.length ? st.weightLog[0].weightKg : null;
-    var curW = st.profile.weightKg!=null ? st.profile.weightKg : latest;
-    var html=''
-    +'<h1 class="page">'+esc(I18N.t("bmi.title"))+'</h1>'
-    +'<div class="card"><p class="sub">'+esc(I18N.t("bmi.sub"))+'</p>'
-    +'<div class="grid g2">'
-    +'<div class="field"><label>'+esc(I18N.t("bmi.height"))+'</label><input type="number" inputmode="decimal" id="bH" value="'+(st.profile.heightCm!=null?st.profile.heightCm:"")+'" placeholder="170"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="bW" value="'+(curW!=null?curW:"")+'" placeholder="80"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("bmi.age"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bAge" value="'+(st.profile.age!=null?st.profile.age:"")+'" placeholder="40"></div>'
-    +'<div class="field"><label>'+esc(I18N.t("bmi.sex"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><select id="bSex">'
-      +'<option value=""></option>'
-      +'<option value="f"'+(st.profile.sex==="f"?" selected":"")+'>'+esc(I18N.t("bmi.female"))+'</option>'
-      +'<option value="m"'+(st.profile.sex==="m"?" selected":"")+'>'+esc(I18N.t("bmi.male"))+'</option>'
-    +'</select></div>'
-    +'</div>';
-    if(latest!=null) html+='<button class="btn ghost sm" id="bUseLatest">'+esc(I18N.t("bmi.useLatest"))+' ('+fmtNum(latest,1)+' kg)</button> ';
-    html+='</div>';
-    html+='<div class="card" id="bmiResult"></div>';
-    app.innerHTML=html;
-
-    function persist(){
-      st.profile.heightCm = $("#bH").value===""?null:parseFloat($("#bH").value);
-      st.profile.weightKg = $("#bW").value===""?null:parseFloat($("#bW").value);
-      st.profile.age = $("#bAge").value===""?null:parseInt($("#bAge").value,10);
-      st.profile.sex = $("#bSex").value||null;
-      STORE.save();
-    }
-    function recompute(){
-      persist();
-      var h=parseFloat($("#bH").value), w=parseFloat($("#bW").value);
-      $("#bmiResult").innerHTML = renderBMI(h,w);
-    }
-    ["bH","bW","bAge","bSex"].forEach(function(id){
-      $("#"+id).addEventListener("input",recompute);
-      $("#"+id).addEventListener("change",recompute);
-    });
-    if($("#bUseLatest")) $("#bUseLatest").addEventListener("click",function(){ $("#bW").value=latest; recompute(); });
-    recompute();
-  }
   function renderBMI(h,w){
-    if(!h||!w||h<=0||w<=0) return '<div class="empty">'+esc(I18N.t("bmi.fillData"))+'</div>';
+    if(!h||!w||h<=0||w<=0) return '<div class="empty">'+esc(I18N.t("bmi.needHeight"))+'</div>';
     var b = DOMAIN.bmi(w,h);
     var cat = DOMAIN.bmiCategory(b);
     var range = DOMAIN.healthyWeightRange(h);
@@ -2151,7 +2130,7 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ jab:viewJab, weight:viewWeight, bmi:viewBMI, cost:viewCost, optimizer:viewOpt, settings:viewSettings };
+  var routes={ jab:viewJab, weight:viewWeight, cost:viewCost, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
     var h=(location.hash||"#jab").replace("#","");
     return routes[h]?h:"jab";
