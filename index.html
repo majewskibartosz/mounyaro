@@ -138,6 +138,19 @@
   .metricrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
   .metricrow .mname{flex:1;min-width:0}
   .metricrow.arch{opacity:.5}
+  /* segment switcher (substances) */
+  .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
+  .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  /* progress bar (TRT cadence / peptide cycle) */
+  .pbar{height:14px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden;margin:6px 0}
+  .pbar>span{display:block;height:100%;border-radius:999px;transition:width .3s}
+  .pbwrap .pblabels{display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:2px}
+  /* body map */
+  .bodymap{max-width:280px;margin:6px auto 2px;display:block}
+  .bodymap .site{cursor:pointer}
+  .maplegend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px}
+  .maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .muted{color:var(--muted)}
   .small{font-size:13px}
@@ -221,7 +234,7 @@
 </main>
 
 <nav class="tabs" id="tabs">
-  <a href="#jab" data-tab="jab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.jab">Zastrzyk</span></a>
+  <a href="#inject" data-tab="inject"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.inject">Zastrzyki</span></a>
   <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span><span data-i="tab.weight">Waga</span></a>
   <a href="#bp" data-tab="bp"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></span><span data-i="tab.bp">Ciśnienie</span></a>
   <a href="#diary" data-tab="diary"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h5"/></svg></span><span data-i="tab.diary">Dziennik</span></a>
@@ -259,6 +272,45 @@ var I18N = (function(){
     "tab.settings":{pl:"Ustawienia",en:"Settings"},
     "tab.pulpit":{pl:"Pulpit",en:"Home"},
     "tab.diary":{pl:"Dziennik",en:"Diary"},
+    "tab.inject":{pl:"Zastrzyki",en:"Injections"},
+    "tab.correlate":{pl:"Korelacje",en:"Correlations"},
+
+    // ---- injections (shared engine: Mounjaro / TRT / peptides) ----
+    "inj.title":{pl:"Zastrzyki",en:"Injections"},
+    "inj.seg.mounjaro":{pl:"Mounjaro",en:"Mounjaro"},
+    "inj.seg.trt":{pl:"TRT",en:"TRT"},
+    "inj.seg.peptide":{pl:"Peptydy",en:"Peptides"},
+    "inj.dose":{pl:"Dawka",en:"Dose"},
+    "inj.logBtn":{pl:"Zapisz zastrzyk",en:"Log injection"},
+    "inj.logToday":{pl:"Zrobiłem dziś",en:"Done today"},
+    "inj.pickSite":{pl:"Dotknij miejsce wkłucia na mapie",en:"Tap the injection site on the map"},
+    "inj.selected":{pl:"Wybrane miejsce",en:"Selected site"},
+    "inj.suggested":{pl:"sugerowane",en:"suggested"},
+    "inj.history":{pl:"Historia",en:"History"},
+    "inj.empty":{pl:"Brak zastrzyków tej substancji.",en:"No injections for this substance yet."},
+    "inj.intervalSet":{pl:"Co ile dni",en:"Days between shots"},
+    "inj.nextIn":{pl:"następny za",en:"next in"},
+    "inj.due":{pl:"termin dziś",en:"due today"},
+    "inj.overdue":{pl:"po terminie",en:"overdue"},
+    "inj.daysShort":{pl:"dni",en:"days"},
+    "inj.cycleLen":{pl:"Długość cyklu (dni)",en:"Cycle length (days)"},
+    "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
+    "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
+    "inj.cycleNone":{pl:"Ustaw start cyklu, aby śledzić postęp.",en:"Set a cycle start to track progress."},
+    "inj.confirmDel":{pl:"Usunąć ten zastrzyk?",en:"Delete this injection?"},
+    "inj.mgUnit":{pl:"mg",en:"mg"},
+    "inj.unitsUnit":{pl:"j",en:"u"},
+    // injection sites (abdomen-centric, subcutaneous)
+    "site.belly_ul":{pl:"Brzuch — góra lewa",en:"Abdomen — upper left"},
+    "site.belly_ur":{pl:"Brzuch — góra prawa",en:"Abdomen — upper right"},
+    "site.belly_ll":{pl:"Brzuch — dół lewy",en:"Abdomen — lower left"},
+    "site.belly_lr":{pl:"Brzuch — dół prawy",en:"Abdomen — lower right"},
+    "site.love_l1":{pl:"Lewy bok — górny",en:"Left flank — upper"},
+    "site.love_l2":{pl:"Lewy bok — dolny",en:"Left flank — lower"},
+    "site.love_r1":{pl:"Prawy bok — górny",en:"Right flank — upper"},
+    "site.love_r2":{pl:"Prawy bok — dolny",en:"Right flank — lower"},
+    "site.thigh_l":{pl:"Udo lewe — wewn.",en:"Left thigh — inner"},
+    "site.thigh_r":{pl:"Udo prawe — wewn.",en:"Right thigh — inner"},
 
     // ---- daily symptom diary ----
     "diary.title":{pl:"Dziennik objawów",en:"Symptom diary"},
@@ -1881,6 +1933,185 @@ var UI = (function(){
     });});
   }
 
+  /* ============ INJECTIONS (Mounjaro / TRT / peptides) + body map ============ */
+  // Subcutaneous, abdomen-centric site map (arms deferred). Coords on a 0 0 200 250 viewBox.
+  var INJ_SITES=[
+    {id:"belly_ul", x:88,  y:112},
+    {id:"belly_ur", x:112, y:112},
+    {id:"belly_ll", x:88,  y:137},
+    {id:"belly_lr", x:112, y:137},
+    {id:"love_l1",  x:62,  y:110},
+    {id:"love_l2",  x:62,  y:134},
+    {id:"love_r1",  x:138, y:110},
+    {id:"love_r2",  x:138, y:134},
+    {id:"thigh_l",  x:86,  y:206},
+    {id:"thigh_r",  x:114, y:206}
+  ];
+  var SITE_IDS=INJ_SITES.map(function(s){return s.id;});
+  var SUBSTANCE_COLORS={ mounjaro:"#0ea5a4", trt:"#6366f1", peptide:"#f59e0b" };
+
+  // Most recent injection (any substance) per site, for colouring + recency fade.
+  function lastUseBySite(injLog){
+    var by={};
+    (injLog||[]).forEach(function(e){
+      if(e && e.site){ if(!by[e.site] || e.date>by[e.site].date) by[e.site]={date:e.date, substance:e.substance}; }
+    });
+    return by;
+  }
+  function bodyMapSVG(st, selSite){
+    var injLog=st.injLog||[], by=lastUseBySite(injLog);
+    var suggested=DOMAIN.suggestSite(injLog, SITE_IDS);
+    var today=todayISO();
+    var svg='<svg class="bodymap" viewBox="0 0 200 250" role="img" aria-label="injection sites">';
+    // silhouette
+    svg+='<g fill="var(--soft)" stroke="var(--line)" stroke-width="1.6" stroke-linejoin="round">'
+      +'<circle cx="100" cy="26" r="15"/>'
+      +'<path d="M68 46 Q100 38 132 46 L150 92 L140 100 L142 158 Q100 170 58 158 L60 100 L50 92 Z"/>'
+      +'<path d="M62 160 L58 240 L88 240 L96 165 Z"/>'
+      +'<path d="M138 160 L142 240 L112 240 L104 165 Z"/>'
+      +'</g>';
+    // sites
+    INJ_SITES.forEach(function(s){
+      var u=by[s.id], isSel=(selSite===s.id), isSug=(!selSite && s.id===suggested);
+      var fill="#cbd5e1", op=1;
+      if(u){ fill=SUBSTANCE_COLORS[u.substance]||"#94a3b8";
+             var age=Math.max(0, daysBetweenISO(u.date, today));
+             op=Math.max(0.35, 1-age/30); }
+      svg+='<g class="site" data-site="'+s.id+'">';
+      if(isSel) svg+='<circle cx="'+s.x+'" cy="'+s.y+'" r="13" fill="none" stroke="var(--brand)" stroke-width="3"/>';
+      else if(isSug) svg+='<circle cx="'+s.x+'" cy="'+s.y+'" r="13" fill="none" stroke="var(--brand)" stroke-width="2" stroke-dasharray="3 3"/>';
+      svg+='<circle cx="'+s.x+'" cy="'+s.y+'" r="8.5" fill="'+fill+'" fill-opacity="'+op.toFixed(2)+'" stroke="#fff" stroke-width="1.5"/>';
+      svg+='<title>'+esc(I18N.t("site."+s.id))+(u?" · "+u.date:"")+'</title></g>';
+    });
+    svg+='</svg>';
+    var leg='<div class="maplegend">'
+      +'<span><i style="background:'+SUBSTANCE_COLORS.mounjaro+'"></i>Mounjaro</span>'
+      +'<span><i style="background:'+SUBSTANCE_COLORS.trt+'"></i>TRT</span>'
+      +'<span><i style="background:'+SUBSTANCE_COLORS.peptide+'"></i>'+esc(I18N.t("inj.seg.peptide"))+'</span></div>';
+    return svg+leg;
+  }
+  function progressBar(frac, color, leftLabel, rightLabel){
+    frac=Math.max(0,Math.min(1,frac||0));
+    return '<div class="pbwrap"><div class="pbar"><span style="width:'+(frac*100).toFixed(1)+'%;background:'+color+'"></span></div>'
+      +'<div class="pblabels"><span>'+esc(leftLabel||"")+'</span><span>'+esc(rightLabel||"")+'</span></div></div>';
+  }
+  function lastInjDate(st, substance){
+    var d=null;
+    (st.injLog||[]).forEach(function(e){ if(e.substance===substance && (!d || e.date>d)) d=e.date; });
+    return d;
+  }
+
+  var injSeg="mounjaro", injSel=null;  // selected site (null => use suggested)
+  function viewInject(){
+    var st=s(), today=todayISO();
+    if(["mounjaro","trt","peptide"].indexOf(injSeg)<0) injSeg="mounjaro";
+    var color=SUBSTANCE_COLORS[injSeg];
+
+    var html='<h1 class="page">'+esc(I18N.t("inj.title"))+'</h1>';
+    html+='<div class="seg" data-seg>'
+      +['mounjaro','trt','peptide'].map(function(k){
+          return '<button type="button" data-k="'+k+'" class="'+(injSeg===k?"on":"")+'">'+esc(I18N.t("inj.seg."+k))+'</button>';
+        }).join("")
+      +'</div>';
+
+    html+='<div class="card">';
+
+    // ---- rhythm widget per substance ----
+    if(injSeg==="mounjaro"){
+      var hist=(st.jab.history||[]).slice().sort(), last=hist.length?hist[hist.length-1]:null;
+      var every=Math.max(1, st.calc.intervalDays||7);
+      if(last){
+        var elapsed=daysBetweenISO(last,today), remaining=every-elapsed, frac=Math.max(0,Math.min(1,elapsed/every));
+        var big, sub;
+        if(remaining>0){ big=String(remaining); sub=I18N.t("jab.daysLeft"); }
+        else if(remaining===0){ big="0"; sub=I18N.t("jab.dueToday"); frac=1; }
+        else { big=String(remaining); sub=Math.abs(remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"); frac=1; }
+        html+=ringSVG(frac, big, sub);
+      } else {
+        html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
+      }
+      html+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="mjEvery" min="1" value="'+every+'"></div>';
+    } else if(injSeg==="trt"){
+      var iv=Math.max(1, st.inj.trt.intervalDays||3), lt=lastInjDate(st,"trt");
+      var ip=DOMAIN.intervalProgress(lt, iv, today);
+      if(ip){
+        var rl=ip.remaining>0?(I18N.t("inj.nextIn")+" "+ip.remaining+" "+I18N.t("inj.daysShort")):(ip.remaining===0?I18N.t("inj.due"):Math.abs(ip.remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
+        html+=progressBar(ip.frac, color, lt, rl);
+      } else { html+='<div class="empty">'+esc(I18N.t("inj.empty"))+'</div>'; }
+      html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="trtEvery" min="1" value="'+iv+'"></div>';
+    } else {
+      var cfg=st.inj.peptide, cp=DOMAIN.cycleProgress(cfg, today);
+      if(cp){
+        html+=progressBar(cp.frac, color, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total, (cp.total-cp.dayN)+" "+I18N.t("inj.daysShort"));
+      } else { html+='<div class="note">'+esc(I18N.t("inj.cycleNone"))+'</div>'; }
+      html+='<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("inj.cycleLen"))+'</label><input type="number" inputmode="numeric" id="pepLen" min="1" value="'+(cfg.cycleDays||56)+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.cycleStart"))+'</label><input type="date" id="pepStart" value="'+(cfg.cycleStart||"")+'"></div>'
+        +'</div>';
+    }
+
+    // ---- dose + body map + log ----
+    var unit=(injSeg==="peptide")?I18N.t("inj.unitsUnit"):I18N.t("inj.mgUnit");
+    var dosePh=(injSeg==="mounjaro"&&st.calc.strengthMg!=null)?st.calc.strengthMg:(injSeg==="peptide"?"10":"");
+    html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
+      +'<input type="number" inputmode="decimal" step="0.1" id="injDose" placeholder="'+esc(String(dosePh))+'"></div>';
+    var selForMap = injSel;
+    html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
+    html+=bodyMapSVG(st, selForMap);
+    var shownSite = injSel || DOMAIN.suggestSite(st.injLog, SITE_IDS);
+    html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'+esc(I18N.t("site."+shownSite))+'</b>'
+      +(!injSel?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
+    html+='<button class="btn" id="injLog" style="margin-top:10px">'+esc(I18N.t("inj.logBtn"))+'</button>';
+    html+='</div>';
+
+    // ---- history for this substance ----
+    var hlist=(st.injLog||[]).filter(function(e){return e.substance===injSeg;})
+                 .slice().sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
+    if(hlist.length){
+      html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="scroll"><table><tbody>';
+      hlist.forEach(function(e){
+        html+='<tr><td>'+esc(e.date)+'</td><td>'+esc(I18N.t("site."+e.site))+'</td>'
+          +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
+          +'<td class="num"><button class="btn ghost sm injDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+      });
+      html+='</tbody></table></div></div>';
+    }
+
+    app.innerHTML=html;
+
+    // segment switch
+    $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
+      injSeg=b.getAttribute("data-k"); injSel=null; viewInject();
+    });});
+    // site pick
+    $all(".site").forEach(function(g){ g.addEventListener("click",function(){
+      injSel=g.getAttribute("data-site"); viewInject();
+    });});
+    // config inputs
+    if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewInject(); });
+    if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=Math.max(1,parseInt(this.value,10)||3); STORE.save(); viewInject(); });
+    if($("#pepLen")) $("#pepLen").addEventListener("change",function(){ st.inj.peptide.cycleDays=Math.max(1,parseInt(this.value,10)||56); STORE.save(); viewInject(); });
+    if($("#pepStart")) $("#pepStart").addEventListener("change",function(){ st.inj.peptide.cycleStart=this.value||null; STORE.save(); viewInject(); });
+    // log
+    $("#injLog").addEventListener("click",function(){
+      var site=injSel || DOMAIN.suggestSite(st.injLog, SITE_IDS);
+      var dv=$("#injDose").value, dose=dv===""?null:parseFloat(dv);
+      var unitCode=(injSeg==="peptide")?"j":"mg";
+      st.injLog.push({ id:uid(), date:today, substance:injSeg, dose:(dose==null||isNaN(dose))?null:dose, unit:unitCode, site:site });
+      st.injLog.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
+      // Mounjaro: also feed the existing weekly ring source of truth.
+      if(injSeg==="mounjaro" && st.jab.history.indexOf(today)===-1){ st.jab.history.push(today); st.jab.history.sort(); }
+      injSel=null;
+      STORE.save(); toast(I18N.t("common.saved")); viewInject();
+    });
+    $all(".injDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("inj.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.injLog=st.injLog.filter(function(e){return e.id!==id;});
+      STORE.save(); viewInject();
+    });});
+  }
+
   /* ============ OPTIMIZER ============ */
   function viewOpt(){
     var st=s();
@@ -2492,10 +2723,11 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ jab:viewJab, weight:viewWeight, bp:viewBP, diary:viewDiary, optimizer:viewOpt, settings:viewSettings };
+  var routes={ inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
-    var h=(location.hash||"#jab").replace("#","");
-    return routes[h]?h:"jab";
+    var h=(location.hash||"#inject").replace("#","");
+    if(h==="jab") h="inject";          // legacy hash / PWA shortcut -> new injections view
+    return routes[h]?h:"inject";
   }
   function render(){
     var tab=currentTab();
@@ -2586,7 +2818,7 @@ var UI = (function(){
     }
     document.addEventListener("visibilitychange",refreshLinked);
     window.addEventListener("focus",refreshLinked);
-    if(!location.hash) location.hash="#jab";
+    if(!location.hash) location.hash="#inject";
     render();
     // Restore a previously linked file (async; Chromium only). May pull in newer data.
     STORE.restoreLink(function(status){
