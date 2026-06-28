@@ -358,6 +358,8 @@ var I18N = (function(){
     "inj.unitsUnit":{pl:"j",en:"u"},
     "inj.pepName":{pl:"Peptyd / blend",en:"Peptide / blend"},
     "inj.pepNamePh":{pl:"np. BPC-157 + TB-500 (KLOW)",en:"e.g. BPC-157 + TB-500 (KLOW)"},
+    "inj.when":{pl:"Czas podania",en:"Time given"},
+    "inj.whenHint":{pl:"domyślnie teraz — zmień, aby dodać wstecz",en:"defaults to now — change to backfill"},
     "inj.edit":{pl:"Edytuj",en:"Edit"},
     "inj.update":{pl:"Zaktualizuj zastrzyk",en:"Update injection"},
     "inj.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
@@ -2149,7 +2151,7 @@ var UI = (function(){
   }
 
   var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: chosen site (null=>suggested); injEdit: id being edited
-  var injDraft={dose:"",name:""};                    // preserves typed dose/blend across the site-pick re-render
+  var injDraft={dose:"",name:"",when:""};             // preserves typed dose/blend/time across the site-pick re-render
   function viewInject(){
     var st=s(), today=todayISO();
     if(["mounjaro","trt","peptide"].indexOf(injSeg)<0) injSeg="mounjaro";
@@ -2220,6 +2222,11 @@ var UI = (function(){
     var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||"");
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
       +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
+    // when given: captured as "now" by default, editable to backfill (parity with BP)
+    function tsToLocal(ts){ var d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+    var whenVal = injDraft.when || (editing ? (editing.ts ? tsToLocal(editing.ts) : (editing.date?editing.date+"T12:00":nowLocalDT())) : nowLocalDT());
+    html+='<div class="field"><label>'+esc(I18N.t("inj.when"))+' <span class="muted tiny">('+esc(I18N.t("inj.whenHint"))+')</span></label>'
+      +'<input type="datetime-local" id="injWhen" value="'+esc(whenVal)+'"></div>';
     var selForMap = injSel || (editing?editing.site:null);
     html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
     html+=bodyMapSVG(st, selForMap);
@@ -2242,12 +2249,13 @@ var UI = (function(){
         if(!haveDate[d]) hlist.push({ id:"jab:"+d, date:d, substance:"mounjaro", dose:null, unit:"mg", site:null, jabOnly:true });
       });
     }
-    hlist.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
+    hlist.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
     if(hlist.length){
       html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="scroll"><table><tbody>';
       hlist.forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
-        html+='<tr><td>'+esc(e.date)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td><td>'+esc(siteLbl)+'</td>'
+        var whenLbl=e.ts?fmtDateTime(e.ts):e.date;
+        html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td><td>'+esc(siteLbl)+'</td>'
           +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
           +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
@@ -2260,10 +2268,11 @@ var UI = (function(){
     function captureDraft(){
       if($("#injDose")) injDraft.dose=$("#injDose").value;
       if($("#injName")) injDraft.name=$("#injName").value;
+      if($("#injWhen")) injDraft.when=$("#injWhen").value;
     }
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
-      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injDraft={dose:"",name:""}; viewInject();
+      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injDraft={dose:"",name:"",when:""}; viewInject();
     });});
     // site pick (preserve typed dose/blend across the re-render)
     $all(".site").forEach(function(g){ g.addEventListener("click",function(){
@@ -2280,24 +2289,34 @@ var UI = (function(){
       var dv=$("#injDose").value, dose=dv===""?null:parseFloat(dv);
       dose=(dose==null||isNaN(dose))?null:dose;
       var name=$("#injName")?($("#injName").value||"").trim():null;
+      // when given: chosen datetime (defaults to now); ts is full datetime, date is the day part
+      var wv=$("#injWhen")?$("#injWhen").value:"";
+      var when=wv?new Date(wv):new Date(); if(isNaN(when.getTime())) when=new Date();
+      var ts=when.toISOString(), dateStr=ts.slice(0,10);
       if(injSeg==="peptide") st.inj.peptide.name=name||"";   // remember last blend
+      var mjDate;
       if(editing && editing.jabOnly){
-        // materialise the legacy date into a real injLog entry (date stays in jab.history)
-        st.injLog.push({ id:uid(), date:editing.date, substance:"mounjaro", dose:dose, unit:"mg", site:site });
+        // materialise the legacy date into a real injLog entry (keep its original day)
+        st.injLog.push({ id:uid(), ts:editing.date+"T"+ts.slice(11), date:editing.date, substance:"mounjaro", dose:dose, unit:"mg", site:site });
+        mjDate=editing.date;
       } else if(editing){
-        editing.dose=dose; editing.site=site; if(injSeg==="peptide") editing.name=name||"";
+        editing.dose=dose; editing.site=site; editing.ts=ts; editing.date=dateStr;
+        if(injSeg==="peptide") editing.name=name||"";
+        if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
         var unitCode=(injSeg==="peptide")?"j":"mg";
-        var entry={ id:uid(), date:today, substance:injSeg, dose:dose, unit:unitCode, site:site };
+        var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
         if(injSeg==="peptide" && name) entry.name=name;
         st.injLog.push(entry);
-        if(injSeg==="mounjaro" && st.jab.history.indexOf(today)===-1){ st.jab.history.push(today); st.jab.history.sort(); }
+        if(injSeg==="mounjaro") mjDate=dateStr;
       }
-      st.injLog.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
-      injSel=null; injEdit=null; injDraft={dose:"",name:""};
+      // Mounjaro: keep the weekly ring's source of truth (jab.history) in sync with the chosen day
+      if(mjDate && st.jab.history.indexOf(mjDate)===-1){ st.jab.history.push(mjDate); st.jab.history.sort(); }
+      st.injLog.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
+      injSel=null; injEdit=null; injDraft={dose:"",name:"",when:""};
       STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
-    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:""}; viewInject(); });
+    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:"",when:""}; viewInject(); });
     $all(".injEdit").forEach(function(b){ b.addEventListener("click",function(){
       injEdit=b.getAttribute("data-id"); injSel=null; viewInject(); window.scrollTo(0,0);
     });});
