@@ -832,13 +832,84 @@ var DOMAIN = (function(){
       saveVsRx:dS(rx), saveVsRxWeek:dW(rx), saveVsRxMonth:dM(rx) };
   }
 
+  // ---- health-tracking expansion: pure series + rhythm helpers ----
+  // Everything trackable becomes a time series [{date,value}] sorted ascending.
+  // sourceId formats: "metric:<id>", "inj:<substance>", "vital:sys|dia|pulse"
+  // (read from bp.log), "weight", "mounjaroDose".
+  function seriesFor(state, sourceId){
+    if(!state||!sourceId) return [];
+    var parts=String(sourceId).split(":"), kind=parts[0], key=parts[1], out=[];
+    if(kind==="metric"){
+      (state.dailyLog||[]).forEach(function(e){
+        if(e && e.values && e.values[key]!=null && e.values[key]!=="")
+          out.push({date:e.date, value:Number(e.values[key])});
+      });
+    } else if(kind==="inj"){
+      (state.injLog||[]).forEach(function(e){
+        if(e && e.substance===key && e.dose!=null && e.dose!=="")
+          out.push({date:e.date, value:Number(e.dose)});
+      });
+    } else if(kind==="vital"){
+      (state.bp && state.bp.log ? state.bp.log : []).forEach(function(e){
+        if(e && e[key]!=null && e[key]!=="" && e.ts)
+          out.push({date:String(e.ts).slice(0,10), value:Number(e[key])});
+      });
+    } else if(sourceId==="weight"){
+      (state.weightLog||[]).forEach(function(e){
+        if(e && e.weightKg!=null) out.push({date:e.date, value:Number(e.weightKg)});
+      });
+    } else if(sourceId==="mounjaroDose"){
+      (state.weightLog||[]).forEach(function(e){
+        if(e && e.doseMg!=null) out.push({date:e.date, value:Number(e.doseMg)});
+      });
+    }
+    return out.filter(function(p){return !isNaN(p.value);})
+              .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+  }
+
+  // Rotation: suggest the site whose most-recent use is oldest (across ALL
+  // substances), so the same spot isn't hit twice in a row. Never-used wins.
+  function suggestSite(injLog, siteIds){
+    if(!siteIds||!siteIds.length) return null;
+    var lastUse={};
+    (injLog||[]).forEach(function(e){
+      if(e && e.site){ if(!lastUse[e.site] || e.date>lastUse[e.site]) lastUse[e.site]=e.date; }
+    });
+    var best=siteIds[0], bestKey=lastUse[siteIds[0]]||"";
+    for(var i=0;i<siteIds.length;i++){
+      var k=lastUse[siteIds[i]]||""; // "" (never used) sorts before any date
+      if(k<bestKey){ bestKey=k; best=siteIds[i]; }
+    }
+    return best;
+  }
+
+  // Peptide cycle progress. cfg:{cycleDays,cycleStart}. Returns null if no start.
+  function cycleProgress(cfg, todayISOstr){
+    if(!cfg || !cfg.cycleStart || !cfg.cycleDays) return null;
+    var total=Math.max(1, cfg.cycleDays);
+    var dayN=Math.max(0, Math.round((new Date(todayISOstr+"T12:00:00")-new Date(cfg.cycleStart+"T12:00:00"))/86400000))+1;
+    var done=dayN>total;
+    return { dayN:Math.min(dayN,total), total:total, frac:Math.max(0,Math.min(1,dayN/total)), done:done };
+  }
+
+  // TRT interval progress: how the bar fills from one shot to the next.
+  function intervalProgress(lastDate, intervalDays, todayISOstr){
+    if(!lastDate) return null;
+    var every=Math.max(1, intervalDays||3);
+    var elapsed=Math.round((new Date(todayISOstr+"T12:00:00")-new Date(lastDate+"T12:00:00"))/86400000);
+    var remaining=every-elapsed;
+    return { remaining:remaining, every:every, elapsed:elapsed,
+             frac:Math.max(0,Math.min(1, elapsed/every)) };
+  }
+
   return {
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
-    rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule
+    rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
+    seriesFor:seriesFor, suggestSite:suggestSite, cycleProgress:cycleProgress, intervalProgress:intervalProgress
   };
 })();
 
@@ -860,7 +931,16 @@ var STORE = (function(){
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
         prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
       jab:{ history:[] },
-      bp:{ log:[] }
+      bp:{ log:[] },
+      // ---- health-tracking expansion (all new keys; merge() migrates old data) ----
+      // Blood pressure + pulse already live in bp.log (its own tab); we read it
+      // as a series rather than duplicating it here.
+      metrics:[],          // user-defined symptom registry: {id,name,type,daily,archived}
+      dailyLog:[],         // one entry per day: {id,date,values:{metricId:val},note}
+      injLog:[],           // every injection: {id,date,substance,dose,unit,site}
+      inj:{ mounjaro:{ unit:"mg" },
+            trt:{ intervalDays:3, unit:"mg" },
+            peptide:{ unit:"j", cycleDays:56, cycleStart:null } }
     };
   }
   var state = defaults();
