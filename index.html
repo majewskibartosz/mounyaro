@@ -130,6 +130,14 @@
   .toggle input:checked + .switch{background:var(--brand)}
   .toggle input:checked + .switch::after{left:21px}
 
+  /* range sliders for the daily symptom diary */
+  .slider{margin:10px 0 4px}
+  .slider .slhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;font-weight:700}
+  .slider .slval{font-variant-numeric:tabular-nums;font-weight:800;color:var(--brand);min-width:2ch;text-align:right}
+  .slider input[type=range]{width:100%;margin:6px 0 0;accent-color:var(--brand);height:26px}
+  .metricrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .metricrow .mname{flex:1;min-width:0}
+  .metricrow.arch{opacity:.5}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .muted{color:var(--muted)}
   .small{font-size:13px}
@@ -216,6 +224,7 @@
   <a href="#jab" data-tab="jab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.jab">Zastrzyk</span></a>
   <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span><span data-i="tab.weight">Waga</span></a>
   <a href="#bp" data-tab="bp"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></span><span data-i="tab.bp">Ciśnienie</span></a>
+  <a href="#diary" data-tab="diary"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h5"/></svg></span><span data-i="tab.diary">Dziennik</span></a>
   <a href="#optimizer" data-tab="optimizer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M8 18h.01M12 18h.01"/></svg></span><span data-i="tab.optimizer">Kalkulator</span></a>
   <a href="#settings" data-tab="settings"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span data-i="tab.settings">Ustawienia</span></a>
 </nav>
@@ -248,6 +257,35 @@ var I18N = (function(){
     "tab.bp":{pl:"Ciśnienie",en:"BP"},
     "tab.optimizer":{pl:"Kalkulator",en:"Calculator"},
     "tab.settings":{pl:"Ustawienia",en:"Settings"},
+    "tab.pulpit":{pl:"Pulpit",en:"Home"},
+    "tab.diary":{pl:"Dziennik",en:"Diary"},
+
+    // ---- daily symptom diary ----
+    "diary.title":{pl:"Dziennik objawów",en:"Symptom diary"},
+    "diary.sub":{pl:"Przesuń suwaki dla dzisiejszych odczuć. Możesz wrócić i poprawić w ciągu dnia.",en:"Slide today's ratings. You can come back and adjust during the day."},
+    "diary.todayDone":{pl:"Zapisano dziś",en:"Logged today"},
+    "diary.save":{pl:"Zapisz dziś",en:"Save today"},
+    "diary.note":{pl:"Notatka dnia",en:"Day note"},
+    "diary.noDaily":{pl:"Brak metryk codziennych. Dodaj je niżej, aby pojawiły się tutaj.",en:"No daily metrics yet. Add some below to see them here."},
+    "diary.bpLink":{pl:"Ciśnienie i tętno wpisz w zakładce Ciśnienie →",en:"Log blood pressure and pulse in the BP tab →"},
+    // ---- metric registry ----
+    "metric.section":{pl:"Twoje metryki",en:"Your metrics"},
+    "metric.sub":{pl:"Dodawaj, zmieniaj nazwy i archiwizuj śledzone odczucia. Archiwizacja nie kasuje historii.",en:"Add, rename and archive what you track. Archiving keeps the history."},
+    "metric.name":{pl:"Nazwa",en:"Name"},
+    "metric.type":{pl:"Typ",en:"Type"},
+    "metric.type.scale10":{pl:"Skala 0–10",en:"Scale 0–10"},
+    "metric.type.scale5":{pl:"Skala 0–5",en:"Scale 0–5"},
+    "metric.type.number":{pl:"Liczba",en:"Number"},
+    "metric.type.bool":{pl:"Tak/Nie",en:"Yes/No"},
+    "metric.daily":{pl:"Codzienna",en:"Daily"},
+    "metric.add":{pl:"Dodaj metrykę",en:"Add metric"},
+    "metric.archive":{pl:"Archiwizuj",en:"Archive"},
+    "metric.restore":{pl:"Przywróć",en:"Restore"},
+    "metric.rename":{pl:"Zmień nazwę",en:"Rename"},
+    "metric.archived":{pl:"Zarchiwizowane",en:"Archived"},
+    "metric.seed":{pl:"Dodaj zestaw startowy",en:"Add starter set"},
+    "metric.empty":{pl:"Brak metryk. Dodaj własną lub wczytaj zestaw startowy.",en:"No metrics yet. Add your own or load a starter set."},
+    "metric.namePh":{pl:"np. Ból łokcia",en:"e.g. Elbow pain"},
 
     "bp.title":{pl:"Ciśnienie krwi",en:"Blood pressure"},
     "bp.sub":{pl:"Zapisuj pomiary — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log readings — the date and time are captured automatically when you save."},
@@ -1715,6 +1753,134 @@ var UI = (function(){
     });});
   }
 
+  /* ============ DIARY (daily symptom log + editable metric registry) ============ */
+  function metricMax(type){ return type==="scale10"?10:(type==="scale5"?5:null); }
+  function starterMetrics(){
+    return [
+      {name:"Ból łokcia", type:"scale10"},
+      {name:"Zapalenie oczu", type:"scale5"},
+      {name:"Rumień (różowate)", type:"scale5"},
+      {name:"Mieszki włosowe", type:"scale5"},
+      {name:"Brain fog", type:"scale10"},
+      {name:"Przebodźcowanie", type:"scale10"},
+      {name:"Niepokój / kołatanie", type:"scale10"},
+      {name:"Napęd (baseline)", type:"scale10"}
+    ];
+  }
+  function dailyEntryFor(st, dISO){
+    for(var i=0;i<st.dailyLog.length;i++){ if(st.dailyLog[i].date===dISO) return st.dailyLog[i]; }
+    return null;
+  }
+  function viewDiary(){
+    var st=s(), today=todayISO();
+    var entry=dailyEntryFor(st, today), vals=(entry&&entry.values)||{};
+    var daily=st.metrics.filter(function(m){ return m.daily && !m.archived; });
+
+    var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
+
+    // --- daily ratings ---
+    html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>';
+    if(!daily.length){
+      html+='<div class="empty">'+esc(I18N.t("diary.noDaily"))+'</div>';
+    } else {
+      daily.forEach(function(m){
+        var v=vals[m.id];
+        if(m.type==="bool"){
+          html+='<div class="slider"><div class="slhead"><span>'+esc(m.name)+'</span></div>'
+            +'<label class="toggle"><input type="checkbox" class="dInput" data-m="'+m.id+'" data-t="bool"'+(v?" checked":"")+'><span class="switch"></span></label></div>';
+        } else if(m.type==="number"){
+          html+='<div class="slider"><div class="slhead"><span>'+esc(m.name)+'</span></div>'
+            +'<input type="number" inputmode="decimal" class="dInput" data-m="'+m.id+'" data-t="number" value="'+(v!=null?v:"")+'"></div>';
+        } else {
+          var mx=metricMax(m.type), cur=(v!=null?v:0);
+          html+='<div class="slider"><div class="slhead"><span>'+esc(m.name)+'</span><span class="slval" id="slv-'+m.id+'">'+cur+'</span></div>'
+            +'<input type="range" class="dInput" data-m="'+m.id+'" data-t="'+m.type+'" min="0" max="'+mx+'" step="1" value="'+cur+'"></div>';
+        }
+      });
+      html+='<div class="field" style="margin-top:10px"><label>'+esc(I18N.t("diary.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="dNote" maxlength="120" value="'+esc((entry&&entry.note)||"")+'"></div>';
+      html+='<div class="row"><button class="btn" id="dSave">'+esc(I18N.t("diary.save"))+'</button>';
+      if(entry) html+='<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.todayDone"))+'</span>';
+      html+='</div>';
+    }
+    html+='<div class="note" style="margin-top:12px"><a href="#bp" style="color:var(--brand);font-weight:700;text-decoration:none">'+esc(I18N.t("diary.bpLink"))+'</a></div>';
+    html+='</div>';
+
+    // --- metric registry ---
+    function metricRowHTML(m, isArch){
+      var typeLbl=I18N.t("metric.type."+m.type);
+      return '<div class="metricrow'+(isArch?" arch":"")+'">'
+        +'<span class="mname"><b>'+esc(m.name)+'</b> <span class="muted tiny">'+esc(typeLbl)+(m.daily?" · "+esc(I18N.t("metric.daily")):"")+'</span></span>'
+        +'<button class="btn ghost sm mRen" data-id="'+m.id+'">'+esc(I18N.t("metric.rename"))+'</button>'
+        +'<button class="btn ghost sm mArch" data-id="'+m.id+'">'+esc(isArch?I18N.t("metric.restore"):I18N.t("metric.archive"))+'</button>'
+        +'</div>';
+    }
+    html+='<div class="card"><h2>'+esc(I18N.t("metric.section"))+'</h2><p class="sub">'+esc(I18N.t("metric.sub"))+'</p>';
+    var active=st.metrics.filter(function(m){ return !m.archived; });
+    var archived=st.metrics.filter(function(m){ return m.archived; });
+    if(!st.metrics.length) html+='<div class="empty">'+esc(I18N.t("metric.empty"))+'</div>';
+    active.forEach(function(m){ html+=metricRowHTML(m,false); });
+    if(archived.length){
+      html+='<div class="tsub" style="margin-top:10px">'+esc(I18N.t("metric.archived"))+'</div>';
+      archived.forEach(function(m){ html+=metricRowHTML(m,true); });
+    }
+    html+='<div class="grid g3" style="margin-top:12px">'
+      +'<div class="field"><label>'+esc(I18N.t("metric.name"))+'</label><input type="text" id="mNewName" maxlength="40" placeholder="'+esc(I18N.t("metric.namePh"))+'"></div>'
+      +'<div class="field"><label>'+esc(I18N.t("metric.type"))+'</label><select id="mNewType">'
+        +'<option value="scale10">'+esc(I18N.t("metric.type.scale10"))+'</option>'
+        +'<option value="scale5">'+esc(I18N.t("metric.type.scale5"))+'</option>'
+        +'<option value="number">'+esc(I18N.t("metric.type.number"))+'</option>'
+        +'<option value="bool">'+esc(I18N.t("metric.type.bool"))+'</option>'
+      +'</select></div>'
+      +'<div class="field"><label>'+esc(I18N.t("metric.daily"))+'</label><label class="toggle" style="margin-top:6px"><input type="checkbox" id="mNewDaily" checked><span class="switch"></span></label></div>'
+      +'</div>'
+      +'<div class="row"><button class="btn" id="mAdd">'+esc(I18N.t("metric.add"))+'</button>'
+      +'<button class="btn ghost" id="mSeed">'+esc(I18N.t("metric.seed"))+'</button></div>';
+    html+='</div>';
+
+    app.innerHTML=html;
+
+    $all("input.dInput[type=range]").forEach(function(r){
+      r.addEventListener("input",function(){ var l=$("#slv-"+r.getAttribute("data-m")); if(l) l.textContent=r.value; });
+    });
+    if($("#dSave")) $("#dSave").addEventListener("click",function(){
+      var values={};
+      $all(".dInput").forEach(function(inp){
+        var id=inp.getAttribute("data-m"), t=inp.getAttribute("data-t");
+        if(t==="bool"){ values[id]=inp.checked?1:0; }
+        else if(inp.value!==""){ var n=parseFloat(inp.value); if(!isNaN(n)) values[id]=n; }
+      });
+      var note=($("#dNote")?$("#dNote").value:"").trim(), e=dailyEntryFor(st, today);
+      if(e){ e.values=values; e.note=note; }
+      else { st.dailyLog.push({ id:uid(), date:today, values:values, note:note }); }
+      st.dailyLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
+      STORE.save(); toast(I18N.t("common.saved")); viewDiary();
+    });
+    $("#mAdd").addEventListener("click",function(){
+      var name=($("#mNewName").value||"").trim(); if(!name){ $("#mNewName").focus(); return; }
+      st.metrics.push({ id:uid(), name:name, type:$("#mNewType").value, daily:$("#mNewDaily").checked, archived:false });
+      STORE.save(); viewDiary();
+    });
+    $("#mSeed").addEventListener("click",function(){
+      var have={}; st.metrics.forEach(function(m){ have[m.name.toLowerCase()]=true; });
+      starterMetrics().forEach(function(sm){
+        if(!have[sm.name.toLowerCase()]) st.metrics.push({ id:uid(), name:sm.name, type:sm.type, daily:true, archived:false });
+      });
+      STORE.save(); toast(I18N.t("common.saved")); viewDiary();
+    });
+    $all(".mArch").forEach(function(b){ b.addEventListener("click",function(){
+      var id=b.getAttribute("data-id");
+      st.metrics.forEach(function(m){ if(m.id===id) m.archived=!m.archived; });
+      STORE.save(); viewDiary();
+    });});
+    $all(".mRen").forEach(function(b){ b.addEventListener("click",function(){
+      var id=b.getAttribute("data-id"), m=null;
+      st.metrics.forEach(function(x){ if(x.id===id) m=x; });
+      if(!m) return;
+      var nn=prompt(I18N.t("metric.rename"), m.name); if(nn==null) return; nn=nn.trim();
+      if(nn){ m.name=nn; STORE.save(); viewDiary(); }
+    });});
+  }
+
   /* ============ OPTIMIZER ============ */
   function viewOpt(){
     var st=s();
@@ -2326,7 +2492,7 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ jab:viewJab, weight:viewWeight, bp:viewBP, optimizer:viewOpt, settings:viewSettings };
+  var routes={ jab:viewJab, weight:viewWeight, bp:viewBP, diary:viewDiary, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
     var h=(location.hash||"#jab").replace("#","");
     return routes[h]?h:"jab";
