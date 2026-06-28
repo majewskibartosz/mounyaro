@@ -2154,8 +2154,15 @@ var UI = (function(){
     var st=s(), today=todayISO();
     if(["mounjaro","trt","peptide"].indexOf(injSeg)<0) injSeg="mounjaro";
     var editing=null;
-    if(injEdit){ for(var ei=0;ei<st.injLog.length;ei++){ if(st.injLog[ei].id===injEdit){ editing=st.injLog[ei]; break; } }
-      if(editing) injSeg=editing.substance; else injEdit=null; }
+    if(injEdit){
+      if(injEdit.indexOf("jab:")===0){   // legacy Mounjaro date with no injLog entry yet
+        editing={ id:injEdit, date:injEdit.slice(4), substance:"mounjaro", dose:null, unit:"mg", site:null, jabOnly:true };
+        injSeg="mounjaro";
+      } else {
+        for(var ei=0;ei<st.injLog.length;ei++){ if(st.injLog[ei].id===injEdit){ editing=st.injLog[ei]; break; } }
+        if(editing) injSeg=editing.substance; else injEdit=null;
+      }
+    }
     var color=SUBSTANCE_COLORS[injSeg];
 
     var html='<h1 class="page">'+esc(I18N.t("inj.title"))+'</h1>';
@@ -2227,12 +2234,19 @@ var UI = (function(){
     html+='</div>';
 
     // ---- history for this substance (editable) ----
-    var hlist=(st.injLog||[]).filter(function(e){return e.substance===injSeg;})
-                 .slice().sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
+    // Mounjaro: union of injLog entries and legacy jab.history dates (which predate injLog).
+    var hlist=(st.injLog||[]).filter(function(e){return e.substance===injSeg;}).slice();
+    if(injSeg==="mounjaro"){
+      var haveDate={}; hlist.forEach(function(e){ haveDate[e.date]=true; });
+      (st.jab.history||[]).forEach(function(d){
+        if(!haveDate[d]) hlist.push({ id:"jab:"+d, date:d, substance:"mounjaro", dose:null, unit:"mg", site:null, jabOnly:true });
+      });
+    }
+    hlist.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
     if(hlist.length){
       html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="scroll"><table><tbody>';
       hlist.forEach(function(e){
-        var siteLbl=I18N.t("site."+e.site); if(siteLbl==="site."+e.site) siteLbl=e.site;
+        var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         html+='<tr><td>'+esc(e.date)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td><td>'+esc(siteLbl)+'</td>'
           +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
@@ -2267,7 +2281,10 @@ var UI = (function(){
       dose=(dose==null||isNaN(dose))?null:dose;
       var name=$("#injName")?($("#injName").value||"").trim():null;
       if(injSeg==="peptide") st.inj.peptide.name=name||"";   // remember last blend
-      if(editing){
+      if(editing && editing.jabOnly){
+        // materialise the legacy date into a real injLog entry (date stays in jab.history)
+        st.injLog.push({ id:uid(), date:editing.date, substance:"mounjaro", dose:dose, unit:"mg", site:site });
+      } else if(editing){
         editing.dose=dose; editing.site=site; if(injSeg==="peptide") editing.name=name||"";
       } else {
         var unitCode=(injSeg==="peptide")?"j":"mg";
@@ -2287,7 +2304,16 @@ var UI = (function(){
     $all(".injDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("inj.confirmDel"))) return;
       var id=b.getAttribute("data-id");
-      st.injLog=st.injLog.filter(function(e){return e.id!==id;});
+      if(id.indexOf("jab:")===0){           // legacy Mounjaro date only
+        var d=id.slice(4);
+        st.jab.history=st.jab.history.filter(function(x){return x!==d;});
+      } else {
+        var del=null;
+        st.injLog=st.injLog.filter(function(e){ if(e.id===id){ del=e; return false; } return true; });
+        // Mounjaro: also drop the date from jab.history if no other entry covers it
+        if(del && del.substance==="mounjaro" && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===del.date;}))
+          st.jab.history=st.jab.history.filter(function(x){return x!==del.date;});
+      }
       if(injEdit===id) injEdit=null;
       STORE.save(); viewInject();
     });});
