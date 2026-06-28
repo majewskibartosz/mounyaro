@@ -275,6 +275,20 @@ var I18N = (function(){
     "tab.inject":{pl:"Zastrzyki",en:"Injections"},
     "tab.correlate":{pl:"Korelacje",en:"Correlations"},
 
+    // ---- correlations ----
+    "corr.title":{pl:"Korelacje",en:"Correlations"},
+    "corr.sub":{pl:"Nałóż dwie dowolne serie na wspólnej osi czasu (dwie osie Y).",en:"Overlay any two series on a shared timeline (two Y axes)."},
+    "corr.seriesA":{pl:"Seria A",en:"Series A"},
+    "corr.seriesB":{pl:"Seria B",en:"Series B"},
+    "corr.empty":{pl:"Za mało danych, by narysować wykres.",en:"Not enough data to chart yet."},
+    "corr.noSeries":{pl:"Brak serii do wyboru. Dodaj metryki i zacznij logować.",en:"No series available yet. Add metrics and start logging."},
+    "corr.weight":{pl:"Waga",en:"Weight"},
+    "corr.mjDose":{pl:"Mounjaro — dawka (mg)",en:"Mounjaro — dose (mg)"},
+    "corr.injDose":{pl:"— dawka",en:"— dose"},
+    "corr.vital.sys":{pl:"Ciśnienie skurczowe",en:"Systolic BP"},
+    "corr.vital.dia":{pl:"Ciśnienie rozkurczowe",en:"Diastolic BP"},
+    "corr.vital.pulse":{pl:"Tętno",en:"Pulse"},
+
     // ---- injections (shared engine: Mounjaro / TRT / peptides) ----
     "inj.title":{pl:"Zastrzyki",en:"Injections"},
     "inj.seg.mounjaro":{pl:"Mounjaro",en:"Mounjaro"},
@@ -1420,7 +1434,43 @@ var CHART = (function(){
     svg+='</svg>';
     return svg;
   }
-  return { render:render, renderBP:renderBP };
+  // Two independent series on a shared time axis with two Y scales (left=A, right=B).
+  function renderDual(a, b, labA, labB, colA, colB){
+    a=(a||[]).slice(); b=(b||[]).slice();
+    if(!a.length && !b.length) return '<div class="empty">'+esc(I18N.t("corr.empty"))+'</div>';
+    var W=320, H=210, mL=34, mR=34, mT=12, mB=42, iw=W-mL-mR, ih=H-mT-mB;
+    function t(d){ return new Date(d+"T12:00:00").getTime(); }
+    var allX=a.concat(b).map(function(p){return t(p.date);});
+    var minX=Math.min.apply(null,allX), maxX=Math.max.apply(null,allX);
+    function X(tm){ return maxX===minX ? mL+iw/2 : mL+(tm-minX)/(maxX-minX)*iw; }
+    function yScale(arr){
+      if(!arr.length) return null;
+      var ys=arr.map(function(p){return p.value;}), mn=Math.min.apply(null,ys), mx=Math.max.apply(null,ys);
+      if(mn===mx){ mn-=1; mx+=1; } var pad=(mx-mn)*0.12; mn-=pad; mx+=pad;
+      return function(v){ return mT+(1-(v-mn)/(mx-mn))*ih; };
+    }
+    var Ya=yScale(a), Yb=yScale(b);
+    var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="correlation chart">';
+    var rows=4;
+    for(var r=0;r<=rows;r++){ var y=mT+ih*r/rows; svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>'; }
+    function dlabel(tm){ var d=new Date(tm); return d.getDate()+"."+(d.getMonth()+1); }
+    [minX, (minX+maxX)/2, maxX].forEach(function(tm){ var x=X(tm); svg+='<text x="'+x.toFixed(1)+'" y="'+(H-26)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(tm)+'</text>'; });
+    function plot(arr, Y, col){
+      if(!arr.length||!Y) return;
+      if(arr.length>1){ var pts=arr.map(function(p){return X(t(p.date)).toFixed(1)+","+Y(p.value).toFixed(1);}).join(" ");
+        svg+='<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>'; }
+      arr.forEach(function(p){ svg+='<circle cx="'+X(t(p.date)).toFixed(1)+'" cy="'+Y(p.value).toFixed(1)+'" r="3.4" fill="'+col+'" stroke="#fff" stroke-width="1.2"><title>'+esc(p.date+" · "+p.value)+'</title></circle>'; });
+    }
+    plot(a, Ya, colA); plot(b, Yb, colB);
+    // legend
+    svg+='<g font-size="10" font-weight="700">'
+      +'<circle cx="'+(mL)+'" cy="'+(H-10)+'" r="4" fill="'+colA+'"/><text x="'+(mL+8)+'" y="'+(H-6.5)+'" fill="#64748b">'+esc(labA)+'</text>'
+      +'<circle cx="'+(mL+ (iw/2))+'" cy="'+(H-10)+'" r="4" fill="'+colB+'"/><text x="'+(mL+(iw/2)+8)+'" y="'+(H-6.5)+'" fill="#64748b">'+esc(labB)+'</text>'
+      +'</g>';
+    svg+='</svg>';
+    return svg;
+  }
+  return { render:render, renderBP:renderBP, renderDual:renderDual };
 })();
 
 /* =========================================================================
@@ -2112,6 +2162,53 @@ var UI = (function(){
     });});
   }
 
+  /* ============ CORRELATIONS ============ */
+  function seriesOptions(st){
+    var opts=[];
+    (st.metrics||[]).filter(function(m){return !m.archived;}).forEach(function(m){
+      opts.push({ id:"metric:"+m.id, label:m.name });
+    });
+    ["mounjaro","trt","peptide"].forEach(function(k){
+      if((st.injLog||[]).some(function(e){return e.substance===k && e.dose!=null;}))
+        opts.push({ id:"inj:"+k, label:I18N.t("inj.seg."+k)+" "+I18N.t("corr.injDose") });
+    });
+    if((st.bp&&st.bp.log&&st.bp.log.length)){
+      opts.push({ id:"vital:sys", label:I18N.t("corr.vital.sys") });
+      opts.push({ id:"vital:dia", label:I18N.t("corr.vital.dia") });
+      if(st.bp.log.some(function(e){return e.pulse!=null;})) opts.push({ id:"vital:pulse", label:I18N.t("corr.vital.pulse") });
+    }
+    if((st.weightLog||[]).length){
+      opts.push({ id:"weight", label:I18N.t("corr.weight") });
+      if(st.weightLog.some(function(e){return e.doseMg!=null;})) opts.push({ id:"mounjaroDose", label:I18N.t("corr.mjDose") });
+    }
+    return opts;
+  }
+  var corrA=null, corrB=null;
+  function viewCorrelate(){
+    var st=s(), opts=seriesOptions(st);
+    var html='<h1 class="page">'+esc(I18N.t("corr.title"))+'</h1><div class="card"><p class="sub">'+esc(I18N.t("corr.sub"))+'</p>';
+    if(opts.length<1){ html+='<div class="empty">'+esc(I18N.t("corr.noSeries"))+'</div></div>'; app.innerHTML=html; return; }
+    var ids=opts.map(function(o){return o.id;});
+    if(ids.indexOf(corrA)<0) corrA=ids[0];
+    if(ids.indexOf(corrB)<0) corrB=ids[Math.min(1,ids.length-1)];
+    function sel(id, cur){
+      return '<select id="'+id+'">'+opts.map(function(o){
+        return '<option value="'+esc(o.id)+'"'+(o.id===cur?" selected":"")+'>'+esc(o.label)+'</option>';
+      }).join("")+'</select>';
+    }
+    html+='<div class="grid g2">'
+      +'<div class="field"><label>'+esc(I18N.t("corr.seriesA"))+'</label>'+sel("corrSelA",corrA)+'</div>'
+      +'<div class="field"><label>'+esc(I18N.t("corr.seriesB"))+'</label>'+sel("corrSelB",corrB)+'</div>'
+      +'</div>';
+    var labA=(opts.filter(function(o){return o.id===corrA;})[0]||{}).label||"";
+    var labB=(opts.filter(function(o){return o.id===corrB;})[0]||{}).label||"";
+    html+='<div id="chartHolder">'+CHART.renderDual(DOMAIN.seriesFor(st,corrA), DOMAIN.seriesFor(st,corrB), labA, labB, "#0ea5a4", "#6366f1")+'</div>';
+    html+='</div>';
+    app.innerHTML=html;
+    $("#corrSelA").addEventListener("change",function(){ corrA=this.value; viewCorrelate(); });
+    $("#corrSelB").addEventListener("change",function(){ corrB=this.value; viewCorrelate(); });
+  }
+
   /* ============ OPTIMIZER ============ */
   function viewOpt(){
     var st=s();
@@ -2723,7 +2820,7 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, optimizer:viewOpt, settings:viewSettings };
+  var routes={ inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, correlate:viewCorrelate, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
     var h=(location.hash||"#inject").replace("#","");
     if(h==="jab") h="inject";          // legacy hash / PWA shortcut -> new injections view
