@@ -111,15 +111,18 @@
   .cur{color:var(--muted);font-weight:600;font-size:.82em;opacity:.85}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 
-  button.btn{
+  .btn{
     border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;
     background:var(--brand);color:#fff;transition:filter .15s,transform .05s;
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;
   }
-  button.btn:hover{filter:brightness(1.05)}
-  button.btn:active{transform:translateY(1px)}
-  button.btn.ghost{background:var(--soft);color:var(--ink);border:1px solid var(--line)}
-  button.btn.danger{background:#fee2e2;color:var(--bad)}
-  button.btn.sm{padding:8px 12px;font-size:13px}
+  .btn svg{width:18px;height:18px;flex-shrink:0}
+  .btn:hover{filter:brightness(1.05)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:var(--soft);color:var(--ink);border:1px solid var(--line)}
+  .btn.danger{background:#fee2e2;color:var(--bad)}
+  .btn.sm{padding:8px 12px;font-size:13px}
+  .btn.sm svg{width:15px;height:15px}
   /* Full/Half pattern toggles: fixed width so switching label never shifts layout */
   button.fracBtn{min-width:104px;text-align:center}
 
@@ -151,6 +154,9 @@
   .bodymap .site{cursor:pointer}
   .maplegend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px}
   .maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  /* cross-links to twin tabs */
+  .rellinks{margin-top:12px}
+  .rellinks .btn{width:100%}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .muted{color:var(--muted)}
   .small{font-size:13px}
@@ -218,7 +224,7 @@
   <div class="head-inner">
     <div class="logo"><span class="dot"></span><span>Mounjaro Tracker</span></div>
     <div class="spacer"></div>
-    <button class="btn sm" id="installBtn" hidden>📲 <span data-i="install.btn">Zainstaluj</span></button>
+    <button class="btn sm" id="installBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg> <span data-i="install.btn">Zainstaluj</span></button>
     <button class="iconbtn" id="themeBtn" title="Dark / light" aria-label="Toggle dark mode">🌙</button>
     <div class="lang" id="langSwitch">
       <button data-lang="pl">PL</button>
@@ -234,12 +240,12 @@
 </main>
 
 <nav class="tabs" id="tabs">
-  <a href="#pulpit" data-tab="pulpit"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></span><span data-i="tab.pulpit">Pulpit</span></a>
-  <a href="#diary" data-tab="diary"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h5"/></svg></span><span data-i="tab.diary">Dziennik</span></a>
-  <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span><span data-i="tab.weight">Waga</span></a>
-  <a href="#bp" data-tab="bp"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></span><span data-i="tab.bp">Ciśnienie</span></a>
-  <a href="#optimizer" data-tab="optimizer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M8 18h.01M12 18h.01"/></svg></span><span data-i="tab.optimizer">Kalkulator</span></a>
-  <a href="#settings" data-tab="settings"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span data-i="tab.settings">Ustawienia</span></a>
+  <a href="#pulpit" data-tab="pulpit"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></span><span data-i="tab.pulpit">Pulpit</span></a>
+  <a href="#inject" data-tab="inject"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.inject">Zastrzyki</span></a>
+  <a href="#diary" data-tab="diary"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4"/><path d="M2 12h4"/><path d="M2 18h4"/><rect width="14" height="18" x="6" y="3" rx="2"/><path d="M10 8h6M10 12h6M10 16h3"/></svg></span><span data-i="tab.diary">Dziennik</span></a>
+  <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><path d="M5 21 7 9h10l2 12z"/><path d="M9 13h6"/></svg></span><span data-i="tab.weight">Waga</span></a>
+  <a href="#bp" data-tab="bp"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/><path d="m4 12 3 .5 1.5-3 2 5 1.5-2.5h6"/></svg></span><span data-i="tab.bp">Ciśnienie</span></a>
+  <a href="#settings" data-tab="settings"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span data-i="tab.settings">Ustawienia</span></a>
 </nav>
 
 <script>
@@ -296,6 +302,15 @@ var I18N = (function(){
     "pulpit.goWeight":{pl:"Waga",en:"Weight"},
     "pulpit.goCorr":{pl:"Korelacje",en:"Correlations"},
     "pulpit.mapHint":{pl:"Ostatnie miejsca wkłuć →",en:"Recent injection sites →"},
+    // cross-links between related tabs
+    "rel.toDiary":{pl:"Zapisz objawy",en:"Log symptoms"},
+    "rel.toInject":{pl:"Zapisz zastrzyk",en:"Log injection"},
+    "rel.toBp":{pl:"Zapisz ciśnienie",en:"Log blood pressure"},
+    "rel.toWeight":{pl:"Zapisz wagę",en:"Log weight"},
+    "rel.toCorr":{pl:"Zobacz korelacje",en:"See correlations"},
+    "rel.toCalc":{pl:"Kalkulator kliknięć",en:"Clicks calculator"},
+    "rel.toSettings":{pl:"Wróć do Ustawień",en:"Back to Settings"},
+    "set.tools":{pl:"Narzędzia",en:"Tools"},
 
     // ---- correlations ----
     "corr.title":{pl:"Korelacje",en:"Correlations"},
@@ -336,6 +351,12 @@ var I18N = (function(){
     "inj.confirmDel":{pl:"Usunąć ten zastrzyk?",en:"Delete this injection?"},
     "inj.mgUnit":{pl:"mg",en:"mg"},
     "inj.unitsUnit":{pl:"j",en:"u"},
+    "inj.pepName":{pl:"Peptyd / blend",en:"Peptide / blend"},
+    "inj.pepNamePh":{pl:"np. BPC-157 + TB-500 (KLOW)",en:"e.g. BPC-157 + TB-500 (KLOW)"},
+    "inj.edit":{pl:"Edytuj",en:"Edit"},
+    "inj.update":{pl:"Zaktualizuj zastrzyk",en:"Update injection"},
+    "inj.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
+    "inj.cancel":{pl:"Anuluj",en:"Cancel"},
     // injection sites (abdomen-centric, subcutaneous)
     "site.belly_ul":{pl:"Brzuch — góra lewa",en:"Abdomen — upper left"},
     "site.belly_ur":{pl:"Brzuch — góra prawa",en:"Abdomen — upper right"},
@@ -347,6 +368,10 @@ var I18N = (function(){
     "site.love_r2":{pl:"Prawy bok — dolny",en:"Right flank — lower"},
     "site.thigh_l":{pl:"Udo lewe — wewn.",en:"Left thigh — inner"},
     "site.thigh_r":{pl:"Udo prawe — wewn.",en:"Right thigh — inner"},
+    "site.thigh_l1":{pl:"Udo lewe — górne",en:"Left thigh — upper"},
+    "site.thigh_l2":{pl:"Udo lewe — dolne",en:"Left thigh — lower"},
+    "site.thigh_r1":{pl:"Udo prawe — górne",en:"Right thigh — upper"},
+    "site.thigh_r2":{pl:"Udo prawe — dolne",en:"Right thigh — lower"},
 
     // ---- daily symptom diary ----
     "diary.title":{pl:"Dziennik objawów",en:"Symptom diary"},
@@ -1066,7 +1091,7 @@ var STORE = (function(){
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
-            peptide:{ unit:"j", cycleDays:56, cycleStart:null } }
+            peptide:{ unit:"j", cycleDays:56, cycleStart:null, name:"" } }
     };
   }
   var state = defaults();
@@ -1341,6 +1366,23 @@ function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDateTime(ts){ try{ return new Date(ts).toLocaleString(I18N.lang==="en"?"en-GB":"pl-PL",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(ts); } }
 function nowLocalDT(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+// Shared line-icon set (Lucide-style) so buttons, links and nav stay consistent.
+var ICONS={
+  pulpit:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  inject:'<path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/>',
+  diary:'<path d="M2 6h4"/><path d="M2 12h4"/><path d="M2 18h4"/><rect width="14" height="18" x="6" y="3" rx="2"/><path d="M10 8h6M10 12h6M10 16h3"/>',
+  weight:'<circle cx="12" cy="5" r="2"/><path d="M5 21 7 9h10l2 12z"/><path d="M9 13h6"/>',
+  bp:'<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/><path d="m4 12 3 .5 1.5-3 2 5 1.5-2.5h6"/>',
+  correlate:'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m7 14 4-4 3 3 5-6"/>',
+  calc:'<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="8" x2="8.01" y1="14" y2="14"/><line x1="12" x2="12.01" y1="14" y2="14"/><line x1="16" x2="16.01" y1="14" y2="14"/><line x1="8" x2="8.01" y1="18" y2="18"/><line x1="12" x2="12.01" y1="18" y2="18"/><line x1="16" x2="16.01" y1="18" y2="18"/><line x1="8" x2="16" y1="10" y2="10"/>',
+  settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  install:'<path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+  arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'
+};
+function icon(name, cls){
+  var p=ICONS[name]; if(!p) return "";
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'+(cls?' class="'+cls+'"':'')+'>'+p+'</svg>';
+}
 function addDaysISO(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function daysBetweenISO(aISO,bISO){ return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000); }
 // color scale for dose 0..15mg -> teal(low) to indigo/red(high)
@@ -1711,6 +1753,7 @@ var UI = (function(){
     +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80"></div>'
     +   '<button class="btn" id="wAdd">'+esc(I18N.t("weight.add"))+'</button>'
     + '</div>';
+    html+='<div class="rellinks"><a class="btn ghost" href="#bp">'+icon("bp")+esc(I18N.t("rel.toBp"))+icon("arrow")+'</a></div>';
 
     // history
     if(st.weightLog.length){
@@ -1833,6 +1876,7 @@ var UI = (function(){
     +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80"></div>'
     + '</div>'
     + '<button class="btn" id="bpAdd">'+esc(I18N.t("bp.add"))+'</button>'
+    + '<div class="rellinks"><a class="btn ghost" href="#weight">'+icon("weight")+esc(I18N.t("rel.toWeight"))+icon("arrow")+'</a></div>'
     + '</div>';
 
     // history
@@ -1960,6 +2004,7 @@ var UI = (function(){
       +'<div class="row"><button class="btn" id="mAdd">'+esc(I18N.t("metric.add"))+'</button>'
       +'<button class="btn ghost" id="mSeed">'+esc(I18N.t("metric.seed"))+'</button></div>';
     html+='</div>';
+    html+='<div class="rellinks"><a class="btn ghost" href="#inject">'+icon("inject")+esc(I18N.t("rel.toInject"))+icon("arrow")+'</a></div>';
 
     app.innerHTML=html;
 
@@ -2007,17 +2052,21 @@ var UI = (function(){
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + body map ============ */
   // Subcutaneous, abdomen-centric site map (arms deferred). Coords on a 0 0 200 250 viewBox.
+  // Abdomen 2x2 in the centre, love handles clearly out on the flanks,
+  // each inner thigh gets two spots (two shots per spot).
   var INJ_SITES=[
-    {id:"belly_ul", x:88,  y:112},
-    {id:"belly_ur", x:112, y:112},
-    {id:"belly_ll", x:88,  y:137},
-    {id:"belly_lr", x:112, y:137},
-    {id:"love_l1",  x:62,  y:110},
-    {id:"love_l2",  x:62,  y:134},
-    {id:"love_r1",  x:138, y:110},
-    {id:"love_r2",  x:138, y:134},
-    {id:"thigh_l",  x:86,  y:206},
-    {id:"thigh_r",  x:114, y:206}
+    {id:"belly_ul", x:88,  y:108},
+    {id:"belly_ur", x:112, y:108},
+    {id:"belly_ll", x:88,  y:132},
+    {id:"belly_lr", x:112, y:132},
+    {id:"love_l1",  x:57,  y:112},
+    {id:"love_l2",  x:57,  y:136},
+    {id:"love_r1",  x:143, y:112},
+    {id:"love_r2",  x:143, y:136},
+    {id:"thigh_l1", x:84,  y:194},
+    {id:"thigh_l2", x:84,  y:216},
+    {id:"thigh_r1", x:116, y:194},
+    {id:"thigh_r2", x:116, y:216}
   ];
   var SITE_IDS=INJ_SITES.map(function(s){return s.id;});
   var SUBSTANCE_COLORS={ mounjaro:"#0ea5a4", trt:"#6366f1", peptide:"#f59e0b" };
@@ -2073,10 +2122,14 @@ var UI = (function(){
     return d;
   }
 
-  var injSeg="mounjaro", injSel=null;  // selected site (null => use suggested)
+  var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: chosen site (null=>suggested); injEdit: id being edited
+  var injDraft={dose:"",name:""};                    // preserves typed dose/blend across the site-pick re-render
   function viewInject(){
     var st=s(), today=todayISO();
     if(["mounjaro","trt","peptide"].indexOf(injSeg)<0) injSeg="mounjaro";
+    var editing=null;
+    if(injEdit){ for(var ei=0;ei<st.injLog.length;ei++){ if(st.injLog[ei].id===injEdit){ editing=st.injLog[ei]; break; } }
+      if(editing) injSeg=editing.substance; else injEdit=null; }
     var color=SUBSTANCE_COLORS[injSeg];
 
     var html='<h1 class="page">'+esc(I18N.t("inj.title"))+'</h1>';
@@ -2122,64 +2175,94 @@ var UI = (function(){
         +'</div>';
     }
 
-    // ---- dose + body map + log ----
+    // ---- dose (+ peptide blend) + body map + log/update ----
+    if(editing) html+='<div class="note" style="margin-bottom:10px">'+esc(I18N.t("inj.editing"))+'</div>';
+    if(injSeg==="peptide"){
+      var pepName=editing?(editing.name||""):(injDraft.name||st.inj.peptide.name||"");
+      html+='<div class="field"><label>'+esc(I18N.t("inj.pepName"))+'</label>'
+        +'<input type="text" id="injName" maxlength="60" value="'+esc(pepName)+'" placeholder="'+esc(I18N.t("inj.pepNamePh"))+'"></div>';
+    }
     var unit=(injSeg==="peptide")?I18N.t("inj.unitsUnit"):I18N.t("inj.mgUnit");
     var dosePh=(injSeg==="mounjaro"&&st.calc.strengthMg!=null)?st.calc.strengthMg:(injSeg==="peptide"?"10":"");
+    var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||"");
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
-      +'<input type="number" inputmode="decimal" step="0.1" id="injDose" placeholder="'+esc(String(dosePh))+'"></div>';
-    var selForMap = injSel;
+      +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
+    var selForMap = injSel || (editing?editing.site:null);
     html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
     html+=bodyMapSVG(st, selForMap);
-    var shownSite = injSel || DOMAIN.suggestSite(st.injLog, SITE_IDS);
+    var shownSite = selForMap || DOMAIN.suggestSite(st.injLog, SITE_IDS);
     html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'+esc(I18N.t("site."+shownSite))+'</b>'
-      +(!injSel?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
-    html+='<button class="btn" id="injLog" style="margin-top:10px">'+esc(I18N.t("inj.logBtn"))+'</button>';
+      +(!selForMap?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
+    html+='<div class="row" style="margin-top:10px"><button class="btn" id="injLog">'+esc(editing?I18N.t("inj.update"):I18N.t("inj.logBtn"))+'</button>';
+    if(editing) html+='<button class="btn ghost" id="injCancel">'+esc(I18N.t("inj.cancel"))+'</button>';
+    html+='</div>';
+    // twin-tab link: from injections, jump to the daily symptom diary
+    html+='<div class="rellinks" style="margin-top:12px"><a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div>';
     html+='</div>';
 
-    // ---- history for this substance ----
+    // ---- history for this substance (editable) ----
     var hlist=(st.injLog||[]).filter(function(e){return e.substance===injSeg;})
                  .slice().sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
     if(hlist.length){
       html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="scroll"><table><tbody>';
       hlist.forEach(function(e){
-        html+='<tr><td>'+esc(e.date)+'</td><td>'+esc(I18N.t("site."+e.site))+'</td>'
+        var siteLbl=I18N.t("site."+e.site); if(siteLbl==="site."+e.site) siteLbl=e.site;
+        html+='<tr><td>'+esc(e.date)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td><td>'+esc(siteLbl)+'</td>'
           +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
-          +'<td class="num"><button class="btn ghost sm injDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+          +'<td class="num"><button class="btn ghost sm injEdit" data-id="'+esc(e.id)+'">'+icon("settings")+'</button> '
+          +'<button class="btn ghost sm injDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
       });
       html+='</tbody></table></div></div>';
     }
 
     app.innerHTML=html;
 
+    function captureDraft(){
+      if($("#injDose")) injDraft.dose=$("#injDose").value;
+      if($("#injName")) injDraft.name=$("#injName").value;
+    }
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
-      injSeg=b.getAttribute("data-k"); injSel=null; viewInject();
+      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injDraft={dose:"",name:""}; viewInject();
     });});
-    // site pick
+    // site pick (preserve typed dose/blend across the re-render)
     $all(".site").forEach(function(g){ g.addEventListener("click",function(){
-      injSel=g.getAttribute("data-site"); viewInject();
+      captureDraft(); injSel=g.getAttribute("data-site"); viewInject();
     });});
     // config inputs
     if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewInject(); });
     if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=Math.max(1,parseInt(this.value,10)||3); STORE.save(); viewInject(); });
     if($("#pepLen")) $("#pepLen").addEventListener("change",function(){ st.inj.peptide.cycleDays=Math.max(1,parseInt(this.value,10)||56); STORE.save(); viewInject(); });
     if($("#pepStart")) $("#pepStart").addEventListener("change",function(){ st.inj.peptide.cycleStart=this.value||null; STORE.save(); viewInject(); });
-    // log
+    // log / update
     $("#injLog").addEventListener("click",function(){
-      var site=injSel || DOMAIN.suggestSite(st.injLog, SITE_IDS);
+      var site=injSel || (editing?editing.site:null) || DOMAIN.suggestSite(st.injLog, SITE_IDS);
       var dv=$("#injDose").value, dose=dv===""?null:parseFloat(dv);
-      var unitCode=(injSeg==="peptide")?"j":"mg";
-      st.injLog.push({ id:uid(), date:today, substance:injSeg, dose:(dose==null||isNaN(dose))?null:dose, unit:unitCode, site:site });
+      dose=(dose==null||isNaN(dose))?null:dose;
+      var name=$("#injName")?($("#injName").value||"").trim():null;
+      if(injSeg==="peptide") st.inj.peptide.name=name||"";   // remember last blend
+      if(editing){
+        editing.dose=dose; editing.site=site; if(injSeg==="peptide") editing.name=name||"";
+      } else {
+        var unitCode=(injSeg==="peptide")?"j":"mg";
+        var entry={ id:uid(), date:today, substance:injSeg, dose:dose, unit:unitCode, site:site };
+        if(injSeg==="peptide" && name) entry.name=name;
+        st.injLog.push(entry);
+        if(injSeg==="mounjaro" && st.jab.history.indexOf(today)===-1){ st.jab.history.push(today); st.jab.history.sort(); }
+      }
       st.injLog.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:0;});
-      // Mounjaro: also feed the existing weekly ring source of truth.
-      if(injSeg==="mounjaro" && st.jab.history.indexOf(today)===-1){ st.jab.history.push(today); st.jab.history.sort(); }
-      injSel=null;
+      injSel=null; injEdit=null; injDraft={dose:"",name:""};
       STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
+    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:""}; viewInject(); });
+    $all(".injEdit").forEach(function(b){ b.addEventListener("click",function(){
+      injEdit=b.getAttribute("data-id"); injSel=null; viewInject(); window.scrollTo(0,0);
+    });});
     $all(".injDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("inj.confirmDel"))) return;
       var id=b.getAttribute("data-id");
       st.injLog=st.injLog.filter(function(e){return e.id!==id;});
+      if(injEdit===id) injEdit=null;
       STORE.save(); viewInject();
     });});
   }
@@ -2244,11 +2327,11 @@ var UI = (function(){
 
     // --- quick actions ---
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.actions"))+'</h2><div class="row">'
-      +'<a class="btn" href="#inject">💉 '+esc(I18N.t("pulpit.goInject"))+'</a>'
-      +'<a class="btn ghost" href="#diary">📝 '+esc(I18N.t("pulpit.goDiary"))+'</a>'
-      +'<a class="btn ghost" href="#bp">🩸 '+esc(I18N.t("pulpit.goBp"))+'</a>'
-      +'<a class="btn ghost" href="#weight">⚖️ '+esc(I18N.t("pulpit.goWeight"))+'</a>'
-      +'<a class="btn ghost" href="#correlate">📈 '+esc(I18N.t("pulpit.goCorr"))+'</a>'
+      +'<a class="btn" href="#inject">'+icon("inject")+esc(I18N.t("pulpit.goInject"))+'</a>'
+      +'<a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("pulpit.goDiary"))+'</a>'
+      +'<a class="btn ghost" href="#bp">'+icon("bp")+esc(I18N.t("pulpit.goBp"))+'</a>'
+      +'<a class="btn ghost" href="#weight">'+icon("weight")+esc(I18N.t("pulpit.goWeight"))+'</a>'
+      +'<a class="btn ghost" href="#correlate">'+icon("correlate")+esc(I18N.t("pulpit.goCorr"))+'</a>'
       +'</div></div>';
 
     app.innerHTML=html;
@@ -2295,6 +2378,7 @@ var UI = (function(){
     var labA=(opts.filter(function(o){return o.id===corrA;})[0]||{}).label||"";
     var labB=(opts.filter(function(o){return o.id===corrB;})[0]||{}).label||"";
     html+='<div id="chartHolder">'+CHART.renderDual(DOMAIN.seriesFor(st,corrA), DOMAIN.seriesFor(st,corrB), labA, labB, "#0ea5a4", "#6366f1")+'</div>';
+    html+='<div class="rellinks"><a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div>';
     html+='</div>';
     app.innerHTML=html;
     $("#corrSelA").addEventListener("change",function(){ corrA=this.value; viewCorrelate(); });
@@ -2307,6 +2391,7 @@ var UI = (function(){
     var g=st.settings.goldenDose;
     var html=''
     +'<h1 class="page">'+esc(I18N.t("opt.title"))+'</h1>'
+    +'<div class="rellinks" style="margin-bottom:12px"><a class="btn ghost sm" href="#settings">'+icon("settings")+esc(I18N.t("rel.toSettings"))+'</a></div>'
     +'<div class="card"><p class="sub">'+esc(I18N.t("opt.sub"))+'</p>'
     +'<div class="field"><label>'+esc(I18N.t("opt.mode"))+'</label><select id="oMode">'
       +'<option value="stretch">'+esc(I18N.t("opt.modeStretch"))+'</option>'
@@ -2840,6 +2925,8 @@ var UI = (function(){
     +'</div>'
     +'<div style="margin-top:14px"><button class="btn danger" id="setClear">'+esc(I18N.t("set.clear"))+'</button></div>'
     +'</div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.tools"))+'</h2>'
+      +'<a class="btn ghost" href="#optimizer">'+icon("calc")+esc(I18N.t("opt.title"))+icon("arrow")+'</a></div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.privacy"))+'</h2><p class="small muted">'+esc(I18N.t("set.privacyTxt"))+'</p></div>';
     app.innerHTML=html;
 
