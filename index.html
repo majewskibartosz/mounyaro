@@ -234,10 +234,10 @@
 </main>
 
 <nav class="tabs" id="tabs">
-  <a href="#inject" data-tab="inject"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg></span><span data-i="tab.inject">Zastrzyki</span></a>
+  <a href="#pulpit" data-tab="pulpit"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></span><span data-i="tab.pulpit">Pulpit</span></a>
+  <a href="#diary" data-tab="diary"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h5"/></svg></span><span data-i="tab.diary">Dziennik</span></a>
   <a href="#weight" data-tab="weight"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></span><span data-i="tab.weight">Waga</span></a>
   <a href="#bp" data-tab="bp"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></span><span data-i="tab.bp">Ciśnienie</span></a>
-  <a href="#diary" data-tab="diary"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h5"/></svg></span><span data-i="tab.diary">Dziennik</span></a>
   <a href="#optimizer" data-tab="optimizer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M8 18h.01M12 18h.01"/></svg></span><span data-i="tab.optimizer">Kalkulator</span></a>
   <a href="#settings" data-tab="settings"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span data-i="tab.settings">Ustawienia</span></a>
 </nav>
@@ -274,6 +274,28 @@ var I18N = (function(){
     "tab.diary":{pl:"Dziennik",en:"Diary"},
     "tab.inject":{pl:"Zastrzyki",en:"Injections"},
     "tab.correlate":{pl:"Korelacje",en:"Correlations"},
+
+    // ---- dashboard (Pulpit) ----
+    "pulpit.title":{pl:"Pulpit",en:"Dashboard"},
+    "pulpit.rhythm":{pl:"Rytm substancji",en:"Substance rhythm"},
+    "pulpit.today":{pl:"Dziś",en:"Today"},
+    "pulpit.diary":{pl:"Objawy",en:"Symptoms"},
+    "pulpit.peptide":{pl:"Peptyd",en:"Peptide"},
+    "pulpit.done":{pl:"zapisane ✓",en:"logged ✓"},
+    "pulpit.todo":{pl:"brak",en:"not yet"},
+    "pulpit.latest":{pl:"Ostatnie wartości",en:"Latest readings"},
+    "pulpit.bmi":{pl:"BMI",en:"BMI"},
+    "pulpit.bmiNeed":{pl:"Podaj wzrost w Ustawieniach",en:"Set height in Settings"},
+    "pulpit.bp":{pl:"Ciśnienie",en:"Blood pressure"},
+    "pulpit.weight":{pl:"Waga",en:"Weight"},
+    "pulpit.noData":{pl:"—",en:"—"},
+    "pulpit.actions":{pl:"Szybkie akcje",en:"Quick actions"},
+    "pulpit.goInject":{pl:"Zastrzyki",en:"Injections"},
+    "pulpit.goDiary":{pl:"Objawy",en:"Symptoms"},
+    "pulpit.goBp":{pl:"Ciśnienie",en:"BP"},
+    "pulpit.goWeight":{pl:"Waga",en:"Weight"},
+    "pulpit.goCorr":{pl:"Korelacje",en:"Correlations"},
+    "pulpit.mapHint":{pl:"Ostatnie miejsca wkłuć →",en:"Recent injection sites →"},
 
     // ---- correlations ----
     "corr.title":{pl:"Korelacje",en:"Correlations"},
@@ -2162,6 +2184,76 @@ var UI = (function(){
     });});
   }
 
+  /* ============ DASHBOARD (Pulpit) ============ */
+  function rhythmRow(label, color, frac, right){
+    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>'+esc(label)+'</span><span class="muted tiny">'+esc(right||"")+'</span></div>'
+      + progressBar(frac, color, "", "");
+  }
+  function viewDash(){
+    var st=s(), today=todayISO();
+    var html='<h1 class="page">'+esc(I18N.t("pulpit.title"))+'</h1>';
+
+    // --- rhythm widgets ---
+    html+='<div class="card"><h2>'+esc(I18N.t("pulpit.rhythm"))+'</h2>';
+    // Mounjaro
+    var hist=(st.jab.history||[]).slice().sort(), last=hist.length?hist[hist.length-1]:null, every=Math.max(1,st.calc.intervalDays||7);
+    if(last){
+      var el=daysBetweenISO(last,today), rem=every-el, frac=Math.max(0,Math.min(1,el/every));
+      var r=rem>0?(I18N.t("inj.nextIn")+" "+rem+" "+I18N.t("inj.daysShort")):(rem===0?I18N.t("inj.due"):Math.abs(rem)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
+      html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, rem<=0?1:frac, r);
+    } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo")); }
+    // TRT
+    var ltrt=lastInjDate(st,"trt"), ip=DOMAIN.intervalProgress(ltrt, st.inj.trt.intervalDays, today);
+    if(ip){ var rt=ip.remaining>0?(I18N.t("inj.nextIn")+" "+ip.remaining+" "+I18N.t("inj.daysShort")):(ip.remaining===0?I18N.t("inj.due"):Math.abs(ip.remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
+      html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.frac, rt); }
+    else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo")); }
+    // Peptide cycle
+    var cp=DOMAIN.cycleProgress(st.inj.peptide, today);
+    if(cp){ html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, cp.frac, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total); }
+    else { html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, 0, I18N.t("inj.cycleNone")); }
+    html+='</div>';
+
+    // --- today status ---
+    var diaryDone=(st.dailyLog||[]).some(function(e){return e.date===today;});
+    var pepDone=(st.injLog||[]).some(function(e){return e.substance==="peptide" && e.date===today;});
+    function chip(ok){ return '<span class="pill" style="background:'+(ok?"rgba(22,163,74,.12)":"var(--soft)")+';color:'+(ok?"#16a34a":"var(--muted)")+'">'+esc(ok?I18N.t("pulpit.done"):I18N.t("pulpit.todo"))+'</span>'; }
+    html+='<div class="card"><h2>'+esc(I18N.t("pulpit.today"))+'</h2><div class="stats">'
+      +'<div class="stat"><span class="k">'+esc(I18N.t("pulpit.diary"))+'</span><span class="v" style="font-size:15px">'+chip(diaryDone)+'</span></div>'
+      +'<div class="stat"><span class="k">'+esc(I18N.t("pulpit.peptide"))+'</span><span class="v" style="font-size:15px">'+chip(pepDone)+'</span></div>'
+      +'</div></div>';
+
+    // --- latest readings: BP, weight + delta, BMI ---
+    html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
+    var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span></div>';
+    var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
+    var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData"), wcol="var(--ink)";
+    if(wl.length>1){ var first=wl[wl.length-1].weightKg, d=curW-first; wcol=d<=0?"var(--good)":"var(--bad)"; wtxt+=" ("+(d>0?"+":"")+fmtNum(d,1)+")"; }
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span></div>';
+    var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
+    if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
+      html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span></div>'; }
+    else { html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="font-size:13px" class="muted">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></div>'; }
+    html+='</div></div>';
+
+    // --- mini body map (link to injections) ---
+    if((st.injLog||[]).length){
+      html+='<div class="card"><a href="#inject" style="text-decoration:none;color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</a>'
+        +'<div style="pointer-events:none">'+bodyMapSVG(st, null)+'</div></div>';
+    }
+
+    // --- quick actions ---
+    html+='<div class="card"><h2>'+esc(I18N.t("pulpit.actions"))+'</h2><div class="row">'
+      +'<a class="btn" href="#inject">💉 '+esc(I18N.t("pulpit.goInject"))+'</a>'
+      +'<a class="btn ghost" href="#diary">📝 '+esc(I18N.t("pulpit.goDiary"))+'</a>'
+      +'<a class="btn ghost" href="#bp">🩸 '+esc(I18N.t("pulpit.goBp"))+'</a>'
+      +'<a class="btn ghost" href="#weight">⚖️ '+esc(I18N.t("pulpit.goWeight"))+'</a>'
+      +'<a class="btn ghost" href="#correlate">📈 '+esc(I18N.t("pulpit.goCorr"))+'</a>'
+      +'</div></div>';
+
+    app.innerHTML=html;
+  }
+
   /* ============ CORRELATIONS ============ */
   function seriesOptions(st){
     var opts=[];
@@ -2820,11 +2912,11 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, correlate:viewCorrelate, optimizer:viewOpt, settings:viewSettings };
+  var routes={ pulpit:viewDash, inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, correlate:viewCorrelate, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
-    var h=(location.hash||"#inject").replace("#","");
-    if(h==="jab") h="inject";          // legacy hash / PWA shortcut -> new injections view
-    return routes[h]?h:"inject";
+    var h=(location.hash||"#pulpit").replace("#","");
+    if(h==="jab") h="inject";          // legacy hash / PWA shortcut -> injections view
+    return routes[h]?h:"pulpit";
   }
   function render(){
     var tab=currentTab();
@@ -2915,7 +3007,7 @@ var UI = (function(){
     }
     document.addEventListener("visibilitychange",refreshLinked);
     window.addEventListener("focus",refreshLinked);
-    if(!location.hash) location.hash="#inject";
+    if(!location.hash) location.hash="#pulpit";
     render();
     // Restore a previously linked file (async; Chromium only). May pull in newer data.
     STORE.restoreLink(function(status){
