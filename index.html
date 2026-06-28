@@ -157,6 +157,11 @@
   /* cross-links to twin tabs */
   .rellinks{margin-top:12px}
   .rellinks .btn{width:100%}
+  /* collapsible metric editor */
+  .mgr-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+    background:transparent;border:0;cursor:pointer;color:var(--ink);font-size:16px;padding:2px 0}
+  .mgr-toggle .chev{width:20px;height:20px;transition:transform .2s}
+  .mgr-toggle .chev.open{transform:rotate(180deg)}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .muted{color:var(--muted)}
   .small{font-size:13px}
@@ -397,8 +402,13 @@ var I18N = (function(){
     "metric.rename":{pl:"Zmień nazwę",en:"Rename"},
     "metric.archived":{pl:"Zarchiwizowane",en:"Archived"},
     "metric.seed":{pl:"Dodaj zestaw startowy",en:"Add starter set"},
-    "metric.empty":{pl:"Brak metryk. Dodaj własną lub wczytaj zestaw startowy.",en:"No metrics yet. Add your own or load a starter set."},
+    "metric.empty":{pl:"Brak metryk. Rozwiń, aby dodać.",en:"No metrics yet. Expand to add."},
     "metric.namePh":{pl:"np. Ból łokcia",en:"e.g. Elbow pain"},
+    "metric.manage":{pl:"Zarządzaj metrykami",en:"Manage metrics"},
+    "metric.delete":{pl:"Usuń",en:"Delete"},
+    "metric.confirmDel":{pl:"Usunąć tę metrykę? Historia jej wartości zostanie usunięta z widoku.",en:"Delete this metric? Its values will no longer be shown."},
+    "metric.active":{pl:"Aktywne",en:"Active"},
+    "metric.addNew":{pl:"Dodaj nową",en:"Add new"},
 
     "bp.title":{pl:"Ciśnienie krwi",en:"Blood pressure"},
     "bp.sub":{pl:"Zapisuj pomiary — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log readings — the date and time are captured automatically when you save."},
@@ -1377,7 +1387,10 @@ var ICONS={
   calc:'<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="8" x2="8.01" y1="14" y2="14"/><line x1="12" x2="12.01" y1="14" y2="14"/><line x1="16" x2="16.01" y1="14" y2="14"/><line x1="8" x2="8.01" y1="18" y2="18"/><line x1="12" x2="12.01" y1="18" y2="18"/><line x1="16" x2="16.01" y1="18" y2="18"/><line x1="8" x2="16" y1="10" y2="10"/>',
   settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   install:'<path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
-  arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'
+  arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  chevron:'<path d="m6 9 6 6 6-6"/>'
 };
 function icon(name, cls){
   var p=ICONS[name]; if(!p) return "";
@@ -1922,6 +1935,7 @@ var UI = (function(){
   }
 
   /* ============ DIARY (daily symptom log + editable metric registry) ============ */
+  var metricsOpen=false;  // metric editor collapsed by default to keep the diary clean
   function metricMax(type){ return type==="scale10"?10:(type==="scale5"?5:null); }
   function starterMetrics(){
     return [
@@ -1973,36 +1987,41 @@ var UI = (function(){
     html+='<div class="note" style="margin-top:12px"><a href="#bp" style="color:var(--brand);font-weight:700;text-decoration:none">'+esc(I18N.t("diary.bpLink"))+'</a></div>';
     html+='</div>';
 
-    // --- metric registry ---
+    // --- metric registry (collapsed by default; toggle expands the editor) ---
     function metricRowHTML(m, isArch){
       var typeLbl=I18N.t("metric.type."+m.type);
       return '<div class="metricrow'+(isArch?" arch":"")+'">'
         +'<span class="mname"><b>'+esc(m.name)+'</b> <span class="muted tiny">'+esc(typeLbl)+(m.daily?" · "+esc(I18N.t("metric.daily")):"")+'</span></span>'
-        +'<button class="btn ghost sm mRen" data-id="'+m.id+'">'+esc(I18N.t("metric.rename"))+'</button>'
+        +'<button class="btn ghost sm mRen" title="'+esc(I18N.t("metric.rename"))+'" data-id="'+m.id+'">'+icon("edit")+'</button>'
         +'<button class="btn ghost sm mArch" data-id="'+m.id+'">'+esc(isArch?I18N.t("metric.restore"):I18N.t("metric.archive"))+'</button>'
+        +'<button class="btn ghost sm mDel" title="'+esc(I18N.t("metric.delete"))+'" data-id="'+m.id+'">'+icon("trash")+'</button>'
         +'</div>';
     }
-    html+='<div class="card"><h2>'+esc(I18N.t("metric.section"))+'</h2><p class="sub">'+esc(I18N.t("metric.sub"))+'</p>';
     var active=st.metrics.filter(function(m){ return !m.archived; });
     var archived=st.metrics.filter(function(m){ return m.archived; });
-    if(!st.metrics.length) html+='<div class="empty">'+esc(I18N.t("metric.empty"))+'</div>';
-    active.forEach(function(m){ html+=metricRowHTML(m,false); });
-    if(archived.length){
-      html+='<div class="tsub" style="margin-top:10px">'+esc(I18N.t("metric.archived"))+'</div>';
-      archived.forEach(function(m){ html+=metricRowHTML(m,true); });
+    html+='<div class="card">';
+    html+='<button class="mgr-toggle" id="mToggle"><span><b>'+esc(I18N.t("metric.manage"))+'</b> <span class="muted tiny">('+active.length+')</span></span>'+icon("chevron","chev"+(metricsOpen?" open":""))+'</button>';
+    if(metricsOpen){
+      html+='<div style="margin-top:12px">';
+      html+='<p class="sub">'+esc(I18N.t("metric.sub"))+'</p>';
+      if(active.length){ html+='<div class="tsub">'+esc(I18N.t("metric.active"))+'</div>'; active.forEach(function(m){ html+=metricRowHTML(m,false); }); }
+      if(archived.length){ html+='<div class="tsub" style="margin-top:12px">'+esc(I18N.t("metric.archived"))+'</div>'; archived.forEach(function(m){ html+=metricRowHTML(m,true); }); }
+      if(!st.metrics.length) html+='<div class="empty">'+esc(I18N.t("metric.empty"))+'</div>';
+      html+='<div class="tsub" style="margin-top:14px">'+esc(I18N.t("metric.addNew"))+'</div>';
+      html+='<div class="grid g3">'
+        +'<div class="field"><label>'+esc(I18N.t("metric.name"))+'</label><input type="text" id="mNewName" maxlength="40" placeholder="'+esc(I18N.t("metric.namePh"))+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("metric.type"))+'</label><select id="mNewType">'
+          +'<option value="scale10">'+esc(I18N.t("metric.type.scale10"))+'</option>'
+          +'<option value="scale5">'+esc(I18N.t("metric.type.scale5"))+'</option>'
+          +'<option value="number">'+esc(I18N.t("metric.type.number"))+'</option>'
+          +'<option value="bool">'+esc(I18N.t("metric.type.bool"))+'</option>'
+        +'</select></div>'
+        +'<div class="field"><label>'+esc(I18N.t("metric.daily"))+'</label><label class="toggle" style="margin-top:6px"><input type="checkbox" id="mNewDaily" checked><span class="switch"></span></label></div>'
+        +'</div>'
+        +'<div class="row"><button class="btn" id="mAdd">'+esc(I18N.t("metric.add"))+'</button>'
+        +'<button class="btn ghost" id="mSeed">'+esc(I18N.t("metric.seed"))+'</button></div>';
+      html+='</div>';
     }
-    html+='<div class="grid g3" style="margin-top:12px">'
-      +'<div class="field"><label>'+esc(I18N.t("metric.name"))+'</label><input type="text" id="mNewName" maxlength="40" placeholder="'+esc(I18N.t("metric.namePh"))+'"></div>'
-      +'<div class="field"><label>'+esc(I18N.t("metric.type"))+'</label><select id="mNewType">'
-        +'<option value="scale10">'+esc(I18N.t("metric.type.scale10"))+'</option>'
-        +'<option value="scale5">'+esc(I18N.t("metric.type.scale5"))+'</option>'
-        +'<option value="number">'+esc(I18N.t("metric.type.number"))+'</option>'
-        +'<option value="bool">'+esc(I18N.t("metric.type.bool"))+'</option>'
-      +'</select></div>'
-      +'<div class="field"><label>'+esc(I18N.t("metric.daily"))+'</label><label class="toggle" style="margin-top:6px"><input type="checkbox" id="mNewDaily" checked><span class="switch"></span></label></div>'
-      +'</div>'
-      +'<div class="row"><button class="btn" id="mAdd">'+esc(I18N.t("metric.add"))+'</button>'
-      +'<button class="btn ghost" id="mSeed">'+esc(I18N.t("metric.seed"))+'</button></div>';
     html+='</div>';
     html+='<div class="rellinks"><a class="btn ghost" href="#inject">'+icon("inject")+esc(I18N.t("rel.toInject"))+icon("arrow")+'</a></div>';
 
@@ -2024,12 +2043,13 @@ var UI = (function(){
       st.dailyLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
     });
-    $("#mAdd").addEventListener("click",function(){
+    if($("#mToggle")) $("#mToggle").addEventListener("click",function(){ metricsOpen=!metricsOpen; viewDiary(); });
+    if($("#mAdd")) $("#mAdd").addEventListener("click",function(){
       var name=($("#mNewName").value||"").trim(); if(!name){ $("#mNewName").focus(); return; }
       st.metrics.push({ id:uid(), name:name, type:$("#mNewType").value, daily:$("#mNewDaily").checked, archived:false });
       STORE.save(); viewDiary();
     });
-    $("#mSeed").addEventListener("click",function(){
+    if($("#mSeed")) $("#mSeed").addEventListener("click",function(){
       var have={}; st.metrics.forEach(function(m){ have[m.name.toLowerCase()]=true; });
       starterMetrics().forEach(function(sm){
         if(!have[sm.name.toLowerCase()]) st.metrics.push({ id:uid(), name:sm.name, type:sm.type, daily:true, archived:false });
@@ -2047,6 +2067,12 @@ var UI = (function(){
       if(!m) return;
       var nn=prompt(I18N.t("metric.rename"), m.name); if(nn==null) return; nn=nn.trim();
       if(nn){ m.name=nn; STORE.save(); viewDiary(); }
+    });});
+    $all(".mDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("metric.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.metrics=st.metrics.filter(function(m){ return m.id!==id; });
+      STORE.save(); viewDiary();
     });});
   }
 
@@ -2209,8 +2235,8 @@ var UI = (function(){
         var siteLbl=I18N.t("site."+e.site); if(siteLbl==="site."+e.site) siteLbl=e.site;
         html+='<tr><td>'+esc(e.date)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td><td>'+esc(siteLbl)+'</td>'
           +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
-          +'<td class="num"><button class="btn ghost sm injEdit" data-id="'+esc(e.id)+'">'+icon("settings")+'</button> '
-          +'<button class="btn ghost sm injDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+          +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
+          +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
       html+='</tbody></table></div></div>';
     }
