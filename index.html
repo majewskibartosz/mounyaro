@@ -2402,7 +2402,9 @@ var UI = (function(){
     }
     var unit=(injSeg==="peptide")?I18N.t("inj.unitsUnit"):I18N.t("inj.mgUnit");
     var dosePh=(injSeg==="mounjaro"&&st.calc.strengthMg!=null)?st.calc.strengthMg:(injSeg==="peptide"?"10":"");
-    var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||"");
+    // default the dose to the previous shot of this substance for one-tap logging
+    var lastD=DOMAIN.lastDoseAsOf(st, injSeg);
+    var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||(lastD?lastD.dose:""));
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
       +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
     // when given: captured as "now" by default, editable to backfill (parity with BP)
