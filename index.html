@@ -1963,8 +1963,19 @@ var UI = (function(){
       for(var bi=0;bi<log.length;bi++){ if(log[bi].id===bpEdit){ editing=log[bi]; break; } }
       if(!editing) bpEdit=null;
     }
-    var lastDose = log.length ? log[0].doseMg : null;
     var morning = new Date().getHours() < 12;   // sensible default: morning = fasting
+    // current Mounjaro/TRT dose pills (same context as the journal composer)
+    function bpCtxHtml(dISO){ var tags=weekTags(st, dISO); return tags.length?weekPills(tags,false):''; }
+    // doses in effect on a reading's date; falls back to a manually stored dose
+    function doseCell(e){
+      var d=String(e.ts).slice(0,10);
+      var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",d), trt=DOMAIN.lastDoseAsOf(st,"trt",d);
+      var parts=[];
+      if(mj) parts.push('<span class="muted tiny">MJ</span> '+esc(mj.dose+" "+mj.unit));
+      if(trt) parts.push('<span class="muted tiny">TRT</span> '+esc(trt.dose+" "+trt.unit));
+      if(!parts.length && e.doseMg!=null) parts.push(esc(e.doseMg)+' mg');
+      return parts.length?parts.join('<br>'):'—';
+    }
     var html=''
     + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
 
@@ -1983,8 +1994,10 @@ var UI = (function(){
     html+='</div>';
 
     // entry form
+    var bpCtx0=bpCtxHtml((editing?toLocalDT(editing.ts):nowLocalDT()).slice(0,10));
     html+='<div class="card"><p class="sub">'+esc(I18N.t("bp.sub"))+'</p>'
     + (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
+    + '<div class="row" id="bpCtx" style="margin:0 0 10px'+(bpCtx0?'':';display:none')+'">'+bpCtx0+'</div>'
     + '<div class="grid g3">'
     +   '<div class="field"><label>'+esc(I18N.t("bp.sys"))+'</label><input type="number" inputmode="numeric" id="bpSys" placeholder="120" value="'+(editing?esc(editing.sys):'')+'"></div>'
     +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80" value="'+(editing?esc(editing.dia):'')+'"></div>'
@@ -1992,10 +2005,7 @@ var UI = (function(){
     + '</div>'
     + '<div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="datetime-local" id="bpWhen" value="'+(editing?toLocalDT(editing.ts):nowLocalDT())+'"></div>'
     + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+((editing?editing.fasting:morning)?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
-    + '<div class="grid g2">'
-    +   '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="bpDose" placeholder="'+(lastDose!=null?lastDose:"")+'" value="'+(editing&&editing.doseMg!=null?esc(editing.doseMg):'')+'"></div>'
-    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
-    + '</div>'
+    + '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
     + '<div class="row"><button class="btn" id="bpAdd">'+esc(editing?I18N.t("common.update"):I18N.t("bp.add"))+'</button>'
     + (editing?'<button class="btn ghost" id="bpCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
     + '</div>'
@@ -2013,7 +2023,7 @@ var UI = (function(){
             +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td class="num"><b>'+e.sys+'/'+e.dia+'</b></td>'
             + '<td class="num">'+(e.pulse!=null?e.pulse:'—')+'</td>'
-            + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
+            + '<td class="num">'+doseCell(e)+'</td>'
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
@@ -2026,25 +2036,31 @@ var UI = (function(){
       if(isNaN(sys)||sys<=0){ $("#bpSys").focus(); return; }
       if(isNaN(dia)||dia<=0){ $("#bpDia").focus(); return; }
       var pulse=$("#bpPulse").value===""?null:parseInt($("#bpPulse").value,10);
-      var dose=$("#bpDose").value===""?null:parseFloat($("#bpDose").value);
       var whenVal=$("#bpWhen").value;
       var when=whenVal?new Date(whenVal):new Date();
       if(isNaN(when.getTime())) when=new Date();
       var fields={ ts:when.toISOString(), sys:sys, dia:dia,
                    pulse:(pulse==null||isNaN(pulse))?null:pulse, fasting:$("#bpFast").checked,
-                   doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#bpNote").value||"").trim() };
+                   note:($("#bpNote").value||"").trim() };
       if(editing){
+        // doseMg (legacy manual field) is left untouched on edit
         editing.ts=fields.ts; editing.sys=fields.sys; editing.dia=fields.dia; editing.pulse=fields.pulse;
-        editing.fasting=fields.fasting; editing.doseMg=fields.doseMg; editing.note=fields.note;
+        editing.fasting=fields.fasting; editing.note=fields.note;
         bpEdit=null;
       } else {
-        fields.id=uid();
+        fields.id=uid(); fields.doseMg=null;
         st.bp.log.push(fields);
       }
       st.bp.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       STORE.save(); toast(I18N.t("common.saved")); viewBP();
     });
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
+    // backfilling? recompute the dose/week pills for the picked date
+    $("#bpWhen").addEventListener("input",function(){
+      var c=$("#bpCtx"); if(!c) return;
+      var h=bpCtxHtml((this.value||nowLocalDT()).slice(0,10));
+      c.innerHTML=h; c.style.display=h?"":"none";
+    });
     $all(".bpEdit").forEach(function(b){ b.addEventListener("click",function(){
       bpEdit=b.getAttribute("data-id"); viewBP(); window.scrollTo(0,0);
     });});
