@@ -2267,9 +2267,9 @@ var UI = (function(){
     return parts.length ? parts.join(" · ")+" "+I18N.t("inj.fromNavel") : I18N.t("inj.navel");
   }
   function recentSpots(st){ return DOMAIN.recentInjPos(st, todayISO(), 14, LEGACY_SITE_CM); }
-  function bellyMapSVG(st, selPos){
+  function bellyMapSVG(st, selPos, withSuggest){
     var recent=recentSpots(st);
-    var sug = selPos ? null : DOMAIN.suggestSpot(recent);
+    var sug = (withSuggest && !selPos) ? DOMAIN.suggestSpot(recent) : null;
     var minR=DOMAIN.SPOT_MIN_CM*BELLY_CM, navR=DOMAIN.SPOT_NAVEL_CM*BELLY_CM;
     var svg='<svg class="bellymap" id="bellyMap" viewBox="0 0 '+BELLY_W+' '+BELLY_H+'" role="img" aria-label="abdomen injection map">';
     // skin area
@@ -2318,6 +2318,7 @@ var UI = (function(){
       +'<span><i style="background:'+SUBSTANCE_COLORS.trt+'"></i>TRT</span>'
       +'<span><i style="background:'+SUBSTANCE_COLORS.peptide+'"></i>'+esc(I18N.t("inj.seg.peptide"))+'</span>'
       +'<span><i style="background:transparent;border:1.5px dashed #dc2626"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
+      +(sug?'<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.suggested"))+'</span>':'')
       +'</div>';
     return svg+leg;
   }
@@ -2411,7 +2412,7 @@ var UI = (function(){
       +'<input type="datetime-local" id="injWhen" value="'+esc(whenVal)+'"></div>';
     var selForMap = injSel || (editing ? (editing.pos || (editing.site&&LEGACY_SITE_CM[editing.site]) || null) : null);
     html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
-    html+=bellyMapSVG(st, selForMap);
+    html+=bellyMapSVG(st, selForMap, true);
     var shownPos = selForMap || DOMAIN.suggestSpot(recentSpots(st));
     if(shownPos){
       html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'+esc(posLabel(shownPos))+'</b>'
