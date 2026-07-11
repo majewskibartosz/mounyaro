@@ -138,9 +138,12 @@
   .slider .slhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;font-weight:700}
   .slider .slval{font-variant-numeric:tabular-nums;font-weight:800;color:var(--brand);min-width:2ch;text-align:right}
   .slider input[type=range]{width:100%;margin:6px 0 0;accent-color:var(--brand);height:26px}
-  .metricrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
-  .metricrow .mname{flex:1;min-width:0}
-  .metricrow.arch{opacity:.5}
+  /* free-text journal entries (log style) */
+  .logentry{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+  .logentry:last-child{border-bottom:0}
+  .logentry .lbody{flex:1;min-width:0}
+  .logentry .lmeta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .logentry .ltext{font-size:14.5px;white-space:pre-wrap;overflow-wrap:break-word}
   /* segment switcher (substances) */
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
@@ -157,11 +160,6 @@
   /* cross-links to twin tabs */
   .rellinks{margin-top:12px}
   .rellinks .btn{width:100%}
-  /* collapsible metric editor */
-  .mgr-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
-    background:transparent;border:0;cursor:pointer;color:var(--ink);font-size:16px;padding:2px 0}
-  .mgr-toggle .chev{width:20px;height:20px;transition:transform .2s}
-  .mgr-toggle .chev.open{transform:rotate(180deg)}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .muted{color:var(--muted)}
   .small{font-size:13px}
@@ -290,7 +288,7 @@ var I18N = (function(){
     "pulpit.title":{pl:"Pulpit",en:"Dashboard"},
     "pulpit.rhythm":{pl:"Rytm substancji",en:"Substance rhythm"},
     "pulpit.today":{pl:"Dziś",en:"Today"},
-    "pulpit.diary":{pl:"Objawy",en:"Symptoms"},
+    "pulpit.diary":{pl:"Dziennik",en:"Journal"},
     "pulpit.peptide":{pl:"Peptyd",en:"Peptide"},
     "pulpit.done":{pl:"zapisane ✓",en:"logged ✓"},
     "pulpit.todo":{pl:"brak",en:"not yet"},
@@ -302,13 +300,13 @@ var I18N = (function(){
     "pulpit.noData":{pl:"—",en:"—"},
     "pulpit.actions":{pl:"Szybkie akcje",en:"Quick actions"},
     "pulpit.goInject":{pl:"Zastrzyki",en:"Injections"},
-    "pulpit.goDiary":{pl:"Objawy",en:"Symptoms"},
+    "pulpit.goDiary":{pl:"Dziennik",en:"Journal"},
     "pulpit.goBp":{pl:"Ciśnienie",en:"BP"},
     "pulpit.goWeight":{pl:"Waga",en:"Weight"},
     "pulpit.goCorr":{pl:"Korelacje",en:"Correlations"},
     "pulpit.mapHint":{pl:"Ostatnie miejsca wkłuć →",en:"Recent injection sites →"},
     // cross-links between related tabs
-    "rel.toDiary":{pl:"Zapisz objawy",en:"Log symptoms"},
+    "rel.toDiary":{pl:"Dodaj notatkę",en:"Add a note"},
     "rel.toInject":{pl:"Zapisz zastrzyk",en:"Log injection"},
     "rel.toBp":{pl:"Zapisz ciśnienie",en:"Log blood pressure"},
     "rel.toWeight":{pl:"Zapisz wagę",en:"Log weight"},
@@ -380,37 +378,19 @@ var I18N = (function(){
     "site.thigh_r1":{pl:"Udo prawe — górne",en:"Right thigh — upper"},
     "site.thigh_r2":{pl:"Udo prawe — dolne",en:"Right thigh — lower"},
 
-    // ---- daily symptom diary ----
-    "diary.title":{pl:"Dziennik objawów",en:"Symptom diary"},
-    "diary.sub":{pl:"Przesuń suwaki dla dzisiejszych odczuć. Możesz wrócić i poprawić w ciągu dnia.",en:"Slide today's ratings. You can come back and adjust during the day."},
-    "diary.todayDone":{pl:"Zapisano dziś",en:"Logged today"},
-    "diary.save":{pl:"Zapisz dziś",en:"Save today"},
-    "diary.note":{pl:"Notatka dnia",en:"Day note"},
-    "diary.noDaily":{pl:"Brak metryk codziennych. Dodaj je niżej, aby pojawiły się tutaj.",en:"No daily metrics yet. Add some below to see them here."},
-    "diary.bpLink":{pl:"Ciśnienie i tętno wpisz w zakładce Ciśnienie →",en:"Log blood pressure and pulse in the BP tab →"},
-    // ---- metric registry ----
-    "metric.section":{pl:"Twoje metryki",en:"Your metrics"},
-    "metric.sub":{pl:"Dodawaj, zmieniaj nazwy i archiwizuj śledzone odczucia. Archiwizacja nie kasuje historii.",en:"Add, rename and archive what you track. Archiving keeps the history."},
-    "metric.name":{pl:"Nazwa",en:"Name"},
-    "metric.type":{pl:"Typ",en:"Type"},
-    "metric.type.scale10":{pl:"Skala 0–10",en:"Scale 0–10"},
-    "metric.type.scale5":{pl:"Skala 0–5",en:"Scale 0–5"},
-    "metric.type.number":{pl:"Liczba",en:"Number"},
-    "metric.type.bool":{pl:"Tak/Nie",en:"Yes/No"},
-    "metric.daily":{pl:"Codzienna",en:"Daily"},
-    "metric.add":{pl:"Dodaj metrykę",en:"Add metric"},
-    "metric.archive":{pl:"Archiwizuj",en:"Archive"},
-    "metric.restore":{pl:"Przywróć",en:"Restore"},
-    "metric.rename":{pl:"Zmień nazwę",en:"Rename"},
-    "metric.archived":{pl:"Zarchiwizowane",en:"Archived"},
-    "metric.seed":{pl:"Dodaj zestaw startowy",en:"Add starter set"},
-    "metric.empty":{pl:"Brak metryk. Rozwiń, aby dodać.",en:"No metrics yet. Expand to add."},
-    "metric.namePh":{pl:"np. Ból łokcia",en:"e.g. Elbow pain"},
-    "metric.manage":{pl:"Zarządzaj metrykami",en:"Manage metrics"},
-    "metric.delete":{pl:"Usuń",en:"Delete"},
-    "metric.confirmDel":{pl:"Usunąć tę metrykę? Historia jej wartości zostanie usunięta z widoku.",en:"Delete this metric? Its values will no longer be shown."},
-    "metric.active":{pl:"Aktywne",en:"Active"},
-    "metric.addNew":{pl:"Dodaj nową",en:"Add new"},
+    // ---- diary (free-text journal / log) ----
+    "diary.title":{pl:"Dziennik",en:"Journal"},
+    "diary.sub":{pl:"Krótkie notatki — objawy, myśli, obserwacje. Data i godzina zapisują się same.",en:"Short notes — symptoms, thoughts, observations. Date and time are captured automatically."},
+    "diary.ph":{pl:"np. lekkie mdłości po wczorajszym zastrzyku…",en:"e.g. slight nausea after yesterday's shot…"},
+    "diary.add":{pl:"Zapisz notatkę",en:"Save note"},
+    "diary.list":{pl:"Notatki",en:"Notes"},
+    "diary.empty":{pl:"Brak notatek. Zapisz pierwszą powyżej.",en:"No notes yet. Write your first above."},
+    "diary.confirmDel":{pl:"Usunąć tę notatkę?",en:"Delete this note?"},
+    "diary.week":{pl:"tydzień",en:"week"},
+    "diary.weekShort":{pl:"tydz.",en:"wk"},
+    "diary.ctxNone":{pl:"Zapisz pierwszy zastrzyk, aby widzieć tydzień terapii przy notatkach.",en:"Log your first injection to see the therapy week next to notes."},
+    "diary.legacyTag":{pl:"dawny dziennik",en:"old diary"},
+    "diary.ctrlEnter":{pl:"Ctrl+Enter zapisuje",en:"Ctrl+Enter saves"},
 
     "bp.title":{pl:"Ciśnienie krwi",en:"Blood pressure"},
     "bp.sub":{pl:"Zapisuj pomiary — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log readings — the date and time are captured automatically when you save."},
@@ -1039,6 +1019,26 @@ var DOMAIN = (function(){
               .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
   }
 
+  // Earliest logged injection date for a substance. Legacy jab.history entries
+  // count as Mounjaro (they predate the multi-substance injLog).
+  function firstInjDateFor(state, substance){
+    var first=null;
+    ((state&&state.injLog)||[]).forEach(function(e){
+      if(e && e.substance===substance && e.date && (!first || e.date<first)) first=e.date;
+    });
+    if(substance==="mounjaro" && state && state.jab && state.jab.history){
+      state.jab.history.forEach(function(d){ if(d && (!first || d<first)) first=d; });
+    }
+    return first;
+  }
+  // 1-based therapy week: week 1 = the first 7 days from the first shot.
+  // null when there is no start date or the date precedes it.
+  function therapyWeek(firstISO, dateISO){
+    if(!firstISO || !dateISO || dateISO<firstISO) return null;
+    var days=Math.round((new Date(dateISO+"T12:00:00")-new Date(firstISO+"T12:00:00"))/86400000);
+    return Math.floor(days/7)+1;
+  }
+
   // Rotation: suggest the site whose most-recent use is oldest (across ALL
   // substances), so the same spot isn't hit twice in a row. Never-used wins.
   function suggestSite(injLog, siteIds){
@@ -1081,7 +1081,8 @@ var DOMAIN = (function(){
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
-    seriesFor:seriesFor, suggestSite:suggestSite, cycleProgress:cycleProgress, intervalProgress:intervalProgress
+    seriesFor:seriesFor, suggestSite:suggestSite, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
+    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek
   };
 })();
 
@@ -1107,8 +1108,9 @@ var STORE = (function(){
       // ---- health-tracking expansion (all new keys; merge() migrates old data) ----
       // Blood pressure + pulse already live in bp.log (its own tab); we read it
       // as a series rather than duplicating it here.
-      metrics:[],          // user-defined symptom registry: {id,name,type,daily,archived}
-      dailyLog:[],         // one entry per day: {id,date,values:{metricId:val},note}
+      metrics:[],          // legacy symptom registry (kept for old data + correlations)
+      dailyLog:[],         // legacy per-day slider entries (kept; notes surface in the journal)
+      journal:[],          // free-text log entries: {id,ts,text}
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
@@ -1986,144 +1988,81 @@ var UI = (function(){
     });});
   }
 
-  /* ============ DIARY (daily symptom log + editable metric registry) ============ */
-  var metricsOpen=false;  // metric editor collapsed by default to keep the diary clean
-  function metricMax(type){ return type==="scale10"?10:(type==="scale5"?5:null); }
-  function starterMetrics(){
-    return [
-      {name:"Ból łokcia", type:"scale10"},
-      {name:"Zapalenie oczu", type:"scale5"},
-      {name:"Rumień (różowate)", type:"scale5"},
-      {name:"Mieszki włosowe", type:"scale5"},
-      {name:"Brain fog", type:"scale10"},
-      {name:"Przebodźcowanie", type:"scale10"},
-      {name:"Niepokój / kołatanie", type:"scale10"},
-      {name:"Napęd (baseline)", type:"scale10"}
-    ];
+  /* ============ DIARY (free-text journal / log) ============ */
+  // Therapy-week context (Mounjaro / TRT) for a given date, counted from the
+  // first logged shot of each substance. Empty until a first shot exists.
+  function weekTags(st, dateISO){
+    var out=[];
+    var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dateISO);
+    var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dateISO);
+    if(wm!=null) out.push({label:"Mounjaro", week:wm, color:SUBSTANCE_COLORS.mounjaro});
+    if(wt!=null) out.push({label:"TRT", week:wt, color:SUBSTANCE_COLORS.trt});
+    return out;
   }
-  function dailyEntryFor(st, dISO){
-    for(var i=0;i<st.dailyLog.length;i++){ if(st.dailyLog[i].date===dISO) return st.dailyLog[i]; }
-    return null;
+  function weekPills(tags, short){
+    return tags.map(function(t){
+      return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
+        +esc(t.label)+' · '+esc(I18N.t(short?"diary.weekShort":"diary.week"))+' '+t.week+'</span>';
+    }).join(" ");
   }
   function viewDiary(){
     var st=s(), today=todayISO();
-    var entry=dailyEntryFor(st, today), vals=(entry&&entry.values)||{};
-    var daily=st.metrics.filter(function(m){ return m.daily && !m.archived; });
-
     var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
 
-    // --- daily ratings ---
-    html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>';
-    if(!daily.length){
-      html+='<div class="empty">'+esc(I18N.t("diary.noDaily"))+'</div>';
-    } else {
-      daily.forEach(function(m){
-        var v=vals[m.id];
-        if(m.type==="bool"){
-          html+='<div class="slider"><div class="slhead"><span>'+esc(m.name)+'</span></div>'
-            +'<label class="toggle"><input type="checkbox" class="dInput" data-m="'+m.id+'" data-t="bool"'+(v?" checked":"")+'><span class="switch"></span></label></div>';
-        } else if(m.type==="number"){
-          html+='<div class="slider"><div class="slhead"><span>'+esc(m.name)+'</span></div>'
-            +'<input type="number" inputmode="decimal" class="dInput" data-m="'+m.id+'" data-t="number" value="'+(v!=null?v:"")+'"></div>';
-        } else {
-          var mx=metricMax(m.type), cur=(v!=null?v:0);
-          html+='<div class="slider"><div class="slhead"><span>'+esc(m.name)+'</span><span class="slval" id="slv-'+m.id+'">'+cur+'</span></div>'
-            +'<input type="range" class="dInput" data-m="'+m.id+'" data-t="'+m.type+'" min="0" max="'+mx+'" step="1" value="'+cur+'"></div>';
-        }
-      });
-      html+='<div class="field" style="margin-top:10px"><label>'+esc(I18N.t("diary.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="dNote" maxlength="120" value="'+esc((entry&&entry.note)||"")+'"></div>';
-      html+='<div class="row"><button class="btn" id="dSave">'+esc(I18N.t("diary.save"))+'</button>';
-      if(entry) html+='<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.todayDone"))+'</span>';
-      html+='</div>';
-    }
-    html+='<div class="note" style="margin-top:12px"><a href="#bp" style="color:var(--brand);font-weight:700;text-decoration:none">'+esc(I18N.t("diary.bpLink"))+'</a></div>';
-    html+='</div>';
+    // composer: therapy-week context + one plain textarea, nothing else
+    var ctx=weekTags(st, today);
+    html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
+      + (ctx.length
+          ? '<div class="row" style="margin:0 0 10px">'+weekPills(ctx,false)+'</div>'
+          : '<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.ctxNone"))+'</div>')
+      + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'"></textarea></div>'
+      + '<div class="row"><button class="btn" id="jAdd">'+esc(I18N.t("diary.add"))+'</button>'
+      + '<span class="muted tiny">'+esc(I18N.t("diary.ctrlEnter"))+'</span></div>'
+      + '</div>';
 
-    // --- metric registry (collapsed by default; toggle expands the editor) ---
-    function metricRowHTML(m, isArch){
-      var typeLbl=I18N.t("metric.type."+m.type);
-      return '<div class="metricrow'+(isArch?" arch":"")+'">'
-        +'<span class="mname"><b>'+esc(m.name)+'</b> <span class="muted tiny">'+esc(typeLbl)+(m.daily?" · "+esc(I18N.t("metric.daily")):"")+'</span></span>'
-        +'<button class="btn ghost sm mRen" title="'+esc(I18N.t("metric.rename"))+'" data-id="'+m.id+'">'+icon("edit")+'</button>'
-        +'<button class="btn ghost sm mArch" data-id="'+m.id+'">'+esc(isArch?I18N.t("metric.restore"):I18N.t("metric.archive"))+'</button>'
-        +'<button class="btn ghost sm mDel" title="'+esc(I18N.t("metric.delete"))+'" data-id="'+m.id+'">'+icon("trash")+'</button>'
-        +'</div>';
-    }
-    var active=st.metrics.filter(function(m){ return !m.archived; });
-    var archived=st.metrics.filter(function(m){ return m.archived; });
-    html+='<div class="card">';
-    html+='<button class="mgr-toggle" id="mToggle"><span><b>'+esc(I18N.t("metric.manage"))+'</b> <span class="muted tiny">('+active.length+')</span></span>'+icon("chevron","chev"+(metricsOpen?" open":""))+'</button>';
-    if(metricsOpen){
-      html+='<div style="margin-top:12px">';
-      html+='<p class="sub">'+esc(I18N.t("metric.sub"))+'</p>';
-      if(active.length){ html+='<div class="tsub">'+esc(I18N.t("metric.active"))+'</div>'; active.forEach(function(m){ html+=metricRowHTML(m,false); }); }
-      if(archived.length){ html+='<div class="tsub" style="margin-top:12px">'+esc(I18N.t("metric.archived"))+'</div>'; archived.forEach(function(m){ html+=metricRowHTML(m,true); }); }
-      if(!st.metrics.length) html+='<div class="empty">'+esc(I18N.t("metric.empty"))+'</div>';
-      html+='<div class="tsub" style="margin-top:14px">'+esc(I18N.t("metric.addNew"))+'</div>';
-      html+='<div class="grid g3">'
-        +'<div class="field"><label>'+esc(I18N.t("metric.name"))+'</label><input type="text" id="mNewName" maxlength="40" placeholder="'+esc(I18N.t("metric.namePh"))+'"></div>'
-        +'<div class="field"><label>'+esc(I18N.t("metric.type"))+'</label><select id="mNewType">'
-          +'<option value="scale10">'+esc(I18N.t("metric.type.scale10"))+'</option>'
-          +'<option value="scale5">'+esc(I18N.t("metric.type.scale5"))+'</option>'
-          +'<option value="number">'+esc(I18N.t("metric.type.number"))+'</option>'
-          +'<option value="bool">'+esc(I18N.t("metric.type.bool"))+'</option>'
-        +'</select></div>'
-        +'<div class="field"><label>'+esc(I18N.t("metric.daily"))+'</label><label class="toggle" style="margin-top:6px"><input type="checkbox" id="mNewDaily" checked><span class="switch"></span></label></div>'
-        +'</div>'
-        +'<div class="row"><button class="btn" id="mAdd">'+esc(I18N.t("metric.add"))+'</button>'
-        +'<button class="btn ghost" id="mSeed">'+esc(I18N.t("metric.seed"))+'</button></div>';
-      html+='</div>';
+    // log list: journal entries plus notes from the old slider diary, newest first
+    var items=(st.journal||[]).map(function(e){ return {id:e.id, key:String(e.ts), ts:e.ts, text:e.text, legacy:false}; });
+    (st.dailyLog||[]).forEach(function(e){
+      if(e && e.note) items.push({id:e.id, key:e.date+"T12:00", date:e.date, text:e.note, legacy:true});
+    });
+    items.sort(function(a,b){ return a.key<b.key?1:a.key>b.key?-1:0; });
+
+    html+='<div class="card"><h2>'+esc(I18N.t("diary.list"))+'</h2>';
+    if(!items.length){
+      html+='<div class="empty">'+esc(I18N.t("diary.empty"))+'</div>';
+    } else {
+      items.forEach(function(it){
+        var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
+        var when=it.legacy?it.date:fmtDateTime(it.ts);
+        var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO),true)
+          +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
+        html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
+          +'<div class="ltext">'+esc(it.text)+'</div></div>'
+          +(it.legacy?'':'<button class="btn ghost sm jDel" data-id="'+esc(it.id)+'">✕</button>')
+          +'</div>';
+      });
     }
     html+='</div>';
     html+='<div class="rellinks"><a class="btn ghost" href="#inject">'+icon("inject")+esc(I18N.t("rel.toInject"))+icon("arrow")+'</a></div>';
 
     app.innerHTML=html;
 
-    $all("input.dInput[type=range]").forEach(function(r){
-      r.addEventListener("input",function(){ var l=$("#slv-"+r.getAttribute("data-m")); if(l) l.textContent=r.value; });
-    });
-    if($("#dSave")) $("#dSave").addEventListener("click",function(){
-      var values={};
-      $all(".dInput").forEach(function(inp){
-        var id=inp.getAttribute("data-m"), t=inp.getAttribute("data-t");
-        if(t==="bool"){ values[id]=inp.checked?1:0; }
-        else if(inp.value!==""){ var n=parseFloat(inp.value); if(!isNaN(n)) values[id]=n; }
-      });
-      var note=($("#dNote")?$("#dNote").value:"").trim(), e=dailyEntryFor(st, today);
-      if(e){ e.values=values; e.note=note; }
-      else { st.dailyLog.push({ id:uid(), date:today, values:values, note:note }); }
-      st.dailyLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
+    function saveNote(){
+      var txt=($("#jText").value||"").trim();
+      if(!txt){ $("#jText").focus(); return; }
+      if(!st.journal) st.journal=[];
+      st.journal.push({ id:uid(), ts:new Date().toISOString(), text:txt });
+      st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
+    }
+    $("#jAdd").addEventListener("click", saveNote);
+    $("#jText").addEventListener("keydown",function(ev){
+      if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
     });
-    if($("#mToggle")) $("#mToggle").addEventListener("click",function(){ metricsOpen=!metricsOpen; viewDiary(); });
-    if($("#mAdd")) $("#mAdd").addEventListener("click",function(){
-      var name=($("#mNewName").value||"").trim(); if(!name){ $("#mNewName").focus(); return; }
-      st.metrics.push({ id:uid(), name:name, type:$("#mNewType").value, daily:$("#mNewDaily").checked, archived:false });
-      STORE.save(); viewDiary();
-    });
-    if($("#mSeed")) $("#mSeed").addEventListener("click",function(){
-      var have={}; st.metrics.forEach(function(m){ have[m.name.toLowerCase()]=true; });
-      starterMetrics().forEach(function(sm){
-        if(!have[sm.name.toLowerCase()]) st.metrics.push({ id:uid(), name:sm.name, type:sm.type, daily:true, archived:false });
-      });
-      STORE.save(); toast(I18N.t("common.saved")); viewDiary();
-    });
-    $all(".mArch").forEach(function(b){ b.addEventListener("click",function(){
+    $all(".jDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("diary.confirmDel"))) return;
       var id=b.getAttribute("data-id");
-      st.metrics.forEach(function(m){ if(m.id===id) m.archived=!m.archived; });
-      STORE.save(); viewDiary();
-    });});
-    $all(".mRen").forEach(function(b){ b.addEventListener("click",function(){
-      var id=b.getAttribute("data-id"), m=null;
-      st.metrics.forEach(function(x){ if(x.id===id) m=x; });
-      if(!m) return;
-      var nn=prompt(I18N.t("metric.rename"), m.name); if(nn==null) return; nn=nn.trim();
-      if(nn){ m.name=nn; STORE.save(); viewDiary(); }
-    });});
-    $all(".mDel").forEach(function(b){ b.addEventListener("click",function(){
-      if(!confirm(I18N.t("metric.confirmDel"))) return;
-      var id=b.getAttribute("data-id");
-      st.metrics=st.metrics.filter(function(m){ return m.id!==id; });
+      st.journal=(st.journal||[]).filter(function(e){ return e.id!==id; });
       STORE.save(); viewDiary();
     });});
   }
@@ -2418,7 +2357,8 @@ var UI = (function(){
     html+='</div>';
 
     // --- today status ---
-    var diaryDone=(st.dailyLog||[]).some(function(e){return e.date===today;});
+    var diaryDone=(st.journal||[]).some(function(e){return String(e.ts).slice(0,10)===today;})
+      || (st.dailyLog||[]).some(function(e){return e.date===today;});
     var pepDone=(st.injLog||[]).some(function(e){return e.substance==="peptide" && e.date===today;});
     function chip(ok){ return '<span class="pill" style="background:'+(ok?"rgba(22,163,74,.12)":"var(--soft)")+';color:'+(ok?"#16a34a":"var(--muted)")+'">'+esc(ok?I18N.t("pulpit.done"):I18N.t("pulpit.todo"))+'</span>'; }
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.today"))+'</h2><div class="stats">'
