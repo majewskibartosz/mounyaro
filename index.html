@@ -1966,15 +1966,19 @@ var UI = (function(){
     var morning = new Date().getHours() < 12;   // sensible default: morning = fasting
     // current Mounjaro/TRT dose pills (same context as the journal composer)
     function bpCtxHtml(dISO){ var tags=weekTags(st, dISO); return tags.length?weekPills(tags,false):''; }
-    // doses in effect on a reading's date; falls back to a manually stored dose
+    // doses in effect on a reading's date, as compact substance-coloured pills;
+    // falls back to a manually stored dose (that field was always Mounjaro)
+    function dosePill(label, txt, color){
+      return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+label+' '+esc(txt)+'</span>';
+    }
     function doseCell(e){
       var d=String(e.ts).slice(0,10);
       var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",d), trt=DOMAIN.lastDoseAsOf(st,"trt",d);
       var parts=[];
-      if(mj) parts.push('<span class="muted tiny">MJ</span> '+esc(mj.dose+" "+mj.unit));
-      if(trt) parts.push('<span class="muted tiny">TRT</span> '+esc(trt.dose+" "+trt.unit));
-      if(!parts.length && e.doseMg!=null) parts.push(esc(e.doseMg)+' mg');
-      return parts.length?parts.join('<br>'):'—';
+      if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro));
+      if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt));
+      if(!parts.length && e.doseMg!=null) parts.push(dosePill("MJ", e.doseMg+" mg", SUBSTANCE_COLORS.mounjaro));
+      return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+parts.join('')+'</span>':'—';
     }
     var html=''
     + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
