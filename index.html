@@ -3322,14 +3322,32 @@ var UI = (function(){
   // PWA install: capture the deferred prompt (Android/Chromium) and surface a
   // visible Install button; on iOS Safari there's no prompt, so show how-to.
   var deferredInstall=null;
+  // Running as an installed app? Cover every installed display mode plus the
+  // android-app:// referrer, and re-check at event time — some Android
+  // browsers fire beforeinstallprompt even inside the installed window.
+  function isStandaloneNow(){
+    try{
+      if(navigator.standalone===true) return true;   // iOS home-screen app
+      if(window.matchMedia){
+        if(window.matchMedia("(display-mode: standalone)").matches) return true;
+        if(window.matchMedia("(display-mode: fullscreen)").matches) return true;
+        if(window.matchMedia("(display-mode: minimal-ui)").matches) return true;
+      }
+      if(document.referrer && document.referrer.indexOf("android-app://")===0) return true;
+    }catch(e){}
+    return false;
+  }
   function setupInstall(){
     var btn=$("#installBtn"); if(!btn) return;
     var ua=navigator.userAgent||"";
     var isIOS=/iphone|ipad|ipod/i.test(ua);
-    var standalone=(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
-    if(standalone){ btn.hidden=true; }
+    if(isStandaloneNow()){ btn.hidden=true; }
     else if(isIOS){ btn.hidden=false; }
-    window.addEventListener("beforeinstallprompt",function(e){ e.preventDefault(); deferredInstall=e; btn.hidden=false; });
+    window.addEventListener("beforeinstallprompt",function(e){
+      e.preventDefault();
+      if(isStandaloneNow()) return;                  // already installed & running as app
+      deferredInstall=e; btn.hidden=false;
+    });
     window.addEventListener("appinstalled",function(){ deferredInstall=null; btn.hidden=true; });
     btn.addEventListener("click",function(){
       if(deferredInstall){ deferredInstall.prompt(); deferredInstall.userChoice.then(function(){ deferredInstall=null; btn.hidden=true; }); }
