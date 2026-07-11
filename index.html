@@ -178,6 +178,12 @@
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .scroll{overflow-x:auto}
 
+  /* history pagination */
+  .pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px}
+  .pager span{font-variant-numeric:tabular-nums}
+  .pager button{min-width:44px}
+  .pager button:disabled{opacity:.35;cursor:default}
+
   .note{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--muted)}
   .warnbox{background:var(--warnbg);border:1px solid var(--warnline);color:var(--warnink);border-radius:12px;padding:10px 12px;font-size:13px}
   .banner{background:var(--warnbg);border:1px solid var(--warnline);color:var(--warnink);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
@@ -1747,6 +1753,25 @@ var UI = (function(){
     clearTimeout(t._t); t._t=setTimeout(function(){ t.style.opacity="0"; },1500);
   }
 
+  /* ---- history pagination: PAGE_SIZE rows per page + prev/next arrows ---- */
+  var PAGE_SIZE=5;
+  function pageClamp(page, total){ var pages=Math.max(1, Math.ceil(total/PAGE_SIZE)); return Math.max(0, Math.min(page, pages-1)); }
+  function pageSlice(list, page){ return list.slice(page*PAGE_SIZE, page*PAGE_SIZE+PAGE_SIZE); }
+  function pagerHTML(cls, page, total){
+    var pages=Math.max(1, Math.ceil(total/PAGE_SIZE));
+    if(pages<2) return "";
+    return '<div class="pager">'
+      +'<button type="button" class="btn ghost sm '+cls+'" data-d="-1"'+(page<=0?' disabled':'')+'>&lsaquo;</button>'
+      +'<span class="muted small">'+(page+1)+' / '+pages+'</span>'
+      +'<button type="button" class="btn ghost sm '+cls+'" data-d="1"'+(page>=pages-1?' disabled':'')+'>&rsaquo;</button>'
+      +'</div>';
+  }
+  function bindPager(cls, getP, setP, rerender){
+    $all("."+cls).forEach(function(b){ b.addEventListener("click",function(){
+      setP(getP()+parseInt(b.getAttribute("data-d"),10)); rerender();
+    });});
+  }
+
   /* ============ JAB (next-shot countdown ring) ============ */
   // Urgency palette: green (just injected) -> amber -> red (shot due).
   var RING_GREEN="#16a34a", RING_AMBER="#f59e0b", RING_RED="#dc2626";
@@ -1854,6 +1879,7 @@ var UI = (function(){
 
   /* ============ WEIGHT ============ */
   var weightEdit=null;  // id of the entry being edited (null = adding a new one)
+  var weightPage=0;     // history page (5 rows each)
   function viewWeight(){
     var st=s();
     var editing=null;
@@ -1915,7 +1941,8 @@ var UI = (function(){
           + '<th class="num">'+esc(I18N.t("weight.waist"))+'</th>'
           + '<th class="num">'+esc(I18N.t("common.dose"))+'</th><th>'+esc(I18N.t("common.note"))+'</th><th></th>'
           + '</tr></thead><tbody>';
-      st.weightLog.forEach(function(e){
+      weightPage=pageClamp(weightPage, st.weightLog.length);
+      pageSlice(st.weightLog, weightPage).forEach(function(e){
         html+='<tr><td>'+esc(e.date)+'</td><td class="num">'+fmtNum(e.weightKg,1)+'</td>'
             + '<td class="num">'+(e.waistCm!=null?fmtNum(e.waistCm,1)+' cm':'—')+'</td>'
             + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
@@ -1923,7 +1950,7 @@ var UI = (function(){
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
-      html+='</tbody></table></div></div>';
+      html+='</tbody></table></div>'+pagerHTML("wPg", weightPage, st.weightLog.length)+'</div>';
     }
 
     // BMI — display only; pulls weight from the log and height/age/sex from Settings
@@ -1957,9 +1984,11 @@ var UI = (function(){
         st.weightLog.push(fields);
       }
       st.weightLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
+      weightPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewWeight();
     });
     if($("#wCancel")) $("#wCancel").addEventListener("click",function(){ weightEdit=null; viewWeight(); });
+    bindPager("wPg", function(){return weightPage;}, function(v){weightPage=v;}, viewWeight);
     $all(".wEdit").forEach(function(b){ b.addEventListener("click",function(){
       weightEdit=b.getAttribute("data-id"); viewWeight(); window.scrollTo(0,0);
     });});
@@ -2011,6 +2040,7 @@ var UI = (function(){
   /* ============ COST ============ */
   /* ============ BLOOD PRESSURE ============ */
   var bpEdit=null;  // id of the reading being edited (null = adding a new one)
+  var bpPage=0;     // history page (5 rows each)
   function viewBP(){
     var st=s();
     var log = st.bp.log || [];
@@ -2078,7 +2108,8 @@ var UI = (function(){
           + '<th>'+esc(I18N.t("bp.when"))+'</th><th class="num">'+esc(I18N.t("bp.reading"))+'</th>'
           + '<th class="num">bpm</th><th>'+esc(I18N.t("common.dose"))+'</th><th></th>'
           + '</tr></thead><tbody>';
-      log.forEach(function(e){
+      bpPage=pageClamp(bpPage, log.length);
+      pageSlice(log, bpPage).forEach(function(e){
         html+='<tr><td>'+esc(fmtDateTime(e.ts))+(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td class="num"><b>'+e.sys+'/'+e.dia+'</b></td>'
@@ -2087,7 +2118,7 @@ var UI = (function(){
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
-      html+='</tbody></table></div></div>';
+      html+='</tbody></table></div>'+pagerHTML("bpPg", bpPage, log.length)+'</div>';
     }
     app.innerHTML=html;
 
@@ -2112,9 +2143,11 @@ var UI = (function(){
         st.bp.log.push(fields);
       }
       st.bp.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      bpPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewBP();
     });
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
+    bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
     // backfilling? recompute the dose/week pills for the picked date
     $("#bpWhen").addEventListener("input",function(){
       var c=$("#bpCtx"); if(!c) return;
@@ -2154,6 +2187,7 @@ var UI = (function(){
     }).join(" ");
   }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
+  var journalPage=0;     // notes list page (5 each)
   function viewDiary(){
     var st=s(), today=todayISO();
     var editing=null;
@@ -2190,7 +2224,8 @@ var UI = (function(){
     if(!items.length){
       html+='<div class="empty">'+esc(I18N.t("diary.empty"))+'</div>';
     } else {
-      items.forEach(function(it){
+      journalPage=pageClamp(journalPage, items.length);
+      pageSlice(items, journalPage).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
         var when=it.legacy?it.date:fmtDateTime(it.ts);
         var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO),true)
@@ -2201,6 +2236,7 @@ var UI = (function(){
             +'<button class="btn ghost sm jDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>')
           +'</div>';
       });
+      html+=pagerHTML("jPg", journalPage, items.length);
     }
     html+='</div>';
     html+='<div class="rellinks"><a class="btn ghost" href="#inject">'+icon("inject")+esc(I18N.t("rel.toInject"))+icon("arrow")+'</a></div>';
@@ -2217,10 +2253,12 @@ var UI = (function(){
       if(editing){ editing.text=txt; editing.ts=when.toISOString(); journalEdit=null; }
       else { st.journal.push({ id:uid(), ts:when.toISOString(), text:txt }); }
       st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      journalPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
     }
     $("#jAdd").addEventListener("click", saveNote);
     if($("#jCancel")) $("#jCancel").addEventListener("click",function(){ journalEdit=null; viewDiary(); });
+    bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // backfilling? recompute the therapy-week/dose pills for the picked date
     $("#jWhen").addEventListener("input",function(){
       var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml((this.value||"").slice(0,10)||today);
@@ -2334,6 +2372,7 @@ var UI = (function(){
   }
 
   var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
+  var injPage=0;  // history page (5 rows each)
   var injDraft={dose:"",name:"",when:""};             // preserves typed dose/blend/time across the site-pick re-render
   function viewInject(){
     var st=s(), today=todayISO();
@@ -2440,7 +2479,8 @@ var UI = (function(){
     hlist.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
     if(hlist.length){
       html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="scroll"><table><tbody>';
-      hlist.forEach(function(e){
+      injPage=pageClamp(injPage, hlist.length);
+      pageSlice(hlist, injPage).forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):e.date;
         html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td>'
@@ -2449,7 +2489,7 @@ var UI = (function(){
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
           +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
-      html+='</tbody></table></div></div>';
+      html+='</tbody></table></div>'+pagerHTML("injPg", injPage, hlist.length)+'</div>';
     }
 
     app.innerHTML=html;
@@ -2461,8 +2501,9 @@ var UI = (function(){
     }
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
-      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injDraft={dose:"",name:"",when:""}; viewInject();
+      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:""}; viewInject();
     });});
+    bindPager("injPg", function(){return injPage;}, function(v){injPage=v;}, viewInject);
     // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
     var bm=$("#bellyMap");
     if(bm) bm.addEventListener("click",function(ev){
@@ -2524,7 +2565,7 @@ var UI = (function(){
       // Mounjaro: keep the weekly ring's source of truth (jab.history) in sync with the chosen day
       if(mjDate && st.jab.history.indexOf(mjDate)===-1){ st.jab.history.push(mjDate); st.jab.history.sort(); }
       st.injLog.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
-      injSel=null; injEdit=null; injDraft={dose:"",name:"",when:""};
+      injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:""};
       STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
     if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:"",when:""}; viewInject(); });
