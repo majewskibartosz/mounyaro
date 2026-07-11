@@ -387,6 +387,14 @@ var I18N = (function(){
     "diary.ctxNone":{pl:"Zapisz pierwszy zastrzyk, aby widzieć tydzień terapii przy notatkach.",en:"Log your first injection to see the therapy week next to notes."},
     "diary.legacyTag":{pl:"dawny dziennik",en:"old diary"},
     "diary.ctrlEnter":{pl:"Ctrl+Enter zapisuje",en:"Ctrl+Enter saves"},
+    "diary.when":{pl:"Czas notatki",en:"Note time"},
+    "diary.whenHint":{pl:"domyślnie teraz — zmień, aby dodać wstecz",en:"defaults to now — change to backfill"},
+    "diary.update":{pl:"Zaktualizuj notatkę",en:"Update note"},
+    "diary.editing":{pl:"Edytujesz notatkę — zmień treść lub czas i zaktualizuj.",en:"Editing a note — change the text or time and update."},
+    "common.cancel":{pl:"Anuluj",en:"Cancel"},
+    "common.edit":{pl:"Edytuj",en:"Edit"},
+    "common.update":{pl:"Zaktualizuj",en:"Update"},
+    "common.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
 
     "bp.title":{pl:"Ciśnienie krwi",en:"Blood pressure"},
     "bp.sub":{pl:"Zapisuj pomiary — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log readings — the date and time are captured automatically when you save."},
@@ -1403,6 +1411,8 @@ function fmtMoneyTxt(n, currency){
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDateTime(ts){ try{ return new Date(ts).toLocaleString(I18N.lang==="en"?"en-GB":"pl-PL",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(ts); } }
 function nowLocalDT(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+// A stored timestamp as a datetime-local input value (falls back to now).
+function toLocalDT(ts){ var d=new Date(ts); if(isNaN(d.getTime())) return nowLocalDT(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 // Shared line-icon set (Lucide-style) so buttons, links and nav stay consistent.
 var ICONS={
@@ -1787,8 +1797,14 @@ var UI = (function(){
   }
 
   /* ============ WEIGHT ============ */
+  var weightEdit=null;  // id of the entry being edited (null = adding a new one)
   function viewWeight(){
     var st=s();
+    var editing=null;
+    if(weightEdit){
+      for(var wi=0;wi<st.weightLog.length;wi++){ if(st.weightLog[wi].id===weightEdit){ editing=st.weightLog[wi]; break; } }
+      if(!editing) weightEdit=null;
+    }
     var last = st.weightLog.length ? st.weightLog[0].doseMg : null;
     var html=''
     + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>';
@@ -1822,14 +1838,17 @@ var UI = (function(){
     // logging form card (below the chart)
     html+= '<div class="card">'
     +   '<p class="sub">'+esc(I18N.t("weight.sub"))+'</p>'
+    +   (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
     +   '<div class="grid g2">'
-    +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+todayISO()+'"></div>'
-    +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0"></div>'
-    +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100"></div>'
-    +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="'+(last!=null?last:"7.5")+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+esc(editing?editing.date:todayISO())+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0" value="'+(editing?esc(editing.weightKg):'')+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100" value="'+(editing&&editing.waistCm!=null?esc(editing.waistCm):'')+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="'+(last!=null?last:"7.5")+'" value="'+(editing&&editing.doseMg!=null?esc(editing.doseMg):'')+'"></div>'
     +   '</div>'
-    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80"></div>'
-    +   '<button class="btn" id="wAdd">'+esc(I18N.t("weight.add"))+'</button>'
+    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
+    +   '<div class="row"><button class="btn" id="wAdd">'+esc(editing?I18N.t("common.update"):I18N.t("weight.add"))+'</button>'
+    +   (editing?'<button class="btn ghost" id="wCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
+    +   '</div>'
     + '</div>';
     html+='<div class="rellinks"><a class="btn ghost" href="#bp">'+icon("bp")+esc(I18N.t("rel.toBp"))+icon("arrow")+'</a></div>';
 
@@ -1845,7 +1864,8 @@ var UI = (function(){
             + '<td class="num">'+(e.waistCm!=null?fmtNum(e.waistCm,1)+' cm':'—')+'</td>'
             + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
             + '<td>'+esc(e.note||"")+'</td>'
-            + '<td class="num"><button class="btn ghost sm wDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+            + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
+            + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
       html+='</tbody></table></div></div>';
     }
@@ -1869,17 +1889,29 @@ var UI = (function(){
       if(isNaN(kg)||kg<=0){ $("#wKg").focus(); return; }
       var dose=$("#wDose").value===""?null:parseFloat($("#wDose").value);
       var waist=$("#wWaist").value===""?null:parseFloat($("#wWaist").value);
-      var entry={ id:uid(), date:$("#wDate").value||todayISO(), weightKg:kg,
-                  waistCm:(waist==null||isNaN(waist)||waist<=0)?null:waist,
-                  doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#wNote").value||"").trim() };
-      st.weightLog.push(entry);
+      var fields={ date:$("#wDate").value||todayISO(), weightKg:kg,
+                   waistCm:(waist==null||isNaN(waist)||waist<=0)?null:waist,
+                   doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#wNote").value||"").trim() };
+      if(editing){
+        editing.date=fields.date; editing.weightKg=fields.weightKg; editing.waistCm=fields.waistCm;
+        editing.doseMg=fields.doseMg; editing.note=fields.note;
+        weightEdit=null;
+      } else {
+        fields.id=uid();
+        st.weightLog.push(fields);
+      }
       st.weightLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
       STORE.save(); toast(I18N.t("common.saved")); viewWeight();
     });
+    if($("#wCancel")) $("#wCancel").addEventListener("click",function(){ weightEdit=null; viewWeight(); });
+    $all(".wEdit").forEach(function(b){ b.addEventListener("click",function(){
+      weightEdit=b.getAttribute("data-id"); viewWeight(); window.scrollTo(0,0);
+    });});
     $all(".wDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("weight.confirmDel"))) return;
       var id=b.getAttribute("data-id");
       st.weightLog = st.weightLog.filter(function(e){return e.id!==id;});
+      if(weightEdit===id) weightEdit=null;
       STORE.save(); viewWeight();
     });});
   }
@@ -1922,9 +1954,15 @@ var UI = (function(){
 
   /* ============ COST ============ */
   /* ============ BLOOD PRESSURE ============ */
+  var bpEdit=null;  // id of the reading being edited (null = adding a new one)
   function viewBP(){
     var st=s();
     var log = st.bp.log || [];
+    var editing=null;
+    if(bpEdit){
+      for(var bi=0;bi<log.length;bi++){ if(log[bi].id===bpEdit){ editing=log[bi]; break; } }
+      if(!editing) bpEdit=null;
+    }
     var lastDose = log.length ? log[0].doseMg : null;
     var morning = new Date().getHours() < 12;   // sensible default: morning = fasting
     var html=''
@@ -1946,18 +1984,21 @@ var UI = (function(){
 
     // entry form
     html+='<div class="card"><p class="sub">'+esc(I18N.t("bp.sub"))+'</p>'
+    + (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
     + '<div class="grid g3">'
-    +   '<div class="field"><label>'+esc(I18N.t("bp.sys"))+'</label><input type="number" inputmode="numeric" id="bpSys" placeholder="120"></div>'
-    +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80"></div>'
-    +   '<div class="field"><label>'+esc(I18N.t("bp.pulse"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bpPulse" placeholder="70"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("bp.sys"))+'</label><input type="number" inputmode="numeric" id="bpSys" placeholder="120" value="'+(editing?esc(editing.sys):'')+'"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80" value="'+(editing?esc(editing.dia):'')+'"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("bp.pulse"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bpPulse" placeholder="70" value="'+(editing&&editing.pulse!=null?esc(editing.pulse):'')+'"></div>'
     + '</div>'
-    + '<div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="datetime-local" id="bpWhen" value="'+nowLocalDT()+'"></div>'
-    + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+(morning?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
+    + '<div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="datetime-local" id="bpWhen" value="'+(editing?toLocalDT(editing.ts):nowLocalDT())+'"></div>'
+    + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+((editing?editing.fasting:morning)?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
     + '<div class="grid g2">'
-    +   '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="bpDose" placeholder="'+(lastDose!=null?lastDose:"")+'"></div>'
-    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="bpDose" placeholder="'+(lastDose!=null?lastDose:"")+'" value="'+(editing&&editing.doseMg!=null?esc(editing.doseMg):'')+'"></div>'
+    +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
     + '</div>'
-    + '<button class="btn" id="bpAdd">'+esc(I18N.t("bp.add"))+'</button>'
+    + '<div class="row"><button class="btn" id="bpAdd">'+esc(editing?I18N.t("common.update"):I18N.t("bp.add"))+'</button>'
+    + (editing?'<button class="btn ghost" id="bpCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
+    + '</div>'
     + '<div class="rellinks"><a class="btn ghost" href="#weight">'+icon("weight")+esc(I18N.t("rel.toWeight"))+icon("arrow")+'</a></div>'
     + '</div>';
 
@@ -1973,7 +2014,8 @@ var UI = (function(){
             + '<td class="num"><b>'+e.sys+'/'+e.dia+'</b></td>'
             + '<td class="num">'+(e.pulse!=null?e.pulse:'—')+'</td>'
             + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
-            + '<td class="num"><button class="btn ghost sm bpDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
+            + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
+            + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
       html+='</tbody></table></div></div>';
     }
@@ -1988,17 +2030,29 @@ var UI = (function(){
       var whenVal=$("#bpWhen").value;
       var when=whenVal?new Date(whenVal):new Date();
       if(isNaN(when.getTime())) when=new Date();
-      var entry={ id:uid(), ts:when.toISOString(), sys:sys, dia:dia,
-                  pulse:(pulse==null||isNaN(pulse))?null:pulse, fasting:$("#bpFast").checked,
-                  doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#bpNote").value||"").trim() };
-      st.bp.log.push(entry);
+      var fields={ ts:when.toISOString(), sys:sys, dia:dia,
+                   pulse:(pulse==null||isNaN(pulse))?null:pulse, fasting:$("#bpFast").checked,
+                   doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#bpNote").value||"").trim() };
+      if(editing){
+        editing.ts=fields.ts; editing.sys=fields.sys; editing.dia=fields.dia; editing.pulse=fields.pulse;
+        editing.fasting=fields.fasting; editing.doseMg=fields.doseMg; editing.note=fields.note;
+        bpEdit=null;
+      } else {
+        fields.id=uid();
+        st.bp.log.push(fields);
+      }
       st.bp.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       STORE.save(); toast(I18N.t("common.saved")); viewBP();
     });
+    if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
+    $all(".bpEdit").forEach(function(b){ b.addEventListener("click",function(){
+      bpEdit=b.getAttribute("data-id"); viewBP(); window.scrollTo(0,0);
+    });});
     $all(".bpDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("bp.confirmDel"))) return;
       var id=b.getAttribute("data-id");
       st.bp.log = st.bp.log.filter(function(e){return e.id!==id;});
+      if(bpEdit===id) bpEdit=null;
       STORE.save(); viewBP();
     });});
   }
@@ -2023,18 +2077,29 @@ var UI = (function(){
         +(t.dose?' · '+esc(t.dose.dose+" "+t.dose.unit):'')+'</span>';
     }).join(" ");
   }
+  var journalEdit=null;  // id of the note being edited (null = composing a new one)
   function viewDiary(){
     var st=s(), today=todayISO();
+    var editing=null;
+    if(journalEdit){
+      for(var ji=0;ji<(st.journal||[]).length;ji++){ if(st.journal[ji].id===journalEdit){ editing=st.journal[ji]; break; } }
+      if(!editing) journalEdit=null;
+    }
     var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
 
-    // composer: therapy-week context + one plain textarea, nothing else
-    var ctx=weekTags(st, today);
+    // composer: therapy-week + dose context, textarea, editable timestamp (backfill)
+    var whenVal = editing ? toLocalDT(editing.ts) : nowLocalDT();
+    function ctxHtml(dISO){
+      var tags=weekTags(st, dISO);
+      return tags.length ? weekPills(tags,false) : '<span class="muted tiny">'+esc(I18N.t("diary.ctxNone"))+'</span>';
+    }
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
-      + (ctx.length
-          ? '<div class="row" style="margin:0 0 10px">'+weekPills(ctx,false)+'</div>'
-          : '<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.ctxNone"))+'</div>')
-      + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'"></textarea></div>'
-      + '<div class="row"><button class="btn" id="jAdd">'+esc(I18N.t("diary.add"))+'</button>'
+      + (editing?'<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.editing"))+'</div>':'')
+      + '<div class="row" id="jCtx" style="margin:0 0 10px">'+ctxHtml(whenVal.slice(0,10))+'</div>'
+      + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'">'+(editing?esc(editing.text):'')+'</textarea></div>'
+      + '<div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="datetime-local" id="jWhen" value="'+whenVal+'"></div>'
+      + '<div class="row"><button class="btn" id="jAdd">'+esc(I18N.t(editing?"diary.update":"diary.add"))+'</button>'
+      + (editing?'<button class="btn ghost" id="jCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
       + '<span class="muted tiny">'+esc(I18N.t("diary.ctrlEnter"))+'</span></div>'
       + '</div>';
 
@@ -2056,7 +2121,8 @@ var UI = (function(){
           +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
           +'<div class="ltext">'+esc(it.text)+'</div></div>'
-          +(it.legacy?'':'<button class="btn ghost sm jDel" data-id="'+esc(it.id)+'">✕</button>')
+          +(it.legacy?'':'<button class="btn ghost sm jEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(it.id)+'">'+icon("edit")+'</button>'
+            +'<button class="btn ghost sm jDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>')
           +'</div>';
       });
     }
@@ -2068,19 +2134,32 @@ var UI = (function(){
     function saveNote(){
       var txt=($("#jText").value||"").trim();
       if(!txt){ $("#jText").focus(); return; }
+      var wv=$("#jWhen").value;
+      var when=wv?new Date(wv):new Date();
+      if(isNaN(when.getTime())) when=new Date();
       if(!st.journal) st.journal=[];
-      st.journal.push({ id:uid(), ts:new Date().toISOString(), text:txt });
+      if(editing){ editing.text=txt; editing.ts=when.toISOString(); journalEdit=null; }
+      else { st.journal.push({ id:uid(), ts:when.toISOString(), text:txt }); }
       st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
     }
     $("#jAdd").addEventListener("click", saveNote);
+    if($("#jCancel")) $("#jCancel").addEventListener("click",function(){ journalEdit=null; viewDiary(); });
+    // backfilling? recompute the therapy-week/dose pills for the picked date
+    $("#jWhen").addEventListener("input",function(){
+      var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml((this.value||"").slice(0,10)||today);
+    });
     $("#jText").addEventListener("keydown",function(ev){
       if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
     });
+    $all(".jEdit").forEach(function(b){ b.addEventListener("click",function(){
+      journalEdit=b.getAttribute("data-id"); viewDiary(); window.scrollTo(0,0);
+    });});
     $all(".jDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("diary.confirmDel"))) return;
       var id=b.getAttribute("data-id");
       st.journal=(st.journal||[]).filter(function(e){ return e.id!==id; });
+      if(journalEdit===id) journalEdit=null;
       STORE.save(); viewDiary();
     });});
   }
