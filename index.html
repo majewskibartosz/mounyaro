@@ -155,6 +155,8 @@
   /* body map */
   .bodymap{max-width:280px;margin:6px auto 2px;display:block}
   .bodymap .site{cursor:pointer}
+  /* abdomen close-up spot picker */
+  .bellymap{max-width:360px;width:100%;margin:6px auto 2px;display:block;cursor:crosshair;touch-action:manipulation}
   .maplegend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px}
   .maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
   /* cross-links to twin tabs */
@@ -333,7 +335,16 @@ var I18N = (function(){
     "inj.dose":{pl:"Dawka",en:"Dose"},
     "inj.logBtn":{pl:"Zapisz zastrzyk",en:"Log injection"},
     "inj.logToday":{pl:"Zrobiłem dziś",en:"Done today"},
-    "inj.pickSite":{pl:"Dotknij miejsce wkłucia na mapie",en:"Tap the injection site on the map"},
+    "inj.pickSite":{pl:"Dotknij dokładne miejsce wkłucia na brzuchu",en:"Tap the exact injection spot on your abdomen"},
+    "inj.mapHint":{pl:"Czerwona strefa = min. 5 cm od pępka. Pierścienie = min. 3 cm (dwa palce) od wkłuć z ostatnich 14 dni.",en:"Red zone = keep 5 cm from the navel. Rings = keep 3 cm (two fingers) from shots of the last 14 days."},
+    "inj.tooClose":{pl:"Za blisko poprzedniego wkłucia — trzymaj min. 3 cm (dwa palce).",en:"Too close to a previous shot — keep at least 3 cm (two fingers)."},
+    "inj.tooCloseNavel":{pl:"Za blisko pępka — trzymaj min. 5 cm.",en:"Too close to the navel — keep at least 5 cm."},
+    "inj.navel":{pl:"pępek",en:"navel"},
+    "inj.cmLeft":{pl:"w lewo",en:"left"},
+    "inj.cmRight":{pl:"w prawo",en:"right"},
+    "inj.cmUp":{pl:"w górę",en:"up"},
+    "inj.cmDown":{pl:"w dół",en:"down"},
+    "inj.fromNavel":{pl:"od pępka",en:"from the navel"},
     "inj.selected":{pl:"Wybrane miejsce",en:"Selected site"},
     "inj.suggested":{pl:"sugerowane",en:"suggested"},
     "inj.history":{pl:"Historia",en:"History"},
@@ -1062,20 +1073,63 @@ var DOMAIN = (function(){
     return Math.floor(days/7)+1;
   }
 
-  // Rotation: suggest the site whose most-recent use is oldest (across ALL
-  // substances), so the same spot isn't hit twice in a row. Never-used wins.
-  function suggestSite(injLog, siteIds){
-    if(!siteIds||!siteIds.length) return null;
-    var lastUse={};
-    (injLog||[]).forEach(function(e){
-      if(e && e.site){ if(!lastUse[e.site] || e.date>lastUse[e.site]) lastUse[e.site]=e.date; }
+  /* ---- free-point abdomen injection spots ----
+     Positions are in CM RELATIVE TO THE NAVEL (x+ = right on screen, y+ = down),
+     so stored data is independent of how any map is drawn. Rules: keep >= 3 cm
+     (two finger widths) from recent shots and >= 5 cm from the navel. */
+  var SPOT_MIN_CM=3, SPOT_NAVEL_CM=5;
+  function spotDist(a,b){ var dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
+  function spotCheck(pos, recent, minDistCm, navelCm){
+    minDistCm=minDistCm||SPOT_MIN_CM; navelCm=navelCm||SPOT_NAVEL_CM;
+    var res={ ok:true, nearNavel:false, nearShot:false, nearestCm:null };
+    if(Math.sqrt(pos.x*pos.x+pos.y*pos.y) < navelCm){ res.ok=false; res.nearNavel=true; }
+    (recent||[]).forEach(function(r){
+      if(!r || !r.pos) return;
+      var d=spotDist(pos, r.pos);
+      if(res.nearestCm==null || d<res.nearestCm) res.nearestCm=d;
+      if(d < minDistCm){ res.ok=false; res.nearShot=true; }
     });
-    var best=siteIds[0], bestKey=lastUse[siteIds[0]]||"";
-    for(var i=0;i<siteIds.length;i++){
-      var k=lastUse[siteIds[i]]||""; // "" (never used) sorts before any date
-      if(k<bestKey){ bestKey=k; best=siteIds[i]; }
+    return res;
+  }
+  // Suggest a clear spot: scan a 2 cm grid over the belly area and pick the
+  // point farthest from all recent shots (capped), slightly preferring spots
+  // closer to the middle so suggestions don't drift to the extreme edges.
+  function suggestSpot(recent, minDistCm, navelCm){
+    minDistCm=minDistCm||SPOT_MIN_CM; navelCm=navelCm||SPOT_NAVEL_CM;
+    var best=null, bestScore=-Infinity;
+    for(var y=-9;y<=9;y+=2){
+      for(var x=-13;x<=13;x+=2){
+        if(Math.sqrt(x*x+y*y) < navelCm+1) continue;
+        var p={x:x,y:y}, minD=Infinity;
+        (recent||[]).forEach(function(r){ if(r&&r.pos){ var d=spotDist(p,r.pos); if(d<minD) minD=d; } });
+        if(minD===Infinity) minD=99;
+        if(minD < minDistCm) continue;
+        var score=Math.min(minD,12) - (Math.abs(x)/26 + Math.abs(y)/20);
+        if(score>bestScore){ bestScore=score; best=p; }
+      }
     }
     return best;
+  }
+  // Injections from the last maxDays that have a plottable position. legacyCm
+  // maps old fixed-site ids to approximate cm positions (supplied by the UI so
+  // this layer stays free of presentation constants). order: 1 = the most
+  // recent shot of that substance.
+  function recentInjPos(state, todayISOstr, maxDays, legacyCm){
+    maxDays=maxDays||14;
+    var t0=new Date(todayISOstr+"T12:00:00"), out=[];
+    ((state&&state.injLog)||[]).forEach(function(e){
+      if(!e || !e.date) return;
+      var age=Math.round((t0-new Date(e.date+"T12:00:00"))/86400000);
+      if(age<0 || age>maxDays) return;
+      var pos=e.pos || (legacyCm && e.site && legacyCm[e.site]) || null;
+      if(!pos) return;
+      out.push({ pos:{x:pos.x,y:pos.y}, substance:e.substance, date:e.date, ts:e.ts||null,
+                 dose:e.dose, unit:e.unit, ageDays:age });
+    });
+    out.sort(function(a,b){ var ka=a.ts||a.date, kb=b.ts||b.date; return ka<kb?1:ka>kb?-1:0; });
+    var counts={};
+    out.forEach(function(r){ counts[r.substance]=(counts[r.substance]||0)+1; r.order=counts[r.substance]; });
+    return out;
   }
 
   // Peptide cycle progress. cfg:{cycleDays,cycleStart}. Returns null if no start.
@@ -1104,8 +1158,10 @@ var DOMAIN = (function(){
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
-    seriesFor:seriesFor, suggestSite:suggestSite, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
-    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf
+    seriesFor:seriesFor, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
+    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf,
+    spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
+    SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
   };
 })();
 
@@ -2184,65 +2240,85 @@ var UI = (function(){
     });});
   }
 
-  /* ============ INJECTIONS (Mounjaro / TRT / peptides) + body map ============ */
-  // Subcutaneous, abdomen-centric site map (arms deferred). Coords on a 0 0 200 250 viewBox.
-  // Abdomen 2x2 in the centre, love handles clearly out on the flanks,
-  // each inner thigh gets two spots (two shots per spot).
-  var INJ_SITES=[
-    {id:"belly_ul", x:88,  y:108},
-    {id:"belly_ur", x:112, y:108},
-    {id:"belly_ll", x:88,  y:132},
-    {id:"belly_lr", x:112, y:132},
-    {id:"love_l1",  x:57,  y:112},
-    {id:"love_l2",  x:57,  y:136},
-    {id:"love_r1",  x:143, y:112},
-    {id:"love_r2",  x:143, y:136},
-    {id:"thigh_l1", x:84,  y:194},
-    {id:"thigh_l2", x:84,  y:216},
-    {id:"thigh_r1", x:116, y:194},
-    {id:"thigh_r2", x:116, y:216}
-  ];
-  var SITE_IDS=INJ_SITES.map(function(s){return s.id;});
+  /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
   var SUBSTANCE_COLORS={ mounjaro:"#0ea5a4", trt:"#6366f1", peptide:"#f59e0b" };
 
-  // Most recent injection (any substance) per site, for colouring + recency fade.
-  function lastUseBySite(injLog){
-    var by={};
-    (injLog||[]).forEach(function(e){
-      if(e && e.site){ if(!by[e.site] || e.date>by[e.site].date) by[e.site]={date:e.date, substance:e.substance}; }
-    });
-    return by;
+  // Approximate cm-from-navel positions for the legacy fixed sites, so old
+  // entries still show on the abdomen close-up. Thigh sites have no place on
+  // this map and are skipped (their history rows keep their labels).
+  var LEGACY_SITE_CM={
+    belly_ul:{x:-4,y:-4}, belly_ur:{x:4,y:-4}, belly_ll:{x:-4,y:4}, belly_lr:{x:4,y:4},
+    love_l1:{x:-13,y:-2}, love_l2:{x:-13,y:3}, love_r1:{x:13,y:-2}, love_r2:{x:13,y:3}
+  };
+
+  // Abdomen close-up map: 6 svg units = 1 cm, navel at the centre. Stored
+  // positions stay in cm-from-navel, so this scale is presentation-only.
+  var BELLY_W=220, BELLY_H=160, BELLY_CX=110, BELLY_CY=78, BELLY_CM=6;
+  function cmToSvg(p){ return { x:BELLY_CX+p.x*BELLY_CM, y:BELLY_CY+p.y*BELLY_CM }; }
+  function svgToCm(x,y){ return { x:(x-BELLY_CX)/BELLY_CM, y:(y-BELLY_CY)/BELLY_CM }; }
+  function bellyQuadrant(p){ return "belly_"+(p.y<0?"u":"l")+(p.x<0?"l":"r"); }
+  // "4 cm w lewo · 2 cm w górę od pępka"
+  function posLabel(p){
+    if(!p) return "";
+    function n(v){ v=Math.abs(v); return (Math.round(v*10)/10).toString().replace(/\.0$/,""); }
+    var parts=[];
+    if(Math.abs(p.x)>=0.3) parts.push(n(p.x)+" cm "+I18N.t(p.x<0?"inj.cmLeft":"inj.cmRight"));
+    if(Math.abs(p.y)>=0.3) parts.push(n(p.y)+" cm "+I18N.t(p.y<0?"inj.cmUp":"inj.cmDown"));
+    return parts.length ? parts.join(" · ")+" "+I18N.t("inj.fromNavel") : I18N.t("inj.navel");
   }
-  function bodyMapSVG(st, selSite){
-    var injLog=st.injLog||[], by=lastUseBySite(injLog);
-    var suggested=DOMAIN.suggestSite(injLog, SITE_IDS);
-    var today=todayISO();
-    var svg='<svg class="bodymap" viewBox="0 0 200 250" role="img" aria-label="injection sites">';
-    // silhouette
-    svg+='<g fill="var(--soft)" stroke="var(--line)" stroke-width="1.6" stroke-linejoin="round">'
-      +'<circle cx="100" cy="26" r="15"/>'
-      +'<path d="M68 46 Q100 38 132 46 L150 92 L140 100 L142 158 Q100 170 58 158 L60 100 L50 92 Z"/>'
-      +'<path d="M62 160 L58 240 L88 240 L96 165 Z"/>'
-      +'<path d="M138 160 L142 240 L112 240 L104 165 Z"/>'
-      +'</g>';
-    // sites
-    INJ_SITES.forEach(function(s){
-      var u=by[s.id], isSel=(selSite===s.id), isSug=(!selSite && s.id===suggested);
-      var fill="#cbd5e1", op=1;
-      if(u){ fill=SUBSTANCE_COLORS[u.substance]||"#94a3b8";
-             var age=Math.max(0, daysBetweenISO(u.date, today));
-             op=Math.max(0.35, 1-age/30); }
-      svg+='<g class="site" data-site="'+s.id+'">';
-      if(isSel) svg+='<circle cx="'+s.x+'" cy="'+s.y+'" r="13" fill="none" stroke="var(--brand)" stroke-width="3"/>';
-      else if(isSug) svg+='<circle cx="'+s.x+'" cy="'+s.y+'" r="13" fill="none" stroke="var(--brand)" stroke-width="2" stroke-dasharray="3 3"/>';
-      svg+='<circle cx="'+s.x+'" cy="'+s.y+'" r="8.5" fill="'+fill+'" fill-opacity="'+op.toFixed(2)+'" stroke="#fff" stroke-width="1.5"/>';
-      svg+='<title>'+esc(I18N.t("site."+s.id))+(u?" · "+u.date:"")+'</title></g>';
+  function recentSpots(st){ return DOMAIN.recentInjPos(st, todayISO(), 14, LEGACY_SITE_CM); }
+  function bellyMapSVG(st, selPos){
+    var recent=recentSpots(st);
+    var sug = selPos ? null : DOMAIN.suggestSpot(recent);
+    var minR=DOMAIN.SPOT_MIN_CM*BELLY_CM, navR=DOMAIN.SPOT_NAVEL_CM*BELLY_CM;
+    var svg='<svg class="bellymap" id="bellyMap" viewBox="0 0 '+BELLY_W+' '+BELLY_H+'" role="img" aria-label="abdomen injection map">';
+    // skin area
+    svg+='<rect x="6" y="6" width="'+(BELLY_W-12)+'" height="'+(BELLY_H-12)+'" rx="26" fill="var(--soft)" stroke="var(--line)" stroke-width="1.6"/>';
+    // faint 5 cm grid to help judge distances
+    for(var gx=BELLY_CX%(5*BELLY_CM); gx<BELLY_W; gx+=5*BELLY_CM)
+      svg+='<line x1="'+gx+'" y1="8" x2="'+gx+'" y2="'+(BELLY_H-8)+'" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>';
+    for(var gy=BELLY_CY%(5*BELLY_CM); gy<BELLY_H; gy+=5*BELLY_CM)
+      svg+='<line x1="8" y1="'+gy+'" x2="'+(BELLY_W-8)+'" y2="'+gy+'" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>';
+    // navel + 5 cm exclusion zone
+    svg+='<g><circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="'+navR+'" fill="rgba(220,38,38,.07)" stroke="#dc2626" stroke-width="1.4" stroke-dasharray="5 4"/>'
+      +'<circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="3.4" fill="var(--muted)"/>'
+      +'<title>'+esc(I18N.t("inj.navel"))+' · 5 cm</title></g>';
+    // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge
+    recent.forEach(function(r){
+      var p=cmToSvg(r.pos), c=SUBSTANCE_COLORS[r.substance]||"#94a3b8";
+      var op=Math.max(0.35, 1-(r.ageDays/14)*0.65);
+      var tip=(r.ts?fmtDateTime(r.ts):r.date)+" · "+I18N.t("inj.seg."+r.substance)
+        +(r.dose!=null?" · "+r.dose+" "+(r.unit||""):"");
+      svg+='<g opacity="'+op.toFixed(2)+'">'
+        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+minR+'" fill="none" stroke="'+c+'" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>'
+        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="6.5" fill="'+c+'" stroke="#fff" stroke-width="1.4"/>'
+        +'<text x="'+p.x.toFixed(1)+'" y="'+(p.y+2.6).toFixed(1)+'" font-size="7.5" font-weight="800" fill="#fff" text-anchor="middle">'+r.order+'</text>'
+        +'<title>'+esc(tip)+'</title></g>';
     });
+    // suggested spot (dashed, brand) when nothing is selected
+    if(sug){
+      var sp=cmToSvg(sug);
+      svg+='<g><circle cx="'+sp.x.toFixed(1)+'" cy="'+sp.y.toFixed(1)+'" r="9" fill="none" stroke="var(--brand)" stroke-width="2" stroke-dasharray="3 3"/>'
+        +'<circle cx="'+sp.x.toFixed(1)+'" cy="'+sp.y.toFixed(1)+'" r="2.6" fill="var(--brand)"/>'
+        +'<title>'+esc(I18N.t("inj.suggested"))+'</title></g>';
+    }
+    // selected spot: crosshair, red when it breaks the rules
+    if(selPos){
+      var sel=cmToSvg(selPos), ok=DOMAIN.spotCheck(selPos, recent).ok, sc=ok?"var(--brand)":"#dc2626";
+      svg+='<g pointer-events="none"><circle cx="'+sel.x.toFixed(1)+'" cy="'+sel.y.toFixed(1)+'" r="9" fill="none" stroke="'+sc+'" stroke-width="2.6"/>'
+        +'<line x1="'+(sel.x-13).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x-5).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'<line x1="'+(sel.x+5).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x+13).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'<line x1="'+sel.x.toFixed(1)+'" y1="'+(sel.y-13).toFixed(1)+'" x2="'+sel.x.toFixed(1)+'" y2="'+(sel.y-5).toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'<line x1="'+sel.x.toFixed(1)+'" y1="'+(sel.y+5).toFixed(1)+'" x2="'+sel.x.toFixed(1)+'" y2="'+(sel.y+13).toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'</g>';
+    }
     svg+='</svg>';
     var leg='<div class="maplegend">'
       +'<span><i style="background:'+SUBSTANCE_COLORS.mounjaro+'"></i>Mounjaro</span>'
       +'<span><i style="background:'+SUBSTANCE_COLORS.trt+'"></i>TRT</span>'
-      +'<span><i style="background:'+SUBSTANCE_COLORS.peptide+'"></i>'+esc(I18N.t("inj.seg.peptide"))+'</span></div>';
+      +'<span><i style="background:'+SUBSTANCE_COLORS.peptide+'"></i>'+esc(I18N.t("inj.seg.peptide"))+'</span>'
+      +'<span><i style="background:transparent;border:1.5px dashed #dc2626"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
+      +'</div>';
     return svg+leg;
   }
   function progressBar(frac, color, leftLabel, rightLabel){
@@ -2256,7 +2332,7 @@ var UI = (function(){
     return d;
   }
 
-  var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: chosen site (null=>suggested); injEdit: id being edited
+  var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
   var injDraft={dose:"",name:"",when:""};             // preserves typed dose/blend/time across the site-pick re-render
   function viewInject(){
     var st=s(), today=todayISO();
@@ -2333,12 +2409,15 @@ var UI = (function(){
     var whenVal = injDraft.when || (editing ? (editing.ts ? tsToLocal(editing.ts) : (editing.date?editing.date+"T12:00":nowLocalDT())) : nowLocalDT());
     html+='<div class="field"><label>'+esc(I18N.t("inj.when"))+' <span class="muted tiny">('+esc(I18N.t("inj.whenHint"))+')</span></label>'
       +'<input type="datetime-local" id="injWhen" value="'+esc(whenVal)+'"></div>';
-    var selForMap = injSel || (editing?editing.site:null);
+    var selForMap = injSel || (editing ? (editing.pos || (editing.site&&LEGACY_SITE_CM[editing.site]) || null) : null);
     html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
-    html+=bodyMapSVG(st, selForMap);
-    var shownSite = selForMap || DOMAIN.suggestSite(st.injLog, SITE_IDS);
-    html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'+esc(I18N.t("site."+shownSite))+'</b>'
-      +(!selForMap?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
+    html+=bellyMapSVG(st, selForMap);
+    var shownPos = selForMap || DOMAIN.suggestSpot(recentSpots(st));
+    if(shownPos){
+      html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'+esc(posLabel(shownPos))+'</b>'
+        +(!selForMap?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
+    }
+    html+='<div class="center tiny muted" style="margin-top:4px">'+esc(I18N.t("inj.mapHint"))+'</div>';
     html+='<div class="row" style="margin-top:10px"><button class="btn" id="injLog">'+esc(editing?I18N.t("inj.update"):I18N.t("inj.logBtn"))+'</button>';
     if(editing) html+='<button class="btn ghost" id="injCancel">'+esc(I18N.t("inj.cancel"))+'</button>';
     html+='</div>';
@@ -2361,7 +2440,8 @@ var UI = (function(){
       hlist.forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):e.date;
-        html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td><td>'+esc(siteLbl)+'</td>'
+        html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td>'
+          +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
           +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
@@ -2380,10 +2460,23 @@ var UI = (function(){
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
       injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injDraft={dose:"",name:"",when:""}; viewInject();
     });});
-    // site pick (preserve typed dose/blend across the re-render)
-    $all(".site").forEach(function(g){ g.addEventListener("click",function(){
-      captureDraft(); injSel=g.getAttribute("data-site"); viewInject();
-    });});
+    // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
+    var bm=$("#bellyMap");
+    if(bm) bm.addEventListener("click",function(ev){
+      var pt=bm.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY;
+      var ctm=bm.getScreenCTM(); if(!ctm) return;
+      var loc=pt.matrixTransform(ctm.inverse());
+      var pos=svgToCm(loc.x, loc.y);
+      // clamp to the mapped skin area and keep 0.1 cm precision
+      pos.x=Math.round(Math.max(-16.5,Math.min(16.5,pos.x))*10)/10;
+      pos.y=Math.round(Math.max(-11.5,Math.min(11.5,pos.y))*10)/10;
+      captureDraft();
+      injSel=pos;
+      var chk=DOMAIN.spotCheck(pos, recentSpots(st));
+      if(chk.nearNavel) toast(I18N.t("inj.tooCloseNavel"));
+      else if(chk.nearShot) toast(I18N.t("inj.tooClose"));
+      viewInject();
+    });
     // config inputs
     if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewInject(); });
     if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=Math.max(1,parseInt(this.value,10)||3); STORE.save(); viewInject(); });
@@ -2391,7 +2484,12 @@ var UI = (function(){
     if($("#pepStart")) $("#pepStart").addEventListener("change",function(){ st.inj.peptide.cycleStart=this.value||null; STORE.save(); viewInject(); });
     // log / update
     $("#injLog").addEventListener("click",function(){
-      var site=injSel || (editing?editing.site:null) || DOMAIN.suggestSite(st.injLog, SITE_IDS);
+      // spot: a user-picked point wins; otherwise an edited entry keeps its
+      // stored spot untouched; a brand-new entry takes the suggested clear spot
+      var pos=null, site=null;
+      if(injSel){ pos=injSel; site=bellyQuadrant(injSel); }
+      else if(editing){ pos=editing.pos||null; site=editing.site||null; }
+      else { pos=DOMAIN.suggestSpot(recentSpots(st)); site=pos?bellyQuadrant(pos):null; }
       var dv=$("#injDose").value, dose=dv===""?null:parseFloat(dv);
       dose=(dose==null||isNaN(dose))?null:dose;
       var name=$("#injName")?($("#injName").value||"").trim():null;
@@ -2403,15 +2501,19 @@ var UI = (function(){
       var mjDate;
       if(editing && editing.jabOnly){
         // materialise the legacy date into a real injLog entry (keep its original day)
-        st.injLog.push({ id:uid(), ts:editing.date+"T"+ts.slice(11), date:editing.date, substance:"mounjaro", dose:dose, unit:"mg", site:site });
+        var mat={ id:uid(), ts:editing.date+"T"+ts.slice(11), date:editing.date, substance:"mounjaro", dose:dose, unit:"mg", site:site };
+        if(pos) mat.pos=pos;
+        st.injLog.push(mat);
         mjDate=editing.date;
       } else if(editing){
-        editing.dose=dose; editing.site=site; editing.ts=ts; editing.date=dateStr;
+        editing.dose=dose; editing.ts=ts; editing.date=dateStr;
+        if(injSel){ editing.site=site; editing.pos=pos; }  // spot only changes when re-picked
         if(injSeg==="peptide") editing.name=name||"";
         if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
         var unitCode=(injSeg==="peptide")?"j":"mg";
         var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
+        if(pos) entry.pos=pos;
         if(injSeg==="peptide" && name) entry.name=name;
         st.injLog.push(entry);
         if(injSeg==="mounjaro") mjDate=dateStr;
@@ -2496,7 +2598,7 @@ var UI = (function(){
     // --- mini body map (link to injections) ---
     if((st.injLog||[]).length){
       html+='<div class="card"><a href="#inject" style="text-decoration:none;color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</a>'
-        +'<div style="pointer-events:none">'+bodyMapSVG(st, null)+'</div></div>';
+        +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div></div>';
     }
 
     // --- quick actions ---
