@@ -287,10 +287,6 @@ var I18N = (function(){
     // ---- dashboard (Pulpit) ----
     "pulpit.title":{pl:"Pulpit",en:"Dashboard"},
     "pulpit.rhythm":{pl:"Rytm substancji",en:"Substance rhythm"},
-    "pulpit.today":{pl:"Dziś",en:"Today"},
-    "pulpit.diary":{pl:"Dziennik",en:"Journal"},
-    "pulpit.peptide":{pl:"Peptyd",en:"Peptide"},
-    "pulpit.done":{pl:"zapisane ✓",en:"logged ✓"},
     "pulpit.todo":{pl:"brak",en:"not yet"},
     "pulpit.latest":{pl:"Ostatnie wartości",en:"Latest readings"},
     "pulpit.bmi":{pl:"BMI",en:"BMI"},
@@ -1031,6 +1027,25 @@ var DOMAIN = (function(){
     }
     return first;
   }
+  // Most recent logged dose of a substance on or before a date (the dose the
+  // user was on at that time). null when no dosed injection exists yet.
+  function lastDoseAsOf(state, substance, uptoISO){
+    var best=null;
+    function consider(date, dose, unit){
+      if(dose==null || !date || (uptoISO && date>uptoISO)) return;
+      if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg"};
+    }
+    ((state&&state.injLog)||[]).forEach(function(e){
+      if(e && e.substance===substance) consider(e.date, e.dose, e.unit);
+    });
+    // Mounjaro dose is also logged alongside weight entries
+    if(substance==="mounjaro"){
+      ((state&&state.weightLog)||[]).forEach(function(e){
+        if(e) consider(e.date, e.doseMg, "mg");
+      });
+    }
+    return best ? {dose:best.dose, unit:best.unit} : null;
+  }
   // 1-based therapy week: week 1 = the first 7 days from the first shot.
   // null when there is no start date or the date precedes it.
   function therapyWeek(firstISO, dateISO){
@@ -1082,7 +1097,7 @@ var DOMAIN = (function(){
     healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, suggestSite:suggestSite, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
-    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek
+    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf
   };
 })();
 
@@ -1993,16 +2008,19 @@ var UI = (function(){
   // first logged shot of each substance. Empty until a first shot exists.
   function weekTags(st, dateISO){
     var out=[];
-    var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dateISO);
-    var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dateISO);
-    if(wm!=null) out.push({label:"Mounjaro", week:wm, color:SUBSTANCE_COLORS.mounjaro});
-    if(wt!=null) out.push({label:"TRT", week:wt, color:SUBSTANCE_COLORS.trt});
+    ["mounjaro","trt"].forEach(function(sub){
+      var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), dateISO);
+      if(w==null) return;
+      out.push({ label:(sub==="mounjaro"?"Mounjaro":"TRT"), week:w,
+                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO), color:SUBSTANCE_COLORS[sub] });
+    });
     return out;
   }
   function weekPills(tags, short){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
-        +esc(t.label)+' · '+esc(I18N.t(short?"diary.weekShort":"diary.week"))+' '+t.week+'</span>';
+        +esc(t.label)+' · '+esc(I18N.t(short?"diary.weekShort":"diary.week"))+' '+t.week
+        +(t.dose?' · '+esc(t.dose.dose+" "+t.dose.unit):'')+'</span>';
     }).join(" ");
   }
   function viewDiary(){
@@ -2330,7 +2348,7 @@ var UI = (function(){
   /* ============ DASHBOARD (Pulpit) ============ */
   function rhythmRow(label, color, frac, right){
     return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>'+esc(label)+'</span><span class="muted tiny">'+esc(right||"")+'</span></div>'
-      + progressBar(frac, color, "", "");
+      + progressBar(frac, color, "", "") + '</div>';
   }
   function viewDash(){
     var st=s(), today=todayISO();
@@ -2355,16 +2373,6 @@ var UI = (function(){
     if(cp){ html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, cp.frac, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total); }
     else { html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, 0, I18N.t("inj.cycleNone")); }
     html+='</div>';
-
-    // --- today status ---
-    var diaryDone=(st.journal||[]).some(function(e){return String(e.ts).slice(0,10)===today;})
-      || (st.dailyLog||[]).some(function(e){return e.date===today;});
-    var pepDone=(st.injLog||[]).some(function(e){return e.substance==="peptide" && e.date===today;});
-    function chip(ok){ return '<span class="pill" style="background:'+(ok?"rgba(22,163,74,.12)":"var(--soft)")+';color:'+(ok?"#16a34a":"var(--muted)")+'">'+esc(ok?I18N.t("pulpit.done"):I18N.t("pulpit.todo"))+'</span>'; }
-    html+='<div class="card"><h2>'+esc(I18N.t("pulpit.today"))+'</h2><div class="stats">'
-      +'<div class="stat"><span class="k">'+esc(I18N.t("pulpit.diary"))+'</span><span class="v" style="font-size:15px">'+chip(diaryDone)+'</span></div>'
-      +'<div class="stat"><span class="k">'+esc(I18N.t("pulpit.peptide"))+'</span><span class="v" style="font-size:15px">'+chip(pepDone)+'</span></div>'
-      +'</div></div>';
 
     // --- latest readings: BP, weight + delta, BMI ---
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
