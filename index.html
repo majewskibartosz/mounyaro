@@ -461,6 +461,11 @@ var I18N = (function(){
     "weight.totalPct":{pl:"Zmiana od startu (%)",en:"Change from start (%)"},
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
+    "weight.waistCm":{pl:"Obwód pasa (cm)",en:"Waist (cm)"},
+    "weight.waist":{pl:"Obwód pasa",en:"Waist"},
+    "weight.waistTotal":{pl:"Zmiana pasa",en:"Waist change"},
+    "weight.legendWaist":{pl:"Przerywana linia = obwód pasa (cm, prawa oś)",en:"Dashed line = waist (cm, right axis)"},
+    "corr.waist":{pl:"Obwód pasa",en:"Waist"},
 
     "bmi.title":{pl:"Twoje BMI",en:"Your BMI"},
     "bmi.sub":{pl:"BMI wg standardów WHO. Wzrost i waga są wymagane.",en:"BMI by WHO standards. Height and weight required."},
@@ -1021,6 +1026,10 @@ var DOMAIN = (function(){
       (state.weightLog||[]).forEach(function(e){
         if(e && e.weightKg!=null) out.push({date:e.date, value:Number(e.weightKg)});
       });
+    } else if(sourceId==="waist"){
+      (state.weightLog||[]).forEach(function(e){
+        if(e && e.waistCm!=null) out.push({date:e.date, value:Number(e.waistCm)});
+      });
     } else if(sourceId==="mounjaroDose"){
       (state.weightLog||[]).forEach(function(e){
         if(e && e.doseMg!=null) out.push({date:e.date, value:Number(e.doseMg)});
@@ -1423,7 +1432,10 @@ var CHART = (function(){
     if(data.length===0){
       return '<div class="empty">'+esc(I18N.t("weight.empty"))+'</div>';
     }
-    var W=320, H=200, mL=38, mR=14, mT=14, mB=26;
+    // waist series (optional): dashed line on its own right-hand axis
+    var waistPts = data.filter(function(e){ return e.waistCm!=null; });
+    var hasWaist = waistPts.length>0;
+    var W=320, H=200, mL=38, mR=hasWaist?38:14, mT=14, mB=26;
     var iw=W-mL-mR, ih=H-mT-mB;
     var xs = data.map(function(e){ return new Date(e.date+"T12:00:00").getTime(); });
     var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
@@ -1433,6 +1445,14 @@ var CHART = (function(){
     var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
     function X(t){ return maxX===minX ? mL+iw/2 : mL + (t-minX)/(maxX-minX)*iw; }
     function Y(v){ return mT + (1-(v-minY)/(maxY-minY))*ih; }
+    var minW=0, maxW=0;
+    if(hasWaist){
+      var ws = waistPts.map(function(e){ return e.waistCm; });
+      minW=Math.min.apply(null,ws); maxW=Math.max.apply(null,ws);
+      if(minW===maxW){ minW-=1; maxW+=1; }
+      var padW=(maxW-minW)*0.12; minW-=padW; maxW+=padW;
+    }
+    function Yw(v){ return mT + (1-(v-minW)/(maxW-minW))*ih; }
 
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="weight chart">';
     // gridlines + y ticks
@@ -1442,6 +1462,10 @@ var CHART = (function(){
       var y = Y(val);
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
       svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
+      if(hasWaist){
+        var wv = minW + (maxW-minW)*r/rows;
+        svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#6366f1" text-anchor="start">'+wv.toFixed(1)+'</text>';
+      }
     }
     // x labels (first, mid, last)
     function dlabel(t){ var d=new Date(t); return (d.getDate())+"."+(d.getMonth()+1); }
@@ -1450,6 +1474,18 @@ var CHART = (function(){
       var x=X(xs[i]);
       svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
     });
+    // waist: dashed line + small points on the right-hand scale (under the weight line)
+    if(hasWaist){
+      function Xw(e){ return X(new Date(e.date+"T12:00:00").getTime()); }
+      if(waistPts.length>1){
+        var wpts = waistPts.map(function(e){ return Xw(e).toFixed(1)+","+Yw(e.waistCm).toFixed(1); }).join(" ");
+        svg+='<polyline points="'+wpts+'" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"/>';
+      }
+      waistPts.forEach(function(e){
+        svg+='<circle cx="'+Xw(e).toFixed(1)+'" cy="'+Yw(e.waistCm).toFixed(1)+'" r="3.2" fill="#6366f1" stroke="#fff" stroke-width="1.2">'
+           +'<title>'+esc(e.date+" · "+e.waistCm+" cm")+'</title></circle>';
+      });
+    }
     // trend line
     if(data.length>1){
       var pts = data.map(function(e,i){ return X(xs[i]).toFixed(1)+","+Y(e.weightKg).toFixed(1); }).join(" ");
@@ -1459,7 +1495,7 @@ var CHART = (function(){
     data.forEach(function(e,i){
       var x=X(xs[i]).toFixed(1), y=Y(e.weightKg).toFixed(1);
       var c=doseColor(e.doseMg);
-      var tip = e.date+" · "+e.weightKg+" kg"+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
+      var tip = e.date+" · "+e.weightKg+" kg"+(e.waistCm!=null?" · "+e.waistCm+" cm":"")+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
       svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+c+'" stroke="#fff" stroke-width="1.5">'
          +'<title>'+esc(tip)+'</title></circle>';
     });
@@ -1748,21 +1784,31 @@ var UI = (function(){
       var diff=cur-first;
       var pct = first>0 ? diff/first*100 : 0;
       var col = diff<=0?"var(--good)":"var(--bad)";
-      html+='<div class="legend"><span>'+esc(I18N.t("weight.legendDose"))+'</span></div>'
+      var waistLog = st.weightLog.filter(function(e){ return e.waistCm!=null; }); // newest first
+      html+='<div class="legend"><span>'+esc(I18N.t("weight.legendDose"))+'</span>'
+          + (waistLog.length?'<span style="color:#6366f1">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
+          + '</div>'
           + '<div class="stats" style="margin-top:12px">'
           + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
           + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+col+'">'+(diff>0?"+":"")+fmtNum(diff,1)+' kg</span></div>'
-          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.totalPct"))+'</span><span class="v" style="color:'+col+'">'+(pct>0?"+":"")+fmtNum(pct,1)+'%</span></div>'
-          + '</div>';
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.totalPct"))+'</span><span class="v" style="color:'+col+'">'+(pct>0?"+":"")+fmtNum(pct,1)+'%</span></div>';
+      if(waistLog.length){
+        var wCur=waistLog[0].waistCm, wFirst=waistLog[waistLog.length-1].waistCm, wDiff=wCur-wFirst;
+        var wCol = wDiff<=0?"var(--good)":"var(--bad)";
+        html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v">'+fmtNum(wCur,1)+' cm</span></div>'
+            + '<div class="stat"><span class="k">'+esc(I18N.t("weight.waistTotal"))+'</span><span class="v" style="color:'+wCol+'">'+(wDiff>0?"+":"")+fmtNum(wDiff,1)+' cm</span></div>';
+      }
+      html+='</div>';
     }
     html+='</div>';
 
     // logging form card (below the chart)
     html+= '<div class="card">'
     +   '<p class="sub">'+esc(I18N.t("weight.sub"))+'</p>'
-    +   '<div class="grid g3">'
+    +   '<div class="grid g2">'
     +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+todayISO()+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="'+(last!=null?last:"7.5")+'"></div>'
     +   '</div>'
     +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80"></div>'
@@ -1774,10 +1820,12 @@ var UI = (function(){
     if(st.weightLog.length){
       html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><thead><tr>'
           + '<th>'+esc(I18N.t("common.date"))+'</th><th class="num">'+esc(I18N.t("common.weight"))+'</th>'
+          + '<th class="num">'+esc(I18N.t("weight.waist"))+'</th>'
           + '<th class="num">'+esc(I18N.t("common.dose"))+'</th><th>'+esc(I18N.t("common.note"))+'</th><th></th>'
           + '</tr></thead><tbody>';
       st.weightLog.forEach(function(e){
         html+='<tr><td>'+esc(e.date)+'</td><td class="num">'+fmtNum(e.weightKg,1)+'</td>'
+            + '<td class="num">'+(e.waistCm!=null?fmtNum(e.waistCm,1)+' cm':'—')+'</td>'
             + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
             + '<td>'+esc(e.note||"")+'</td>'
             + '<td class="num"><button class="btn ghost sm wDel" data-id="'+esc(e.id)+'">✕</button></td></tr>';
@@ -1803,7 +1851,9 @@ var UI = (function(){
       var kg=parseFloat($("#wKg").value);
       if(isNaN(kg)||kg<=0){ $("#wKg").focus(); return; }
       var dose=$("#wDose").value===""?null:parseFloat($("#wDose").value);
+      var waist=$("#wWaist").value===""?null:parseFloat($("#wWaist").value);
       var entry={ id:uid(), date:$("#wDate").value||todayISO(), weightKg:kg,
+                  waistCm:(waist==null||isNaN(waist)||waist<=0)?null:waist,
                   doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#wNote").value||"").trim() };
       st.weightLog.push(entry);
       st.weightLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
@@ -2384,6 +2434,12 @@ var UI = (function(){
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData"), wcol="var(--ink)";
     if(wl.length>1){ var first=wl[wl.length-1].weightKg, d=curW-first; wcol=d<=0?"var(--good)":"var(--bad)"; wtxt+=" ("+(d>0?"+":"")+fmtNum(d,1)+")"; }
     html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span></div>';
+    var waistL=wl.filter(function(e){return e.waistCm!=null;});
+    if(waistL.length){
+      var curWa=waistL[0].waistCm, watxt=fmtNum(curWa,1)+" cm", wacol="var(--ink)";
+      if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
+      html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span></div>';
+    }
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
       html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span></div>'; }
@@ -2425,6 +2481,7 @@ var UI = (function(){
     }
     if((st.weightLog||[]).length){
       opts.push({ id:"weight", label:I18N.t("corr.weight") });
+      if(st.weightLog.some(function(e){return e.waistCm!=null;})) opts.push({ id:"waist", label:I18N.t("corr.waist") });
       if(st.weightLog.some(function(e){return e.doseMg!=null;})) opts.push({ id:"mounjaroDose", label:I18N.t("corr.mjDose") });
     }
     return opts;
