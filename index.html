@@ -1887,7 +1887,9 @@ var UI = (function(){
       for(var wi=0;wi<st.weightLog.length;wi++){ if(st.weightLog[wi].id===weightEdit){ editing=st.weightLog[wi]; break; } }
       if(!editing) weightEdit=null;
     }
-    var last = st.weightLog.length ? st.weightLog[0].doseMg : null;
+    // default the dose to the most recently injected Mounjaro dose
+    var lastD = DOMAIN.lastDoseAsOf(st, "mounjaro");
+    var last = lastD ? lastD.dose : null;
     var html=''
     + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>';
 
@@ -1925,7 +1927,7 @@ var UI = (function(){
     +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+esc(editing?editing.date:todayISO())+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0" value="'+(editing?esc(editing.weightKg):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100" value="'+(editing&&editing.waistCm!=null?esc(editing.waistCm):'')+'"></div>'
-    +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="'+(last!=null?last:"7.5")+'" value="'+(editing&&editing.doseMg!=null?esc(editing.doseMg):'')+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="7.5" value="'+(editing?(editing.doseMg!=null?esc(editing.doseMg):''):(last!=null?esc(last):''))+'"></div>'
     +   '</div>'
     +   '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="wNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
     +   '<div class="row"><button class="btn" id="wAdd">'+esc(editing?I18N.t("common.update"):I18N.t("weight.add"))+'</button>'
