@@ -150,6 +150,8 @@
   /* injection-day marker (syringe next to dates) */
   .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
   .injmark svg{width:13px;height:13px}
+  .daymarks{margin-top:1px;line-height:1}
+  .daymarks .injmark{margin-left:0;margin-right:5px}
   /* journal day grouping: quiet uppercase date + compact context pills on one line */
   .dayhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;font-weight:800;
     text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
@@ -2133,8 +2135,8 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'+injDayMarkers(st, e.date)
-            + (e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
+        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'+injDayMarkersBlock(st, e.date)
+            + (e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:25%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
             + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
             + '<td style="width:24%">'+dosePillsAsOf(st, e.date, e.doseMg)+'</td>'
@@ -2303,9 +2305,9 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
-        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+injDayMarkers(st, String(e.ts).slice(0,10))
-            +(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
-            +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
+        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+injDayMarkersBlock(st, String(e.ts).slice(0,10))
+            +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
+            +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
             + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')+'</td>'
             + '<td style="width:25%">'+doseCell(e)+'</td>'
@@ -2588,6 +2590,11 @@ var UI = (function(){
     return subs.map(function(sub){
       return '<span class="injmark" title="'+esc(I18N.t("inj.seg."+sub))+'" style="color:'+(SUBSTANCE_COLORS[sub]||"#94a3b8")+'">'+icon("inject")+'</span>';
     }).join('');
+  }
+  // same markers on their own line (for narrow date columns in history tables)
+  function injDayMarkersBlock(st, dISO){
+    var m=injDayMarkers(st, dISO);
+    return m ? '<div class="daymarks">'+m+'</div>' : '';
   }
 
   // single-substance pill for "now": "2.5 mg t5 · d5" (no label — context names it)
