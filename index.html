@@ -2019,17 +2019,15 @@ var UI = (function(){
 
     // history
     if(st.weightLog.length){
-      html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><thead><tr>'
-          + '<th>'+esc(I18N.t("common.date"))+'</th><th class="num">'+esc(I18N.t("common.weight"))+'</th>'
-          + '<th class="num">'+esc(I18N.t("weight.waist"))+'</th>'
-          + '<th class="num">'+esc(I18N.t("common.dose"))+'</th><th>'+esc(I18N.t("common.note"))+'</th><th></th>'
-          + '</tr></thead><tbody>';
+      // injections-style rows: no header, bold primary value, details underneath
+      html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td><span class="nowrap">'+esc(fmtDate(e.date,true))+'</span></td><td class="num">'+fmtNum(e.weightKg,1)+'</td>'
-            + '<td class="num">'+(e.waistCm!=null?'<span class="nowrap">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'—')+'</td>'
-            + '<td class="num">'+(e.doseMg!=null?'<span class="nowrap">'+esc(e.doseMg)+' mg</span>':'—')+'</td>'
-            + '<td>'+esc(e.note||"")+'</td>'
+        html+='<tr><td><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'
+            + (e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
+            + '<td class="num"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
+            + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
+            + '<td class="num">'+(e.doseMg!=null?'<span class="nowrap muted">'+esc(e.doseMg)+' mg</span>':'—')+'</td>'
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
@@ -2202,16 +2200,14 @@ var UI = (function(){
 
     // history
     if(log.length){
-      html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><thead><tr>'
-          + '<th>'+esc(I18N.t("bp.when"))+'</th><th class="num">'+esc(I18N.t("bp.reading"))+'</th>'
-          + '<th class="num">bpm</th><th>'+esc(I18N.t("common.dose"))+'</th><th></th>'
-          + '</tr></thead><tbody>';
+      // injections-style rows: no header, bold reading, pulse/notes underneath
+      html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
         html+='<tr><td>'+esc(fmtDateTime(e.ts))+(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
-            + '<td class="num"><b>'+e.sys+'/'+e.dia+'</b></td>'
-            + '<td class="num">'+(e.pulse!=null?e.pulse:'—')+'</td>'
+            + '<td class="num"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
+            + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')+'</td>'
             + '<td class="num">'+doseCell(e)+'</td>'
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
