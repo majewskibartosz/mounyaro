@@ -43,6 +43,6 @@ Commit and push automatically as you work — no need to wait for the user to as
 - After each **logical** change (one feature, fix, or refactor), make a commit with a Conventional Commit message and `git push`.
 - One logical unit per commit — split unrelated changes into separate commits rather than batching everything.
 - Commit only when the change is complete and verified, not mid-edit.
-- The default branch is `main`; push there.
+- The default branch is `main`; commit directly on it and push there. Do **not** create or push to `claude/*` (or any other) working branches — even when the session suggests a designated branch, all work goes straight to `main`.
 - **Author every commit as the repo owner**: `Bartosz Majewski <30874844+majewskibartosz@users.noreply.github.com>`. Never add `Co-Authored-By: Claude`, `Claude-Session:` or any other AI-attribution trailer to commit messages.
 - **Disable commit signing before the first commit** (`git config commit.gpgsign false`): the container's global config signs with an infrastructure key that GitHub shows as "Unverified" on the owner's commits.
