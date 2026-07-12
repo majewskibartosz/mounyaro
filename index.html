@@ -471,6 +471,7 @@ var I18N = (function(){
     "common.add":{pl:"Dodaj",en:"Add"},
     "common.delete":{pl:"Usuń",en:"Delete"},
     "common.date":{pl:"Data",en:"Date"},
+    "common.time":{pl:"Godzina",en:"Time"},
     "common.note":{pl:"Notatka",en:"Note"},
     "common.optional":{pl:"opcjonalnie",en:"optional"},
     "install.btn":{pl:"Zainstaluj",en:"Install app"},
@@ -2286,7 +2287,8 @@ var UI = (function(){
     +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80" value="'+(editing?esc(editing.dia):'')+'"></div>'
     +   '<div class="field"><label>'+esc(I18N.t("bp.pulse"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bpPulse" placeholder="70" value="'+(editing&&editing.pulse!=null?esc(editing.pulse):'')+'"></div>'
     + '</div>'
-    + '<div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="datetime-local" id="bpWhen" value="'+(editing?toLocalDT(editing.ts):nowLocalDT())+'"></div>'
+    + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="date" id="bpDate" value="'+(editing?toLocalDT(editing.ts):nowLocalDT()).slice(0,10)+'"></div>'
+    + '<div class="field"><label>'+esc(I18N.t("common.time"))+'</label><input type="time" id="bpTime" value="'+(editing?toLocalDT(editing.ts):nowLocalDT()).slice(11,16)+'"></div></div>'
     + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+((editing?editing.fasting:morning)?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
     + '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="text" id="bpNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
     + '<div class="row"><button class="btn" id="bpAdd">'+esc(editing?I18N.t("common.update"):I18N.t("bp.add"))+'</button>'
@@ -2319,7 +2321,7 @@ var UI = (function(){
       if(isNaN(sys)||sys<=0){ $("#bpSys").focus(); return; }
       if(isNaN(dia)||dia<=0){ $("#bpDia").focus(); return; }
       var pulse=$("#bpPulse").value===""?null:parseInt($("#bpPulse").value,10);
-      var whenVal=$("#bpWhen").value;
+      var whenVal=$("#bpDate").value ? $("#bpDate").value+"T"+($("#bpTime").value||"12:00") : "";
       var when=whenVal?new Date(whenVal):new Date();
       if(isNaN(when.getTime())) when=new Date();
       var fields={ ts:when.toISOString(), sys:sys, dia:dia,
@@ -2342,9 +2344,9 @@ var UI = (function(){
     bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
     bindZoom("bpZoom", function(v){bpZoom=v;}, viewBP);
     // backfilling? recompute the dose/week pills for the picked date
-    $("#bpWhen").addEventListener("input",function(){
+    $("#bpDate").addEventListener("input",function(){
       var c=$("#bpCtx"); if(!c) return;
-      var h=bpCtxHtml((this.value||nowLocalDT()).slice(0,10));
+      var h=bpCtxHtml(this.value||todayISO());
       c.innerHTML=h; c.style.display=h?"":"none";
     });
     $all(".bpEdit").forEach(function(b){ b.addEventListener("click",function(){
@@ -2447,7 +2449,8 @@ var UI = (function(){
       + '<div class="row" id="jCtx" style="margin:0 0 10px">'+ctxHtml(whenVal.slice(0,10))+'</div>'
       + stateRowsHTML()
       + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'">'+(editing?esc(editing.text):'')+'</textarea></div>'
-      + '<div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="datetime-local" id="jWhen" value="'+whenVal+'"></div>'
+      + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="date" id="jDate" value="'+whenVal.slice(0,10)+'"></div>'
+      + '<div class="field"><label>'+esc(I18N.t("common.time"))+'</label><input type="time" id="jTime" value="'+whenVal.slice(11,16)+'"></div></div>'
       + '<div class="row"><button class="btn" id="jAdd">'+esc(I18N.t(editing?"diary.update":"diary.add"))+'</button>'
       + (editing?'<button class="btn ghost" id="jCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
       + '<span class="muted tiny">'+esc(I18N.t("diary.ctrlEnter"))+'</span></div>'
@@ -2509,7 +2512,7 @@ var UI = (function(){
       var txt=($("#jText").value||"").trim();
       var hasState=stateDraftHasValues();
       if(!txt && !hasState){ $("#jText").focus(); return; }
-      var wv=$("#jWhen").value;
+      var wv=$("#jDate").value ? $("#jDate").value+"T"+($("#jTime").value||"12:00") : "";
       var when=wv?new Date(wv):new Date();
       if(isNaN(when.getTime())) when=new Date();
       if(!st.journal) st.journal=[];
@@ -2533,8 +2536,8 @@ var UI = (function(){
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // backfilling? recompute the therapy-week/dose pills for the picked date
-    $("#jWhen").addEventListener("input",function(){
-      var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml((this.value||"").slice(0,10)||today);
+    $("#jDate").addEventListener("input",function(){
+      var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml(this.value||today);
     });
     $("#jText").addEventListener("keydown",function(ev){
       if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
@@ -2778,8 +2781,9 @@ var UI = (function(){
     // when given: captured as "now" by default, editable to backfill (parity with BP)
     function tsToLocal(ts){ var d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
     var whenVal = injDraft.when || (editing ? (editing.ts ? tsToLocal(editing.ts) : (editing.date?editing.date+"T12:00":nowLocalDT())) : nowLocalDT());
-    html+='<div class="field"><label>'+esc(I18N.t("inj.when"))+' <span class="muted tiny">('+esc(I18N.t("inj.whenHint"))+')</span></label>'
-      +'<input type="datetime-local" id="injWhen" value="'+esc(whenVal)+'"></div>';
+    html+='<div class="grid g2"><div class="field"><label>'+esc(I18N.t("inj.when"))+' <span class="muted tiny">('+esc(I18N.t("inj.whenHint"))+')</span></label>'
+      +'<input type="date" id="injDate" value="'+esc(whenVal.slice(0,10))+'"></div>'
+      +'<div class="field"><label>'+esc(I18N.t("common.time"))+'</label><input type="time" id="injTime" value="'+esc(whenVal.slice(11,16))+'"></div></div>';
     var selForMap = injSel || (editing ? (editing.pos || (editing.site&&LEGACY_SITE_CM[editing.site]) || null) : null);
     html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
     html+=bellyMapSVG(st, selForMap, true);
@@ -2829,7 +2833,7 @@ var UI = (function(){
     function captureDraft(){
       if($("#injDose")) injDraft.dose=$("#injDose").value;
       if($("#injName")) injDraft.name=$("#injName").value;
-      if($("#injWhen")) injDraft.when=$("#injWhen").value;
+      if($("#injDate")) injDraft.when=$("#injDate").value ? $("#injDate").value+"T"+($("#injTime").value||"12:00") : "";
     }
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
@@ -2870,7 +2874,7 @@ var UI = (function(){
       dose=(dose==null||isNaN(dose))?null:dose;
       var name=$("#injName")?($("#injName").value||"").trim():null;
       // when given: chosen datetime (defaults to now); ts is full datetime, date is the day part
-      var wv=$("#injWhen")?$("#injWhen").value:"";
+      var wv=$("#injDate")&&$("#injDate").value ? $("#injDate").value+"T"+($("#injTime").value||"12:00") : "";
       var when=wv?new Date(wv):new Date(); if(isNaN(when.getTime())) when=new Date();
       var ts=when.toISOString(), dateStr=ts.slice(0,10);
       if(injSeg==="peptide") st.inj.peptide.name=name||"";   // remember last blend
@@ -2952,7 +2956,7 @@ var UI = (function(){
     html+='</div>';
 
     // --- latest readings: BP, weight + delta, BMI --- (each dated: values come from different days)
-    function statDate(iso){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+'</span>':''; }
+    function statDate(iso){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+injDayMarkers(st,iso)+'</span>':''; }
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
     html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10)):'')+'</div>';
