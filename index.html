@@ -425,7 +425,9 @@ var I18N = (function(){
     "bp.history":{pl:"Historia pomiarów",en:"Reading history"},
     "bp.latest":{pl:"Ostatni pomiar",en:"Latest reading"},
     "bp.reading":{pl:"Pomiar",en:"Reading"},
-    "bp.legend":{pl:"● Górne  ● Dolne  ● Tętno",en:"● Systolic  ● Diastolic  ● Pulse"},
+    "bp.legSys":{pl:"Górne",en:"Systolic"},
+    "bp.legDia":{pl:"Dolne",en:"Diastolic"},
+    "bp.legPulse":{pl:"Tętno",en:"Pulse"},
     "bp.fastingTag":{pl:"na czczo",en:"fasting"},
     "bp.confirmDel":{pl:"Usunąć ten pomiar?",en:"Delete this reading?"},
     "bp.when":{pl:"Czas pomiaru",en:"Reading time"},
@@ -2076,7 +2078,12 @@ var UI = (function(){
         + '<div id="bpChart">'+CHART.renderBP(log)+'</div>';
     if(log.length){
       var L=log[0];
-      html+='<div class="legend"><span>'+esc(I18N.t("bp.legend"))+'</span></div>'
+      // colour key matching the chart lines: red=systolic, blue=diastolic, grey=pulse
+      html+='<div class="legend">'
+          + '<span><i style="background:#dc2626;border-radius:50%"></i>'+esc(I18N.t("bp.legSys"))+'</span>'
+          + '<span><i style="background:#0284c7;border-radius:50%"></i>'+esc(I18N.t("bp.legDia"))+'</span>'
+          + '<span><i style="background:#94a3b8;border-radius:50%"></i>'+esc(I18N.t("bp.legPulse"))+'</span>'
+          + '</div>'
           + '<div class="stats" style="margin-top:12px">'
           + '<div class="stat"><span class="k">'+esc(I18N.t("bp.latest"))+'</span><span class="v">'+L.sys+'/'+L.dia+'</span></div>'
           + (L.pulse!=null?'<div class="stat"><span class="k">'+esc(I18N.t("bp.pulse"))+'</span><span class="v">'+L.pulse+'</span></div>':'')
