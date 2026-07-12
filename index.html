@@ -464,6 +464,9 @@ var I18N = (function(){
     "weight.totalPct":{pl:"Zmiana od startu (%)",en:"Change from start (%)"},
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
+    "chart.zoom7":{pl:"Przybliż: ostatnie 7 pomiarów",en:"Zoom in: last 7 readings"},
+    "chart.zoomAll":{pl:"Oddal: cała historia",en:"Zoom out: full history"},
+    "chart.last7":{pl:"ostatnie 7 pomiarów",en:"last 7 readings"},
     "weight.waistCm":{pl:"Obwód pasa (cm)",en:"Waist (cm)"},
     "weight.waist":{pl:"Obwód pasa",en:"Waist"},
     "weight.waistTotal":{pl:"Zmiana pasa",en:"Waist change"},
@@ -1774,6 +1777,27 @@ var UI = (function(){
     });});
   }
 
+  /* ---- chart zoom: "+" narrows to the last N readings, "−" restores full history ---- */
+  var CHART_ZOOM_N=7;
+  function zoomHeader(titleKey, cls, zoomed, total){
+    var btns = total>CHART_ZOOM_N
+      ? '<div class="row" style="gap:6px;flex-wrap:nowrap">'
+        +'<button type="button" class="btn ghost sm '+cls+'" data-z="1" style="min-width:40px" title="'+esc(I18N.t("chart.zoom7"))+'"'+(zoomed?' disabled':'')+'>+</button>'
+        +'<button type="button" class="btn ghost sm '+cls+'" data-z="0" style="min-width:40px" title="'+esc(I18N.t("chart.zoomAll"))+'"'+(zoomed?'':' disabled')+'>&minus;</button>'
+        +'</div>'
+      : '';
+    return '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap;margin-bottom:4px">'
+      +'<h2 style="margin:0">'+esc(I18N.t(titleKey))
+      +(zoomed&&btns?' <span class="muted tiny" style="font-weight:600">('+esc(I18N.t("chart.last7"))+')</span>':'')+'</h2>'
+      +btns+'</div>';
+  }
+  function bindZoom(cls, setZ, rerender){
+    $all("."+cls).forEach(function(b){ b.addEventListener("click",function(){
+      if(b.disabled) return;
+      setZ(b.getAttribute("data-z")==="1"); rerender();
+    });});
+  }
+
   /* ============ JAB (next-shot countdown ring) ============ */
   // Urgency palette: green (just injected) -> amber -> red (shot due).
   var RING_GREEN="#16a34a", RING_AMBER="#f59e0b", RING_RED="#dc2626";
@@ -1882,6 +1906,7 @@ var UI = (function(){
   /* ============ WEIGHT ============ */
   var weightEdit=null;  // id of the entry being edited (null = adding a new one)
   var weightPage=0;     // history page (5 rows each)
+  var weightZoom=false; // chart: true = last 7 readings, false = full history
   function viewWeight(){
     var st=s();
     var editing=null;
@@ -1895,9 +1920,11 @@ var UI = (function(){
     var html=''
     + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>';
 
-    // chart card (on top)
-    html+='<div class="card"><h2>'+esc(I18N.t("weight.chartTitle"))+'</h2>'
-        + '<div id="chartHolder">'+CHART.render(st.weightLog)+'</div>';
+    // chart card (on top); "+" zooms to the last 7 readings so recent trends
+    // (e.g. waist, measured only recently) are readable
+    var chartLog = (weightZoom && st.weightLog.length>CHART_ZOOM_N) ? st.weightLog.slice(0,CHART_ZOOM_N) : st.weightLog;
+    html+='<div class="card">'+zoomHeader("weight.chartTitle","wZoom",weightZoom,st.weightLog.length)
+        + '<div id="chartHolder">'+CHART.render(chartLog)+'</div>';
     if(st.weightLog.length){
       var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
       var diff=cur-first;
@@ -1993,6 +2020,7 @@ var UI = (function(){
     });
     if($("#wCancel")) $("#wCancel").addEventListener("click",function(){ weightEdit=null; viewWeight(); });
     bindPager("wPg", function(){return weightPage;}, function(v){weightPage=v;}, viewWeight);
+    bindZoom("wZoom", function(v){weightZoom=v;}, viewWeight);
     $all(".wEdit").forEach(function(b){ b.addEventListener("click",function(){
       weightEdit=b.getAttribute("data-id"); viewWeight(); window.scrollTo(0,0);
     });});
@@ -2045,6 +2073,7 @@ var UI = (function(){
   /* ============ BLOOD PRESSURE ============ */
   var bpEdit=null;  // id of the reading being edited (null = adding a new one)
   var bpPage=0;     // history page (5 rows each)
+  var bpZoom=false; // chart: true = last 7 readings, false = full history
   function viewBP(){
     var st=s();
     var log = st.bp.log || [];
@@ -2073,9 +2102,10 @@ var UI = (function(){
     var html=''
     + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
 
-    // chart card (on top)
-    html+='<div class="card"><h2>'+esc(I18N.t("bp.chartTitle"))+'</h2>'
-        + '<div id="bpChart">'+CHART.renderBP(log)+'</div>';
+    // chart card (on top); "+" zooms to the last 7 readings for a closer trend
+    var chartLog = (bpZoom && log.length>CHART_ZOOM_N) ? log.slice(0,CHART_ZOOM_N) : log;
+    html+='<div class="card">'+zoomHeader("bp.chartTitle","bpZoom",bpZoom,log.length)
+        + '<div id="bpChart">'+CHART.renderBP(chartLog)+'</div>';
     if(log.length){
       var L=log[0];
       // colour key matching the chart lines: red=systolic, blue=diastolic, grey=pulse
@@ -2157,6 +2187,7 @@ var UI = (function(){
     });
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
     bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
+    bindZoom("bpZoom", function(v){bpZoom=v;}, viewBP);
     // backfilling? recompute the dose/week pills for the picked date
     $("#bpWhen").addEventListener("input",function(){
       var c=$("#bpCtx"); if(!c) return;
