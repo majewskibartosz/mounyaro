@@ -418,6 +418,9 @@ var I18N = (function(){
     "diary.editing":{pl:"Edytujesz notatkę — zmień treść lub czas i zaktualizuj.",en:"Editing a note — change the text or time and update."},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
+    "common.doseWeekLetter":{pl:"d",en:"d"},
+    "set.doseWeeks":{pl:"Tydzień na obecnej dawce w pigułkach (d)",en:"Week on the current dose in pills (d)"},
+    "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating."},
     "common.edit":{pl:"Edytuj",en:"Edit"},
     "common.update":{pl:"Zaktualizuj",en:"Update"},
     "common.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
@@ -1085,6 +1088,31 @@ var DOMAIN = (function(){
     }
     return best ? {dose:best.dose, unit:best.unit} : null;
   }
+  // How long the dose in effect on uptoISO has been running: walks back
+  // through same-substance doses while they stay identical. Returns
+  // {dose, unit, sinceISO, weeks} (weeks is 1-based like therapyWeek),
+  // or null when no dosed entry covers the date.
+  function doseStreakAsOf(state, substance, uptoISO){
+    var doses=[];
+    ((state&&state.injLog)||[]).forEach(function(e){
+      if(e && e.substance===substance && e.dose!=null && e.date && (!uptoISO || e.date<=uptoISO))
+        doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg"});
+    });
+    if(substance==="mounjaro"){
+      ((state&&state.weightLog)||[]).forEach(function(e){
+        if(e && e.doseMg!=null && e.date && (!uptoISO || e.date<=uptoISO))
+          doses.push({date:e.date, dose:e.doseMg, unit:"mg"});
+      });
+    }
+    if(!doses.length) return null;
+    doses.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
+    var cur=doses[0], since=cur.date;
+    for(var i=1;i<doses.length;i++){
+      if(doses[i].dose!==cur.dose) break;
+      since=doses[i].date;
+    }
+    return { dose:cur.dose, unit:cur.unit, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
+  }
   // 1-based therapy week: week 1 = the first 7 days from the first shot.
   // null when there is no start date or the date precedes it.
   function therapyWeek(firstISO, dateISO){
@@ -1179,7 +1207,7 @@ var DOMAIN = (function(){
     healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
-    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf,
+    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
   };
@@ -1194,7 +1222,7 @@ var STORE = (function(){
   function defaults(){
     return {
       schemaVersion:1,
-      settings:{ lang:"pl", theme:"light", currency:"PLN", goldenDose:{enabled:false, extraClicks:8},
+      settings:{ lang:"pl", theme:"light", currency:"PLN", showDoseWeeks:true, goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" } },
@@ -2277,7 +2305,8 @@ var UI = (function(){
       var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), dateISO);
       if(w==null) return;
       out.push({ label:(sub==="mounjaro"?"Mounjaro":"TRT"), week:w,
-                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO), color:SUBSTANCE_COLORS[sub] });
+                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO),
+                 doseWeek:doseWeekAsOf(st,sub,dateISO), color:SUBSTANCE_COLORS[sub] });
     });
     return out;
   }
@@ -2285,7 +2314,8 @@ var UI = (function(){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
         +esc(t.label)+' · '+esc(I18N.t(short?"diary.weekShort":"diary.week"))+' '+t.week
-        +(t.dose?' · '+esc(t.dose.dose+" "+t.dose.unit):'')+'</span>';
+        +(t.dose?' · '+esc(t.dose.dose+" "+t.dose.unit):'')
+        +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
   }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
@@ -2388,18 +2418,25 @@ var UI = (function(){
   // week on that substance as of that date ("t5"), styled exactly like the
   // rest of the pill text. manualMg is a legacy, manually entered Mounjaro
   // dose shown only when no injection data covers the date.
-  function dosePill(label, txt, color, week){
+  function dosePill(label, txt, color, week, doseWeek){
     return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+label+' '+esc(txt)
-      +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')+'</span>';
+      +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')
+      +(doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+doseWeek:'')+'</span>';
+  }
+  // week on the current dose, only when the setting is on
+  function doseWeekAsOf(st, sub, dISO){
+    if(!st.settings.showDoseWeeks) return null;
+    var s=DOMAIN.doseStreakAsOf(st, sub, dISO);
+    return s?s.weeks:null;
   }
   function dosePillsAsOf(st, dISO, manualMg){
     var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",dISO), trt=DOMAIN.lastDoseAsOf(st,"trt",dISO);
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro, wm));
-    if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt, wt));
-    if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro, wm));
+    if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
+    if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt, wt, doseWeekAsOf(st,"trt",dISO)));
+    if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
 
@@ -3356,6 +3393,9 @@ var UI = (function(){
       +'<button type="button" data-pc="dest">'+esc(I18N.t("set.pcDest"))+'</button>'
     +'</div>'
     +'<div id="pcBody"></div></div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.doseWeeks"))+'</h2><p class="sub">'+esc(I18N.t("set.doseWeeksSub"))+'</p>'
+    +'<label class="toggle"><input type="checkbox" id="setDoseWeeks"'+(st.settings.showDoseWeeks?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.doseWeeks"))+'</span></label>'
+    +'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("fx.toggle"))+'</h2><p class="sub">'+esc(I18N.t("fx.desc"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setFxAuto"'+(st.settings.fxAuto?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("fx.toggle"))+'</span></label>'
     + fxStatusHTML()
@@ -3383,6 +3423,7 @@ var UI = (function(){
     $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
+    $("#setDoseWeeks").addEventListener("change",function(){ st.settings.showDoseWeeks=this.checked; STORE.save(); });
     // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
     var pcMode="home";
     function renderPenCosts(mode){
