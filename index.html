@@ -2188,7 +2188,7 @@ var UI = (function(){
     }
     var morning = new Date().getHours() < 12;   // sensible default: morning = fasting
     // current Mounjaro/TRT dose pills (same context as the journal composer)
-    function bpCtxHtml(dISO){ var tags=weekTags(st, dISO); return tags.length?weekPills(tags,false):''; }
+    function bpCtxHtml(dISO){ var tags=weekTags(st, dISO); return tags.length?weekPills(tags):''; }
     // doses in effect on a reading's date (shared pill renderer)
     function doseCell(e){ return dosePillsAsOf(st, String(e.ts).slice(0,10), e.doseMg); }
     var html=''
@@ -2310,11 +2310,13 @@ var UI = (function(){
     });
     return out;
   }
-  function weekPills(tags, short){
+  // Same notation as the history dose pills: "Mounjaro 2.5 mg t5 · d5"
+  function weekPills(tags){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
-        +esc(t.label)+' · '+esc(I18N.t(short?"diary.weekShort":"diary.week"))+' '+t.week
-        +(t.dose?' · '+esc(t.dose.dose+" "+t.dose.unit):'')
+        +esc(t.label)
+        +(t.dose?' '+esc(t.dose.dose+" "+t.dose.unit):'')
+        +' '+esc(I18N.t("common.weekLetter"))+t.week
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
   }
@@ -2333,7 +2335,7 @@ var UI = (function(){
     var whenVal = editing ? toLocalDT(editing.ts) : nowLocalDT();
     function ctxHtml(dISO){
       var tags=weekTags(st, dISO);
-      return tags.length ? weekPills(tags,false) : '<span class="muted tiny">'+esc(I18N.t("diary.ctxNone"))+'</span>';
+      return tags.length ? weekPills(tags) : '<span class="muted tiny">'+esc(I18N.t("diary.ctxNone"))+'</span>';
     }
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
       + (editing?'<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.editing"))+'</div>':'')
@@ -2360,7 +2362,7 @@ var UI = (function(){
       pageSlice(items, journalPage).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
         var when=it.legacy?fmtDate(it.date):fmtDateTime(it.ts);
-        var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO),true)
+        var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO))
           +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
           +'<div class="ltext">'+esc(it.text)+'</div></div>'
