@@ -1614,9 +1614,18 @@ var CHART = (function(){
         var wpts = waistPts.map(function(e){ return Xw(e).toFixed(1)+","+Yw(e.waistCm).toFixed(1); }).join(" ");
         svg+='<polyline points="'+wpts+'" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"/>';
       }
-      waistPts.forEach(function(e){
-        svg+='<circle cx="'+Xw(e).toFixed(1)+'" cy="'+Yw(e.waistCm).toFixed(1)+'" r="3.2" fill="#6366f1" stroke="#fff" stroke-width="1.2">'
+      // waist readings are sparse, so print the value right at each point
+      // (tooltips don't exist on touch screens); skip when it would clutter
+      var waistLabels = waistPts.length<=12;
+      waistPts.forEach(function(e,wi){
+        var wx=Xw(e), wy=Yw(e.waistCm);
+        svg+='<circle cx="'+wx.toFixed(1)+'" cy="'+wy.toFixed(1)+'" r="3.2" fill="#6366f1" stroke="#fff" stroke-width="1.2">'
            +'<title>'+esc(e.date+" · "+e.waistCm+" cm")+'</title></circle>';
+        if(waistLabels){
+          var lx=Math.max(mL+10, Math.min(W-mR-10, wx));
+          svg+='<text x="'+lx.toFixed(1)+'" y="'+(wy-6).toFixed(1)+'" font-size="8.5" font-weight="700" fill="#6366f1" text-anchor="middle">'
+             +(Math.round(e.waistCm*10)/10).toString().replace(/\.0$/,'')+'</text>';
+        }
       });
     }
     // trend line + dose-coloured points (hidden in waist-only mode)
