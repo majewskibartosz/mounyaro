@@ -2023,11 +2023,11 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td style="width:31%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'
+        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'
             + (e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
-            + '<td style="width:26%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
+            + '<td style="width:25%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
             + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
-            + '<td style="width:21%">'+(e.doseMg!=null?'<span class="nowrap muted">'+esc(e.doseMg)+' mg</span>':'—')+'</td>'
+            + '<td style="width:24%">'+dosePillsAsOf(st, e.date, e.doseMg)+'</td>'
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
@@ -2142,20 +2142,8 @@ var UI = (function(){
     var morning = new Date().getHours() < 12;   // sensible default: morning = fasting
     // current Mounjaro/TRT dose pills (same context as the journal composer)
     function bpCtxHtml(dISO){ var tags=weekTags(st, dISO); return tags.length?weekPills(tags,false):''; }
-    // doses in effect on a reading's date, as compact substance-coloured pills;
-    // falls back to a manually stored dose (that field was always Mounjaro)
-    function dosePill(label, txt, color){
-      return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+label+' '+esc(txt)+'</span>';
-    }
-    function doseCell(e){
-      var d=String(e.ts).slice(0,10);
-      var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",d), trt=DOMAIN.lastDoseAsOf(st,"trt",d);
-      var parts=[];
-      if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro));
-      if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt));
-      if(!parts.length && e.doseMg!=null) parts.push(dosePill("MJ", e.doseMg+" mg", SUBSTANCE_COLORS.mounjaro));
-      return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
-    }
+    // doses in effect on a reading's date (shared pill renderer)
+    function doseCell(e){ return dosePillsAsOf(st, String(e.ts).slice(0,10), e.doseMg); }
     var html=''
     + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
 
@@ -2375,6 +2363,21 @@ var UI = (function(){
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
   var SUBSTANCE_COLORS={ mounjaro:"#0ea5a4", trt:"#6366f1", peptide:"#f59e0b" };
+
+  // Compact substance-coloured dose pills (MJ/TRT) in effect on a given date,
+  // shared by the BP and weight histories. manualMg is a legacy, manually
+  // entered Mounjaro dose shown only when no injection data covers the date.
+  function dosePill(label, txt, color){
+    return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+label+' '+esc(txt)+'</span>';
+  }
+  function dosePillsAsOf(st, dISO, manualMg){
+    var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",dISO), trt=DOMAIN.lastDoseAsOf(st,"trt",dISO);
+    var parts=[];
+    if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro));
+    if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt));
+    if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro));
+    return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
+  }
 
   // Approximate cm-from-navel positions for the legacy fixed sites, so old
   // entries still show on the abdomen close-up. Thigh sites have no place on
