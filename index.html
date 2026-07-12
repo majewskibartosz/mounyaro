@@ -2023,11 +2023,11 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'
+        html+='<tr><td style="width:31%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'
             + (e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
-            + '<td class="num"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
+            + '<td style="width:26%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
             + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
-            + '<td class="num">'+(e.doseMg!=null?'<span class="nowrap muted">'+esc(e.doseMg)+' mg</span>':'—')+'</td>'
+            + '<td style="width:21%">'+(e.doseMg!=null?'<span class="nowrap muted">'+esc(e.doseMg)+' mg</span>':'—')+'</td>'
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
@@ -2154,7 +2154,7 @@ var UI = (function(){
       if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro));
       if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt));
       if(!parts.length && e.doseMg!=null) parts.push(dosePill("MJ", e.doseMg+" mg", SUBSTANCE_COLORS.mounjaro));
-      return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+parts.join('')+'</span>':'—';
+      return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
     }
     var html=''
     + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
@@ -2204,11 +2204,11 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
-        html+='<tr><td>'+esc(fmtDateTime(e.ts))+(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
+        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
-            + '<td class="num"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
+            + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
             + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')+'</td>'
-            + '<td class="num">'+doseCell(e)+'</td>'
+            + '<td style="width:25%">'+doseCell(e)+'</td>'
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
