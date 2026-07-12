@@ -1520,18 +1520,25 @@ function doseColor(mg){
    CHART — inline SVG weight trend + dose colouring
    ========================================================================= */
 var CHART = (function(){
-  function render(log){
+  // opts.showWeight / opts.showWaist toggle the two series (both default on).
+  // With the weight hidden, the time axis spans only the waist-measurement
+  // period and the waist gets the full chart height.
+  function render(log, opts){
+    opts=opts||{};
+    var showWeight = opts.showWeight!==false;
+    var showWaist = opts.showWaist!==false;
     var data = log.slice().filter(function(e){return e.weightKg!=null;})
                   .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
-    if(data.length===0){
+    // waist series (optional): dashed line on its own right-hand axis
+    var waistPts = showWaist ? data.filter(function(e){ return e.waistCm!=null; }) : [];
+    var hasWaist = waistPts.length>0;
+    if((showWeight && data.length===0) || (!showWeight && !hasWaist)){
       return '<div class="empty">'+esc(I18N.t("weight.empty"))+'</div>';
     }
-    // waist series (optional): dashed line on its own right-hand axis
-    var waistPts = data.filter(function(e){ return e.waistCm!=null; });
-    var hasWaist = waistPts.length>0;
-    var W=320, H=200, mL=38, mR=hasWaist?38:14, mT=14, mB=26;
+    var W=320, H=200, mL=showWeight?38:14, mR=hasWaist?38:14, mT=14, mB=26;
     var iw=W-mL-mR, ih=H-mT-mB;
-    var xs = data.map(function(e){ return new Date(e.date+"T12:00:00").getTime(); });
+    var xsrc = showWeight ? data : waistPts;
+    var xs = xsrc.map(function(e){ return new Date(e.date+"T12:00:00").getTime(); });
     var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
     var ys = data.map(function(e){ return e.weightKg; });
     var minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
@@ -1551,13 +1558,15 @@ var CHART = (function(){
       minW=Math.min.apply(null,ws); maxW=Math.max.apply(null,ws);
       if(minW===maxW){ minW-=1; maxW+=1; }
       var padW=(maxW-minW)*0.12; minW-=padW; maxW+=padW;
-      var d0=waistPts[0].date, d1=waistPts[waistPts.length-1].date, band=[];
-      data.forEach(function(e){ if(e.date>=d0 && e.date<=d1) band.push(e.weightKg); });
-      if(band.length){
-        wTop=Y(Math.max.apply(null,band)); wBot=Y(Math.min.apply(null,band));
-        var minBand=ih*0.3;
-        if(wBot-wTop<minBand){ var wc=(wTop+wBot)/2; wTop=wc-minBand/2; wBot=wc+minBand/2; }
-        wTop=Math.max(mT, wTop); wBot=Math.min(mT+ih, wBot);
+      if(showWeight){
+        var d0=waistPts[0].date, d1=waistPts[waistPts.length-1].date, band=[];
+        data.forEach(function(e){ if(e.date>=d0 && e.date<=d1) band.push(e.weightKg); });
+        if(band.length){
+          wTop=Y(Math.max.apply(null,band)); wBot=Y(Math.min.apply(null,band));
+          var minBand=ih*0.3;
+          if(wBot-wTop<minBand){ var wc=(wTop+wBot)/2; wTop=wc-minBand/2; wBot=wc+minBand/2; }
+          wTop=Math.max(mT, wTop); wBot=Math.min(mT+ih, wBot);
+        }
       }
     }
     function Yw(v){ return wBot - (v-minW)/(maxW-minW)*(wBot-wTop); }
@@ -1569,16 +1578,16 @@ var CHART = (function(){
     var rows=4;
     for(var r=0;r<=rows;r++){
       var val = minY + (maxY-minY)*r/rows;
-      var y = Y(val);
+      var y = mT + ih*(1-r/rows);
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
-      svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
+      if(showWeight) svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
       if(hasWaist){
         svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#6366f1" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
       }
     }
     // x labels (first, mid, last)
     function dlabel(t){ var d=new Date(t); return (d.getDate())+"."+(d.getMonth()+1); }
-    var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0, Math.floor((data.length-1)/2), data.length-1];
+    var idxs = xsrc.length<=3 ? xsrc.map(function(_,i){return i;}) : [0, Math.floor((xsrc.length-1)/2), xsrc.length-1];
     idxs.forEach(function(i){
       var x=X(xs[i]);
       svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
@@ -1595,19 +1604,21 @@ var CHART = (function(){
            +'<title>'+esc(e.date+" · "+e.waistCm+" cm")+'</title></circle>';
       });
     }
-    // trend line
-    if(data.length>1){
-      var pts = data.map(function(e,i){ return X(xs[i]).toFixed(1)+","+Y(e.weightKg).toFixed(1); }).join(" ");
-      svg+='<polyline points="'+pts+'" fill="none" stroke="#0ea5a4" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    // trend line + dose-coloured points (hidden in waist-only mode)
+    if(showWeight){
+      function Xd(e){ return X(new Date(e.date+"T12:00:00").getTime()); }
+      if(data.length>1){
+        var pts = data.map(function(e){ return Xd(e).toFixed(1)+","+Y(e.weightKg).toFixed(1); }).join(" ");
+        svg+='<polyline points="'+pts+'" fill="none" stroke="#0ea5a4" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      }
+      data.forEach(function(e){
+        var x=Xd(e).toFixed(1), y=Y(e.weightKg).toFixed(1);
+        var c=doseColor(e.doseMg);
+        var tip = e.date+" · "+e.weightKg+" kg"+(e.waistCm!=null?" · "+e.waistCm+" cm":"")+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
+        svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+c+'" stroke="#fff" stroke-width="1.5">'
+           +'<title>'+esc(tip)+'</title></circle>';
+      });
     }
-    // points coloured by dose, with native tooltip
-    data.forEach(function(e,i){
-      var x=X(xs[i]).toFixed(1), y=Y(e.weightKg).toFixed(1);
-      var c=doseColor(e.doseMg);
-      var tip = e.date+" · "+e.weightKg+" kg"+(e.waistCm!=null?" · "+e.waistCm+" cm":"")+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
-      svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+c+'" stroke="#fff" stroke-width="1.5">'
-         +'<title>'+esc(tip)+'</title></circle>';
-    });
     svg+='</svg>';
     return svg;
   }
@@ -1923,6 +1934,7 @@ var UI = (function(){
   var weightEdit=null;  // id of the entry being edited (null = adding a new one)
   var weightPage=0;     // history page (5 rows each)
   var weightZoom=false; // chart: true = last 7 readings, false = full history
+  var weightShow={w:true, g:true}; // chart series filter: w = weight, g = waist (girth)
   function viewWeight(){
     var st=s();
     var editing=null;
@@ -1939,16 +1951,26 @@ var UI = (function(){
     // chart card (on top); "+" zooms to the last 7 readings so recent trends
     // (e.g. waist, measured only recently) are readable
     var chartLog = (weightZoom && st.weightLog.length>CHART_ZOOM_N) ? st.weightLog.slice(0,CHART_ZOOM_N) : st.weightLog;
+    var anyWaist = st.weightLog.some(function(e){ return e.waistCm!=null; });
+    function serChip(key, on, label, color){
+      return '<button type="button" class="pill wSer" data-s="'+key+'" style="cursor:pointer;border:0;background:'
+        +(on?color+'22':'var(--soft)')+';color:'+(on?color:'var(--muted)')+'">'+esc(label)+'</button>';
+    }
     html+='<div class="card">'+zoomHeader("weight.chartTitle","wZoom",weightZoom,st.weightLog.length)
-        + '<div id="chartHolder">'+CHART.render(chartLog)+'</div>';
+        + (anyWaist ? '<div class="row" style="gap:6px;margin:0 0 8px">'
+            + serChip("w", weightShow.w, I18N.t("common.weight"), "#0ea5a4")
+            + serChip("g", weightShow.g, I18N.t("weight.waist"), "#6366f1")
+            + '</div>' : '')
+        + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g})+'</div>';
     if(st.weightLog.length){
       var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
       var diff=cur-first;
       var pct = first>0 ? diff/first*100 : 0;
       var col = diff<=0?"var(--good)":"var(--bad)";
       var waistLog = st.weightLog.filter(function(e){ return e.waistCm!=null; }); // newest first
-      html+='<div class="legend"><span>'+esc(I18N.t("weight.legendDose"))+'</span>'
-          + (waistLog.length?'<span style="color:#6366f1">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
+      html+='<div class="legend">'
+          + (weightShow.w?'<span>'+esc(I18N.t("weight.legendDose"))+'</span>':'')
+          + (weightShow.g&&waistLog.length?'<span style="color:#6366f1">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
           + '</div>'
           + '<div class="stats" style="margin-top:12px">'
           + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
@@ -2037,6 +2059,13 @@ var UI = (function(){
     if($("#wCancel")) $("#wCancel").addEventListener("click",function(){ weightEdit=null; viewWeight(); });
     bindPager("wPg", function(){return weightPage;}, function(v){weightPage=v;}, viewWeight);
     bindZoom("wZoom", function(v){weightZoom=v;}, viewWeight);
+    // series filter chips; never allow both off — turning off the last one flips to the other
+    $all(".wSer").forEach(function(b){ b.addEventListener("click",function(){
+      var k=b.getAttribute("data-s"), o=(k==="w")?"g":"w";
+      weightShow[k]=!weightShow[k];
+      if(!weightShow.w && !weightShow.g) weightShow[o]=true;
+      viewWeight();
+    });});
     $all(".wEdit").forEach(function(b){ b.addEventListener("click",function(){
       weightEdit=b.getAttribute("data-id"); viewWeight(); window.scrollTo(0,0);
     });});
