@@ -150,6 +150,10 @@
   /* injection-day marker (syringe next to dates) */
   .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
   .injmark svg{width:13px;height:13px}
+  /* journal day grouping */
+  .dayhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:800;
+    color:var(--ink);margin:14px 0 2px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+  .dayhead:first-child{margin-top:2px}
 
   /* free-text journal entries (log style) */
   .logentry{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
@@ -425,6 +429,8 @@ var I18N = (function(){
     "diary.weekShort":{pl:"tydz.",en:"wk"},
     "diary.ctxNone":{pl:"Zapisz pierwszy zastrzyk, aby widzieć tydzień terapii przy notatkach.",en:"Log your first injection to see the therapy week next to notes."},
     "diary.legacyTag":{pl:"dawny dziennik",en:"old diary"},
+    "diary.today":{pl:"Dziś",en:"Today"},
+    "diary.yesterday":{pl:"Wczoraj",en:"Yesterday"},
     "diary.ctrlEnter":{pl:"Ctrl+Enter zapisuje",en:"Ctrl+Enter saves"},
     "diary.when":{pl:"Czas notatki",en:"Note time"},
     "diary.whenHint":{pl:"domyślnie teraz — zmień, aby dodać wstecz",en:"defaults to now — change to backfill"},
@@ -1567,6 +1573,7 @@ function fmtDate(iso, shortYear){
   try{ return new Date(iso+"T12:00:00").toLocaleDateString(I18N.lang==="en"?"en-GB":"pl-PL",{day:"2-digit",month:"2-digit",year:shortYear?"2-digit":"numeric"}); }
   catch(e){ return String(iso); }
 }
+function fmtTime(ts){ try{ return new Date(ts).toLocaleTimeString(I18N.lang==="en"?"en-GB":"pl-PL",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
 function fmtDateTime(ts){ try{ return new Date(ts).toLocaleString(I18N.lang==="en"?"en-GB":"pl-PL",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(ts); } }
 function nowLocalDT(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 // A stored timestamp as a datetime-local input value (falls back to now).
@@ -2459,12 +2466,24 @@ var UI = (function(){
     if(!items.length){
       html+='<div class="empty">'+esc(I18N.t("diary.empty"))+'</div>';
     } else {
+      // entries stay separate, but the list groups them under one day header
+      // that carries the day-level context (t/d pills + injection markers) once
+      function dayLabel(dISO){
+        if(dISO===today) return I18N.t("diary.today");
+        if(dISO===addDaysISO(today,-1)) return I18N.t("diary.yesterday");
+        return fmtDate(dISO);
+      }
       journalPage=pageClamp(journalPage, items.length);
+      var lastDay=null;
       pageSlice(items, journalPage).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
-        var when=it.legacy?fmtDate(it.date):fmtDateTime(it.ts);
-        var meta='<span>'+esc(when)+injDayMarkers(st,dISO)+'</span>'+weekPills(weekTags(st,dISO))
-          +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
+        if(dISO!==lastDay){
+          lastDay=dISO;
+          html+='<div class="dayhead"><span>'+esc(dayLabel(dISO))+injDayMarkers(st,dISO)+'</span>'+weekPills(weekTags(st,dISO))+'</div>';
+        }
+        var meta=(it.legacy
+          ? '<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>'
+          : '<span>'+esc(fmtTime(it.ts))+'</span>');
         var body = it.state ? statePillsHTML(it.state)
           : (it.vals?statePillsHTML(it.vals):'')
             + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '');
