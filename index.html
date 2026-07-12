@@ -143,6 +143,7 @@
   .logentry:last-child{border-bottom:0}
   .logentry .lbody{flex:1;min-width:0}
   .logentry .lmeta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .logentry .lmeta>span:first-child{flex-basis:100%}  /* date on its own line; pills always below */
   .logentry .ltext{font-size:14.5px;white-space:pre-wrap;overflow-wrap:break-word}
   /* segment switcher (substances) */
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
@@ -1106,10 +1107,17 @@ var DOMAIN = (function(){
     }
     if(!doses.length) return null;
     doses.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
-    var cur=doses[0], since=cur.date;
+    var cur=doses[0], since=cur.date, changed=false;
     for(var i=1;i<doses.length;i++){
-      if(doses[i].dose!==cur.dose) break;
+      if(doses[i].dose!==cur.dose){ changed=true; break; }
       since=doses[i].date;
+    }
+    // Never changed? Then this dose has been running since the very first
+    // shot — early entries (legacy jab.history) may simply lack a dose, and
+    // the streak counter should match the therapy week in that case.
+    if(!changed){
+      var first=firstInjDateFor(state, substance);
+      if(first && first<since) since=first;
     }
     return { dose:cur.dose, unit:cur.unit, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
   }
@@ -1578,6 +1586,9 @@ var CHART = (function(){
     if((showWeight && data.length===0) || (!showWeight && !hasWaist)){
       return '<div class="empty">'+esc(I18N.t("weight.empty"))+'</div>';
     }
+    // waist series colour: brightened in the dark theme for contrast
+    var dark=document.documentElement.getAttribute("data-theme")==="dark";
+    var WC=dark?"#818cf8":"#6366f1", HALO=dark?"#16202e":"#ffffff";
     var W=320, H=200, mL=showWeight?38:14, mR=hasWaist?38:14, mT=14, mB=26;
     var iw=W-mL-mR, ih=H-mT-mB;
     var xsrc = showWeight ? data : waistPts;
@@ -1634,7 +1645,7 @@ var CHART = (function(){
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
       if(showWeight) svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
       if(hasWaist){
-        svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#6366f1" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
+        svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+WC+'" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
       }
     }
     // x labels (first, mid, last)
@@ -1644,23 +1655,25 @@ var CHART = (function(){
       var x=X(xs[i]);
       svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
     });
-    // waist: dashed line + small points on the right-hand scale (under the weight line)
+    // waist: dashed line + points on the right-hand scale. The indigo is
+    // brightened in the dark theme and value labels get a card-coloured halo,
+    // otherwise the series drowns against a dark background.
     if(hasWaist){
       function Xw(e){ return X(new Date(e.date+"T12:00:00").getTime()); }
       if(waistPts.length>1){
         var wpts = waistPts.map(function(e){ return Xw(e).toFixed(1)+","+Yw(e.waistCm).toFixed(1); }).join(" ");
-        svg+='<polyline points="'+wpts+'" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"/>';
+        svg+='<polyline points="'+wpts+'" fill="none" stroke="'+WC+'" stroke-width="2.4" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round"/>';
       }
       // waist readings are sparse, so print the value right at each point
       // (tooltips don't exist on touch screens); skip when it would clutter
       var waistLabels = waistPts.length<=12;
       waistPts.forEach(function(e,wi){
         var wx=Xw(e), wy=Yw(e.waistCm);
-        svg+='<circle cx="'+wx.toFixed(1)+'" cy="'+wy.toFixed(1)+'" r="3.2" fill="#6366f1" stroke="#fff" stroke-width="1.2">'
+        svg+='<circle cx="'+wx.toFixed(1)+'" cy="'+wy.toFixed(1)+'" r="3.8" fill="'+WC+'" stroke="'+HALO+'" stroke-width="1.2">'
            +'<title>'+esc(e.date+" · "+e.waistCm+" cm")+'</title></circle>';
         if(waistLabels){
           var lx=Math.max(mL+10, Math.min(W-mR-10, wx));
-          svg+='<text x="'+lx.toFixed(1)+'" y="'+(wy-6).toFixed(1)+'" font-size="8.5" font-weight="700" fill="#6366f1" text-anchor="middle">'
+          svg+='<text x="'+lx.toFixed(1)+'" y="'+(wy-7).toFixed(1)+'" font-size="9" font-weight="800" fill="'+WC+'" stroke="'+HALO+'" stroke-width="3" paint-order="stroke" text-anchor="middle">'
              +(Math.round(e.waistCm*10)/10).toString().replace(/\.0$/,'')+'</text>';
         }
       });
@@ -2421,9 +2434,15 @@ var UI = (function(){
   // rest of the pill text. manualMg is a legacy, manually entered Mounjaro
   // dose shown only when no injection data covers the date.
   function dosePill(label, txt, color, week, doseWeek){
-    return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+label+' '+esc(txt)
+    return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+(label?label+' ':'')+esc(txt)
       +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')
       +(doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+doseWeek:'')+'</span>';
+  }
+  // single-substance pill for "now": "2.5 mg t5 · d5" (no label — context names it)
+  function nowDosePill(st, sub, todayISOstr){
+    var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
+    var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
+    return dosePill("", ld.dose+" "+ld.unit, SUBSTANCE_COLORS[sub]||"#94a3b8", w, doseWeekAsOf(st,sub,todayISOstr));
   }
   // week on the current dose, only when the setting is on
   function doseWeekAsOf(st, sub, dISO){
@@ -2754,8 +2773,8 @@ var UI = (function(){
   }
 
   /* ============ DASHBOARD (Pulpit) ============ */
-  function rhythmRow(label, color, frac, right){
-    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>'+esc(label)+'</span><span class="muted tiny">'+esc(right||"")+'</span></div>'
+  function rhythmRow(label, color, frac, right, pill){
+    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:700"><span>'+esc(label)+(pill?' '+pill:'')+'</span><span class="muted tiny">'+esc(right||"")+'</span></div>'
       + progressBar(frac, color, "", "") + '</div>';
   }
   function viewDash(){
@@ -2769,17 +2788,17 @@ var UI = (function(){
     if(last){
       var el=daysBetweenISO(last,today), rem=every-el, frac=Math.max(0,Math.min(1,el/every));
       var r=rem>0?(I18N.t("inj.nextIn")+" "+rem+" "+I18N.t("inj.daysShort")):(rem===0?I18N.t("inj.due"):Math.abs(rem)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
-      html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, rem<=0?1:frac, r);
-    } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo")); }
+      html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, rem<=0?1:frac, r, nowDosePill(st,"mounjaro",today));
+    } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today)); }
     // TRT
     var ltrt=lastInjDate(st,"trt"), ip=DOMAIN.intervalProgress(ltrt, st.inj.trt.intervalDays, today);
     if(ip){ var rt=ip.remaining>0?(I18N.t("inj.nextIn")+" "+ip.remaining+" "+I18N.t("inj.daysShort")):(ip.remaining===0?I18N.t("inj.due"):Math.abs(ip.remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
-      html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.frac, rt); }
-    else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo")); }
+      html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.frac, rt, nowDosePill(st,"trt",today)); }
+    else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today)); }
     // Peptide cycle
     var cp=DOMAIN.cycleProgress(st.inj.peptide, today);
-    if(cp){ html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, cp.frac, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total); }
-    else { html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, 0, I18N.t("inj.cycleNone")); }
+    if(cp){ html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, cp.frac, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total, nowDosePill(st,"peptide",today)); }
+    else { html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, 0, I18N.t("inj.cycleNone"), nowDosePill(st,"peptide",today)); }
     html+='</div>';
 
     // --- latest readings: BP, weight + delta, BMI ---
