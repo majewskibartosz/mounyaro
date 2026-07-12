@@ -150,17 +150,19 @@
   /* injection-day marker (syringe next to dates) */
   .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
   .injmark svg{width:13px;height:13px}
-  /* journal day grouping */
-  .dayhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:800;
-    color:var(--ink);margin:14px 0 2px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+  /* journal day grouping: quiet uppercase date + compact context pills on one line */
+  .dayhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;font-weight:800;
+    text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+    margin:16px 0 2px;padding-bottom:5px;border-bottom:1px solid var(--line)}
   .dayhead:first-child{margin-top:2px}
+  .dayhead .pill{padding:2px 7px;font-size:10.5px;text-transform:none;letter-spacing:0}
+  .dayhead .injmark svg{width:12px;height:12px}
 
   /* free-text journal entries (log style) */
   .logentry{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
   .logentry:last-child{border-bottom:0}
   .logentry .lbody{flex:1;min-width:0}
   .logentry .lmeta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .logentry .lmeta>span:first-child{flex-basis:100%}  /* date on its own line; pills always below */
   .logentry .ltext{font-size:14.5px;white-space:pre-wrap;overflow-wrap:break-word}
   /* segment switcher (substances) */
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
