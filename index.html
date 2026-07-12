@@ -146,7 +146,9 @@
     opacity:.5;transition:opacity .15s,transform .1s,box-shadow .15s}
   .sdot.on{opacity:1;box-shadow:0 0 0 3px var(--card),0 0 0 5px currentColor;transform:scale(1.08)}
   .sdot:active{transform:scale(.92)}
-  .statepill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
+  .statepill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 3px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
+  .statepill .pemoji{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+    border-radius:50%;background:rgba(0,0,0,.32);font-size:11px;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
   /* injection-day marker (syringe next to dates) */
   .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
   .injmark svg{width:13px;height:13px}
@@ -2379,7 +2381,7 @@ var UI = (function(){
   function statePillsHTML(e){
     return STATE_PARAMS.map(function(p){
       var v=e[p.key];
-      return v==null ? '' : '<span class="statepill" style="background:'+STATE_COLORS[v-1]+'">'+p.icon+' '+v+'</span>';
+      return v==null ? '' : '<span class="statepill" style="background:'+STATE_COLORS[v-1]+'"><span class="pemoji">'+p.icon+'</span>'+v+'</span>';
     }).join('');
   }
   function stateRowsHTML(){
