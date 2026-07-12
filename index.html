@@ -2409,7 +2409,7 @@ var UI = (function(){
     ["mounjaro","trt"].forEach(function(sub){
       var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), dateISO);
       if(w==null) return;
-      out.push({ label:(sub==="mounjaro"?"Mounjaro":"TRT"), week:w,
+      out.push({ label:(sub==="mounjaro"?"MJ":"TRT"), week:w,
                  dose:DOMAIN.lastDoseAsOf(st,sub,dateISO),
                  doseWeek:doseWeekAsOf(st,sub,dateISO), color:SUBSTANCE_COLORS[sub] });
     });
