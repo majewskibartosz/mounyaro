@@ -2367,22 +2367,21 @@ var UI = (function(){
 
   // Compact substance-coloured dose pills (MJ/TRT) in effect on a given date,
   // shared by the BP and weight histories. Each pill ends with the therapy
-  // week on that substance as of that date, in a darker bold shade ("t5").
-  // manualMg is a legacy, manually entered Mounjaro dose shown only when no
-  // injection data covers the date.
-  var SUBSTANCE_DARK={ mounjaro:"#0f766e", trt:"#4338ca" };
-  function dosePill(label, txt, color, week, dark){
+  // week on that substance as of that date ("t5"), styled exactly like the
+  // rest of the pill text. manualMg is a legacy, manually entered Mounjaro
+  // dose shown only when no injection data covers the date.
+  function dosePill(label, txt, color, week){
     return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+label+' '+esc(txt)
-      +(week!=null?' <b style="color:'+dark+'">'+esc(I18N.t("common.weekLetter"))+week+'</b>':'')+'</span>';
+      +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')+'</span>';
   }
   function dosePillsAsOf(st, dISO, manualMg){
     var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",dISO), trt=DOMAIN.lastDoseAsOf(st,"trt",dISO);
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro, wm, SUBSTANCE_DARK.mounjaro));
-    if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt, wt, SUBSTANCE_DARK.trt));
-    if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro, wm, SUBSTANCE_DARK.mounjaro));
+    if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro, wm));
+    if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt, wt));
+    if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro, wm));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
 
