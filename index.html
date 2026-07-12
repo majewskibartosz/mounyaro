@@ -143,7 +143,7 @@
   .staterow .sname{flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px}
   .staterow .sdots{display:flex;gap:8px}
   .sdot{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
-    opacity:.28;transition:opacity .15s,transform .1s,box-shadow .15s}
+    opacity:.5;transition:opacity .15s,transform .1s,box-shadow .15s}
   .sdot.on{opacity:1;box-shadow:0 0 0 3px var(--card),0 0 0 5px currentColor;transform:scale(1.08)}
   .sdot:active{transform:scale(.92)}
   .statepill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
@@ -1071,9 +1071,9 @@ var DOMAIN = (function(){
         if(e && e.weightKg!=null) out.push({date:e.date, value:Number(e.weightKg)});
       });
     } else if(kind==="state"){
-      // wellbeing check-ins: daily average of the 1-5 taps
+      // wellbeing: daily average of the 1-5 taps (journal-attached + legacy check-ins)
       var byDay={};
-      (state.stateLog||[]).forEach(function(e){
+      (state.stateLog||[]).concat(state.journal||[]).forEach(function(e){
         if(e && e[key]!=null && e.ts){
           var sd=String(e.ts).slice(0,10);
           (byDay[sd]=byDay[sd]||[]).push(Number(e[key]));
@@ -2360,6 +2360,9 @@ var UI = (function(){
   function stateDraftHasValues(){
     return STATE_PARAMS.some(function(p){ return stateDraft[p.key]!=null; });
   }
+  function hasStateVals(e){
+    return !!e && STATE_PARAMS.some(function(p){ return e[p.key]!=null; });
+  }
   function statePillsHTML(e){
     return STATE_PARAMS.map(function(p){
       var v=e[p.key];
@@ -2367,7 +2370,7 @@ var UI = (function(){
     }).join('');
   }
   function stateRowsHTML(){
-    var h='<div style="margin:0 0 10px"><div class="tsub" style="margin:0 0 2px">'+esc(I18N.t("state.title"))
+    var h='<div style="margin:0 0 10px"><div style="font-size:14px;font-weight:800;color:var(--ink);margin:0 0 2px">'+esc(I18N.t("state.title"))
       +' <span class="muted tiny" style="font-weight:400">— '+esc(I18N.t("state.hint"))+'</span></div>';
     STATE_PARAMS.forEach(function(p){
       h+='<div class="staterow"><span class="sname">'+p.icon+' '+esc(I18N.t("state."+p.key))+'</span><span class="sdots">';
@@ -2433,7 +2436,7 @@ var UI = (function(){
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
       + (editing?'<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.editing"))+'</div>':'')
       + '<div class="row" id="jCtx" style="margin:0 0 10px">'+ctxHtml(whenVal.slice(0,10))+'</div>'
-      + (editing?'':stateRowsHTML())   // editing edits just the note; check-ins are their own rows
+      + stateRowsHTML()
       + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'">'+(editing?esc(editing.text):'')+'</textarea></div>'
       + '<div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="datetime-local" id="jWhen" value="'+whenVal+'"></div>'
       + '<div class="row"><button class="btn" id="jAdd">'+esc(I18N.t(editing?"diary.update":"diary.add"))+'</button>'
@@ -2441,8 +2444,9 @@ var UI = (function(){
       + '<span class="muted tiny">'+esc(I18N.t("diary.ctrlEnter"))+'</span></div>'
       + '</div>';
 
-    // log list: journal entries, wellbeing check-ins and old slider-diary notes, newest first
-    var items=(st.journal||[]).map(function(e){ return {id:e.id, key:String(e.ts), ts:e.ts, text:e.text, legacy:false}; });
+    // log list: journal entries (text and/or wellbeing), legacy standalone
+    // check-ins and old slider-diary notes, newest first
+    var items=(st.journal||[]).map(function(e){ return {id:e.id, key:String(e.ts), ts:e.ts, text:e.text, vals:(hasStateVals(e)?e:null), legacy:false}; });
     (st.stateLog||[]).forEach(function(e){
       items.push({id:e.id, key:String(e.ts), ts:e.ts, state:e, legacy:false});
     });
@@ -2461,8 +2465,11 @@ var UI = (function(){
         var when=it.legacy?fmtDate(it.date):fmtDateTime(it.ts);
         var meta='<span>'+esc(when)+injDayMarkers(st,dISO)+'</span>'+weekPills(weekTags(st,dISO))
           +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
+        var body = it.state ? statePillsHTML(it.state)
+          : (it.vals?statePillsHTML(it.vals):'')
+            + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '');
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
-          +'<div class="ltext">'+(it.state?statePillsHTML(it.state):esc(it.text))+'</div></div>'
+          +'<div class="ltext">'+body+'</div></div>'
           +(it.legacy?'':(it.state
             ?'<button class="btn ghost sm sDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>'
             :'<button class="btn ghost sm jEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(it.id)+'">'+icon("edit")+'</button>'
@@ -2477,30 +2484,32 @@ var UI = (function(){
     app.innerHTML=html;
 
     function saveNote(){
+      // one entry carries both the text and the wellbeing dots — either alone is fine
       var txt=($("#jText").value||"").trim();
-      var hasState = !editing && stateDraftHasValues();   // dots apply to new entries only
+      var hasState=stateDraftHasValues();
       if(!txt && !hasState){ $("#jText").focus(); return; }
       var wv=$("#jWhen").value;
       var when=wv?new Date(wv):new Date();
       if(isNaN(when.getTime())) when=new Date();
-      if(txt){
-        if(!st.journal) st.journal=[];
-        if(editing){ editing.text=txt; editing.ts=when.toISOString(); journalEdit=null; }
-        else { st.journal.push({ id:uid(), ts:when.toISOString(), text:txt }); }
-        st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
-      } else if(editing){ journalEdit=null; }
-      if(hasState){
-        if(!st.stateLog) st.stateLog=[];
-        st.stateLog.push({ id:uid(), ts:when.toISOString(),
-          energy:stateDraft.energy, mood:stateDraft.mood, clarity:stateDraft.clarity });
-        st.stateLog.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
-        stateDraft={ energy:null, mood:null, clarity:null };
+      if(!st.journal) st.journal=[];
+      if(editing){
+        editing.text=txt; editing.ts=when.toISOString();
+        STATE_PARAMS.forEach(function(p){ editing[p.key]=stateDraft[p.key]; });
+        journalEdit=null;
+      } else {
+        var entry={ id:uid(), ts:when.toISOString(), text:txt,
+                    energy:stateDraft.energy, mood:stateDraft.mood, clarity:stateDraft.clarity };
+        st.journal.push(entry);
       }
+      st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      stateDraft={ energy:null, mood:null, clarity:null };
       journalPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
     }
     $("#jAdd").addEventListener("click", saveNote);
-    if($("#jCancel")) $("#jCancel").addEventListener("click",function(){ journalEdit=null; viewDiary(); });
+    if($("#jCancel")) $("#jCancel").addEventListener("click",function(){
+      journalEdit=null; stateDraft={ energy:null, mood:null, clarity:null }; viewDiary();
+    });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // backfilling? recompute the therapy-week/dose pills for the picked date
     $("#jWhen").addEventListener("input",function(){
@@ -2510,7 +2519,10 @@ var UI = (function(){
       if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
     });
     $all(".jEdit").forEach(function(b){ b.addEventListener("click",function(){
-      journalEdit=b.getAttribute("data-id"); viewDiary(); window.scrollTo(0,0);
+      journalEdit=b.getAttribute("data-id");
+      var en=(st.journal||[]).filter(function(e){ return e.id===journalEdit; })[0];
+      STATE_PARAMS.forEach(function(p){ stateDraft[p.key]=(en&&en[p.key]!=null)?en[p.key]:null; });
+      viewDiary(); window.scrollTo(0,0);
     });});
     $all(".jDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("diary.confirmDel"))) return;
@@ -2933,8 +2945,11 @@ var UI = (function(){
       if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
       html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date)+'</div>';
     }
-    // latest wellbeing check-in from today
-    var todayCk=(st.stateLog||[]).filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
+    // latest wellbeing values from today (notes with dots or legacy check-ins)
+    var ckAll=(st.stateLog||[]).slice();
+    (st.journal||[]).forEach(function(e){ if(hasStateVals(e)) ckAll.push(e); });
+    ckAll.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+    var todayCk=ckAll.filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
     html+='<div class="stat"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
       +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span>'
       +(todayCk?statDate(String(todayCk.ts).slice(0,10)):'')+'</div>';
@@ -2982,11 +2997,8 @@ var UI = (function(){
       if(st.weightLog.some(function(e){return e.waistCm!=null;})) opts.push({ id:"waist", label:I18N.t("corr.waist") });
       if(st.weightLog.some(function(e){return e.doseMg!=null;})) opts.push({ id:"mounjaroDose", label:I18N.t("corr.mjDose") });
     }
-    if((st.stateLog||[]).length){
-      opts.push({ id:"state:energy", label:I18N.t("corr.energy") });
-      opts.push({ id:"state:mood", label:I18N.t("corr.mood") });
-      opts.push({ id:"state:clarity", label:I18N.t("corr.clarity") });
-    }
+    // wellbeing series hidden from correlations for now (user request);
+    // DOMAIN.seriesFor still understands state:* when this comes back
     return opts;
   }
   var corrA=null, corrB=null;
