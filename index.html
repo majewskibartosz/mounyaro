@@ -1539,14 +1539,30 @@ var CHART = (function(){
     var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
     function X(t){ return maxX===minX ? mL+iw/2 : mL + (t-minX)/(maxX-minX)*iw; }
     function Y(v){ return mT + (1-(v-minY)/(maxY-minY))*ih; }
-    var minW=0, maxW=0;
+    // The waist axis is anchored to the vertical band the WEIGHT line occupies
+    // over the waist-measurement period, so the dashed line overlays the
+    // weight it was measured alongside instead of always spanning the full
+    // chart height (which made it look correlated with the very first
+    // weights on the all-history view). The right axis stays linear — labels
+    // are just read off the remapped scale.
+    var minW=0, maxW=0, wTop=mT, wBot=mT+ih;
     if(hasWaist){
       var ws = waistPts.map(function(e){ return e.waistCm; });
       minW=Math.min.apply(null,ws); maxW=Math.max.apply(null,ws);
       if(minW===maxW){ minW-=1; maxW+=1; }
       var padW=(maxW-minW)*0.12; minW-=padW; maxW+=padW;
+      var d0=waistPts[0].date, d1=waistPts[waistPts.length-1].date, band=[];
+      data.forEach(function(e){ if(e.date>=d0 && e.date<=d1) band.push(e.weightKg); });
+      if(band.length){
+        wTop=Y(Math.max.apply(null,band)); wBot=Y(Math.min.apply(null,band));
+        var minBand=ih*0.3;
+        if(wBot-wTop<minBand){ var wc=(wTop+wBot)/2; wTop=wc-minBand/2; wBot=wc+minBand/2; }
+        wTop=Math.max(mT, wTop); wBot=Math.min(mT+ih, wBot);
+      }
     }
-    function Yw(v){ return mT + (1-(v-minW)/(maxW-minW))*ih; }
+    function Yw(v){ return wBot - (v-minW)/(maxW-minW)*(wBot-wTop); }
+    // waist value that sits at a given chart height (for the right-axis labels)
+    function WofY(y){ return minW + (wBot-y)/(wBot-wTop)*(maxW-minW); }
 
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="weight chart">';
     // gridlines + y ticks
@@ -1557,8 +1573,7 @@ var CHART = (function(){
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
       svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
       if(hasWaist){
-        var wv = minW + (maxW-minW)*r/rows;
-        svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#6366f1" text-anchor="start">'+wv.toFixed(1)+'</text>';
+        svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#6366f1" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
       }
     }
     // x labels (first, mid, last)
