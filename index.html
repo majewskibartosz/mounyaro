@@ -2666,7 +2666,8 @@ var UI = (function(){
         html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
-            ? '<span class="pill" style="background:'+(SUBSTANCE_COLORS[e.substance]||"#94a3b8")+'22;color:'+(SUBSTANCE_COLORS[e.substance]||"#94a3b8")+';padding:2px 7px;font-size:11px;white-space:nowrap">'+esc(e.dose+" "+(e.unit||""))+'</span>'
+            ? dosePill("", e.dose+" "+(e.unit||""), SUBSTANCE_COLORS[e.substance]||"#94a3b8",
+                DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             : "—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
           +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
