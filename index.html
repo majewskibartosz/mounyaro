@@ -173,10 +173,18 @@
   .stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
 
   table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);overflow-wrap:break-word}
   th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .nowrap{white-space:nowrap}
   .scroll{overflow-x:auto}
+  /* narrow screens: tighten tables so rows always fit without horizontal scroll */
+  @media(max-width:480px){
+    table{font-size:12.5px}
+    th,td{padding:6px 2px}
+    th{font-size:10.5px;letter-spacing:0}
+    td .btn.sm{padding:6px 8px}
+  }
 
   /* history pagination */
   .pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px}
@@ -1476,6 +1484,12 @@ function fmtMoneyTxt(n, currency){
   return num+" "+cur;
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
+// Localized day-first date for display (ISO stays the storage format).
+// shortYear renders "12.07.26" for tight table columns.
+function fmtDate(iso, shortYear){
+  try{ return new Date(iso+"T12:00:00").toLocaleDateString(I18N.lang==="en"?"en-GB":"pl-PL",{day:"2-digit",month:"2-digit",year:shortYear?"2-digit":"numeric"}); }
+  catch(e){ return String(iso); }
+}
 function fmtDateTime(ts){ try{ return new Date(ts).toLocaleString(I18N.lang==="en"?"en-GB":"pl-PL",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(ts); } }
 function nowLocalDT(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 // A stored timestamp as a datetime-local input value (falls back to now).
@@ -2012,9 +2026,9 @@ var UI = (function(){
           + '</tr></thead><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td>'+esc(e.date)+'</td><td class="num">'+fmtNum(e.weightKg,1)+'</td>'
-            + '<td class="num">'+(e.waistCm!=null?fmtNum(e.waistCm,1)+' cm':'—')+'</td>'
-            + '<td class="num">'+(e.doseMg!=null?esc(e.doseMg)+' mg':'—')+'</td>'
+        html+='<tr><td><span class="nowrap">'+esc(fmtDate(e.date,true))+'</span></td><td class="num">'+fmtNum(e.weightKg,1)+'</td>'
+            + '<td class="num">'+(e.waistCm!=null?'<span class="nowrap">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'—')+'</td>'
+            + '<td class="num">'+(e.doseMg!=null?'<span class="nowrap">'+esc(e.doseMg)+' mg</span>':'—')+'</td>'
             + '<td>'+esc(e.note||"")+'</td>'
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
@@ -2312,7 +2326,7 @@ var UI = (function(){
       journalPage=pageClamp(journalPage, items.length);
       pageSlice(items, journalPage).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
-        var when=it.legacy?it.date:fmtDateTime(it.ts);
+        var when=it.legacy?fmtDate(it.date):fmtDateTime(it.ts);
         var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO),true)
           +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
@@ -2567,10 +2581,10 @@ var UI = (function(){
       injPage=pageClamp(injPage, hlist.length);
       pageSlice(hlist, injPage).forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
-        var whenLbl=e.ts?fmtDateTime(e.ts):e.date;
+        var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
         html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
-          +'<td class="num">'+(e.dose!=null?esc(e.dose+" "+(e.unit||"")):"—")+'</td>'
+          +'<td class="num">'+(e.dose!=null?'<span class="nowrap">'+esc(e.dose+" "+(e.unit||""))+'</span>':"—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
           +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
       });
