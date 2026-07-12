@@ -1574,13 +1574,22 @@ var CHART = (function(){
       if(minW===maxW){ minW-=1; maxW+=1; }
       var padW=(maxW-minW)*0.12; minW-=padW; maxW+=padW;
       if(showWeight){
+        // Find where the weight line runs during the waist period, then park
+        // the waist band right NEXT to it (below if there's room, else above)
+        // — visually correlated but never hidden underneath the weight line.
         var d0=waistPts[0].date, d1=waistPts[waistPts.length-1].date, band=[];
         data.forEach(function(e){ if(e.date>=d0 && e.date<=d1) band.push(e.weightKg); });
         if(band.length){
-          wTop=Y(Math.max.apply(null,band)); wBot=Y(Math.min.apply(null,band));
-          var minBand=ih*0.3;
-          if(wBot-wTop<minBand){ var wc=(wTop+wBot)/2; wTop=wc-minBand/2; wBot=wc+minBand/2; }
+          var bTop=Y(Math.max.apply(null,band)), bBot=Y(Math.min.apply(null,band));
+          var bandH=Math.max(Math.min(bBot-bTop, ih*0.5), ih*0.28), gap=7;
+          var roomBelow=(mT+ih)-(bBot+gap), roomAbove=(bTop-gap)-mT;
+          if(roomBelow>=roomAbove){
+            wTop=bBot+gap; wBot=wTop+Math.min(bandH, Math.max(roomBelow, ih*0.15));
+          } else {
+            wBot=bTop-gap; wTop=wBot-Math.min(bandH, Math.max(roomAbove, ih*0.15));
+          }
           wTop=Math.max(mT, wTop); wBot=Math.min(mT+ih, wBot);
+          if(wBot-wTop < ih*0.12){ wTop=mT; wBot=mT+ih; }  // degenerate: full height
         }
       }
     }
