@@ -504,7 +504,7 @@ var I18N = (function(){
     "state.energy":{pl:"Energia",en:"Energy"},
     "state.mood":{pl:"Nastrój",en:"Mood"},
     "state.clarity":{pl:"Klarowność",en:"Clarity"},
-    "state.hint":{pl:"Jeden tap — zapis automatyczny. Rano i wieczorem powstaną osobne wpisy.",en:"One tap — saved automatically. Morning and evening become separate check-ins."},
+    "state.hint":{pl:"zapisuje się przyciskiem — razem z notatką albo samo",en:"saved with the button — with a note or on its own"},
     "state.checkinAt":{pl:"check-in z",en:"check-in at"},
     "state.confirmDel":{pl:"Usunąć ten check-in?",en:"Delete this check-in?"},
 
@@ -2347,27 +2347,14 @@ var UI = (function(){
   }
 
   /* ---- 1-tap wellbeing check-ins (energy / mood / clarity, 1-5) ----
-     A tap saves instantly; taps within 3 hours fill the same check-in, so a
-     morning and an evening entry emerge naturally without any buttons. */
+     Dots are a DRAFT: tapping selects (tap again deselects) without saving or
+     re-rendering, so composed note text is never lost. Everything commits
+     together with the "Save note" button — note alone, dots alone, or both. */
   var STATE_PARAMS=[{key:"energy",icon:"⚡"},{key:"mood",icon:"🙂"},{key:"clarity",icon:"🧠"}];
-  var STATE_COLORS=["#dc2626","#f59e0b","#eab308","#84cc16","#16a34a"];
-  var CHECKIN_WINDOW_MS=3*3600*1000;
-  function currentCheckin(st){
-    var log=st.stateLog||[];
-    if(log.length && (Date.now()-new Date(log[0].ts).getTime()) < CHECKIN_WINDOW_MS) return log[0];
-    return null;
-  }
-  function logStateTap(st, key, val){
-    if(!st.stateLog) st.stateLog=[];
-    var cur=currentCheckin(st);
-    if(cur){ cur[key]=val; }
-    else{
-      var e={ id:uid(), ts:new Date().toISOString(), energy:null, mood:null, clarity:null };
-      e[key]=val;
-      st.stateLog.push(e);
-      st.stateLog.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
-    }
-    STORE.save();
+  var STATE_COLORS=["#dc2626","#f97316","#fbbf24","#84cc16","#16a34a"];
+  var stateDraft={ energy:null, mood:null, clarity:null };
+  function stateDraftHasValues(){
+    return STATE_PARAMS.some(function(p){ return stateDraft[p.key]!=null; });
   }
   function statePillsHTML(e){
     return STATE_PARAMS.map(function(p){
@@ -2375,24 +2362,26 @@ var UI = (function(){
       return v==null ? '' : '<span class="statepill" style="background:'+STATE_COLORS[v-1]+'">'+p.icon+' '+v+'</span>';
     }).join('');
   }
-  function stateCardHTML(st){
-    var cur=currentCheckin(st);
-    var sub = cur ? esc(I18N.t("state.checkinAt"))+' '+esc(fmtDateTime(cur.ts)) : esc(I18N.t("state.hint"));
-    var h='<div class="card"><h2>'+esc(I18N.t("state.title"))+'</h2><p class="sub" style="margin-bottom:6px">'+sub+'</p>';
+  function stateRowsHTML(){
+    var h='<div style="margin:0 0 10px"><div class="tsub" style="margin:0 0 2px">'+esc(I18N.t("state.title"))
+      +' <span class="muted tiny" style="font-weight:400">— '+esc(I18N.t("state.hint"))+'</span></div>';
     STATE_PARAMS.forEach(function(p){
       h+='<div class="staterow"><span class="sname">'+p.icon+' '+esc(I18N.t("state."+p.key))+'</span><span class="sdots">';
       for(var v=1; v<=5; v++){
-        h+='<button type="button" class="sdot'+(cur&&cur[p.key]===v?" on":"")+'" data-sp="'+p.key+'" data-v="'+v
+        h+='<button type="button" class="sdot'+(stateDraft[p.key]===v?" on":"")+'" data-sp="'+p.key+'" data-v="'+v
           +'" style="background:'+STATE_COLORS[v-1]+';color:'+STATE_COLORS[v-1]+'" aria-label="'+esc(I18N.t("state."+p.key))+' '+v+'/5"></button>';
       }
       h+='</span></div>';
     });
     return h+'</div>';
   }
-  function bindStateCard(st, rerender){
+  function bindStateDots(){
     $all(".sdot").forEach(function(b){ b.addEventListener("click",function(){
-      logStateTap(st, b.getAttribute("data-sp"), parseInt(b.getAttribute("data-v"),10));
-      toast(I18N.t("common.saved")); rerender();
+      var k=b.getAttribute("data-sp"), v=parseInt(b.getAttribute("data-v"),10);
+      stateDraft[k] = (stateDraft[k]===v) ? null : v;   // tap again = deselect
+      $all('.sdot[data-sp="'+k+'"]').forEach(function(x){
+        x.classList.toggle("on", parseInt(x.getAttribute("data-v"),10)===stateDraft[k]);
+      });
     });});
   }
 
@@ -2431,9 +2420,6 @@ var UI = (function(){
     }
     var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
 
-    // 1-tap wellbeing check-in card
-    html+=stateCardHTML(st);
-
     // composer: therapy-week + dose context, textarea, editable timestamp (backfill)
     var whenVal = editing ? toLocalDT(editing.ts) : nowLocalDT();
     function ctxHtml(dISO){
@@ -2443,6 +2429,7 @@ var UI = (function(){
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
       + (editing?'<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.editing"))+'</div>':'')
       + '<div class="row" id="jCtx" style="margin:0 0 10px">'+ctxHtml(whenVal.slice(0,10))+'</div>'
+      + (editing?'':stateRowsHTML())   // editing edits just the note; check-ins are their own rows
       + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'">'+(editing?esc(editing.text):'')+'</textarea></div>'
       + '<div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="datetime-local" id="jWhen" value="'+whenVal+'"></div>'
       + '<div class="row"><button class="btn" id="jAdd">'+esc(I18N.t(editing?"diary.update":"diary.add"))+'</button>'
@@ -2487,14 +2474,24 @@ var UI = (function(){
 
     function saveNote(){
       var txt=($("#jText").value||"").trim();
-      if(!txt){ $("#jText").focus(); return; }
+      var hasState = !editing && stateDraftHasValues();   // dots apply to new entries only
+      if(!txt && !hasState){ $("#jText").focus(); return; }
       var wv=$("#jWhen").value;
       var when=wv?new Date(wv):new Date();
       if(isNaN(when.getTime())) when=new Date();
-      if(!st.journal) st.journal=[];
-      if(editing){ editing.text=txt; editing.ts=when.toISOString(); journalEdit=null; }
-      else { st.journal.push({ id:uid(), ts:when.toISOString(), text:txt }); }
-      st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      if(txt){
+        if(!st.journal) st.journal=[];
+        if(editing){ editing.text=txt; editing.ts=when.toISOString(); journalEdit=null; }
+        else { st.journal.push({ id:uid(), ts:when.toISOString(), text:txt }); }
+        st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      } else if(editing){ journalEdit=null; }
+      if(hasState){
+        if(!st.stateLog) st.stateLog=[];
+        st.stateLog.push({ id:uid(), ts:when.toISOString(),
+          energy:stateDraft.energy, mood:stateDraft.mood, clarity:stateDraft.clarity });
+        st.stateLog.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+        stateDraft={ energy:null, mood:null, clarity:null };
+      }
       journalPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
     }
@@ -2524,7 +2521,7 @@ var UI = (function(){
       st.stateLog=(st.stateLog||[]).filter(function(e){ return e.id!==id; });
       STORE.save(); viewDiary();
     });});
-    bindStateCard(st, viewDiary);
+    bindStateDots();
   }
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
@@ -2904,27 +2901,29 @@ var UI = (function(){
     else { html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, 0, I18N.t("inj.cycleNone"), nowDosePill(st,"peptide",today)); }
     html+='</div>';
 
-    // --- latest readings: BP, weight + delta, BMI ---
+    // --- latest readings: BP, weight + delta, BMI --- (each dated: values come from different days)
+    function statDate(iso){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+'</span>':''; }
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span></div>';
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10)):'')+'</div>';
     var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData"), wcol="var(--ink)";
     if(wl.length>1){ var first=wl[wl.length-1].weightKg, d=curW-first; wcol=d<=0?"var(--good)":"var(--bad)"; wtxt+=" ("+(d>0?"+":"")+fmtNum(d,1)+")"; }
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span></div>';
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span>'+(wl.length?statDate(wl[0].date):'')+'</div>';
     var waistL=wl.filter(function(e){return e.waistCm!=null;});
     if(waistL.length){
       var curWa=waistL[0].waistCm, watxt=fmtNum(curWa,1)+" cm", wacol="var(--ink)";
       if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
-      html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span></div>';
+      html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date)+'</div>';
     }
     // latest wellbeing check-in from today
     var todayCk=(st.stateLog||[]).filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
     html+='<div class="stat"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
-      +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span></div>';
+      +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span>'
+      +(todayCk?statDate(String(todayCk.ts).slice(0,10)):'')+'</div>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
-      html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span></div>'; }
+      html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date):'')+'</div>'; }
     else { html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="font-size:13px" class="muted">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></div>'; }
     html+='</div></div>';
 
