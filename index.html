@@ -147,6 +147,9 @@
   .sdot.on{opacity:1;box-shadow:0 0 0 3px var(--card),0 0 0 5px currentColor;transform:scale(1.08)}
   .sdot:active{transform:scale(.92)}
   .statepill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
+  /* injection-day marker (syringe next to dates) */
+  .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
+  .injmark svg{width:13px;height:13px}
 
   /* free-text journal entries (log style) */
   .logentry{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
@@ -2120,7 +2123,7 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'
+        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'+injDayMarkers(st, e.date)
             + (e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:25%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
             + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
@@ -2289,7 +2292,8 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
-        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
+        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+injDayMarkers(st, String(e.ts).slice(0,10))
+            +(e.fasting?' <span class="pill" style="background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<br><span class="muted tiny">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
             + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')+'</td>'
@@ -2455,7 +2459,7 @@ var UI = (function(){
       pageSlice(items, journalPage).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
         var when=it.legacy?fmtDate(it.date):fmtDateTime(it.ts);
-        var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO))
+        var meta='<span>'+esc(when)+injDayMarkers(st,dISO)+'</span>'+weekPills(weekTags(st,dISO))
           +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
           +'<div class="ltext">'+(it.state?statePillsHTML(it.state):esc(it.text))+'</div></div>'
@@ -2537,6 +2541,19 @@ var UI = (function(){
       +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')
       +(doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+doseWeek:'')+'</span>';
   }
+  // Injection-day marker: a small syringe per substance injected on that date,
+  // shown next to dates in the weight/BP/diary histories so shot days stand
+  // out at a glance. Legacy jab.history dates count as Mounjaro.
+  function injDayMarkers(st, dISO){
+    var subs=[];
+    (st.injLog||[]).forEach(function(e){ if(e && e.date===dISO && subs.indexOf(e.substance)<0) subs.push(e.substance); });
+    if(subs.indexOf("mounjaro")<0 && st.jab && (st.jab.history||[]).indexOf(dISO)>=0) subs.push("mounjaro");
+    if(!subs.length) return "";
+    return subs.map(function(sub){
+      return '<span class="injmark" title="'+esc(I18N.t("inj.seg."+sub))+'" style="color:'+(SUBSTANCE_COLORS[sub]||"#94a3b8")+'">'+icon("inject")+'</span>';
+    }).join('');
+  }
+
   // single-substance pill for "now": "2.5 mg t5 · d5" (no label — context names it)
   function nowDosePill(st, sub, todayISOstr){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
