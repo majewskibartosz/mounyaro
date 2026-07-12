@@ -1780,10 +1780,11 @@ var UI = (function(){
   /* ---- chart zoom: "+" narrows to the last N readings, "−" restores full history ---- */
   var CHART_ZOOM_N=7;
   function zoomHeader(titleKey, cls, zoomed, total){
+    // "+" is always shown (heavily faded once active); "−" appears only while zoomed
     var btns = total>CHART_ZOOM_N
       ? '<div class="row" style="gap:6px;flex-wrap:nowrap">'
-        +'<button type="button" class="btn ghost sm '+cls+'" data-z="1" style="min-width:40px" title="'+esc(I18N.t("chart.zoom7"))+'"'+(zoomed?' disabled':'')+'>+</button>'
-        +'<button type="button" class="btn ghost sm '+cls+'" data-z="0" style="min-width:40px" title="'+esc(I18N.t("chart.zoomAll"))+'"'+(zoomed?'':' disabled')+'>&minus;</button>'
+        +'<button type="button" class="btn ghost sm '+cls+'" data-z="1" style="min-width:40px'+(zoomed?';opacity:.25;cursor:default':'')+'" title="'+esc(I18N.t("chart.zoom7"))+'"'+(zoomed?' disabled':'')+'>+</button>'
+        +(zoomed?'<button type="button" class="btn ghost sm '+cls+'" data-z="0" style="min-width:40px" title="'+esc(I18N.t("chart.zoomAll"))+'">&minus;</button>':'')
         +'</div>'
       : '';
     return '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap;margin-bottom:4px">'
