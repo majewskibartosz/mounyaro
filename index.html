@@ -138,6 +138,16 @@
   .slider .slhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;font-weight:700}
   .slider .slval{font-variant-numeric:tabular-nums;font-weight:800;color:var(--brand);min-width:2ch;text-align:right}
   .slider input[type=range]{width:100%;margin:6px 0 0;accent-color:var(--brand);height:26px}
+  /* 1-tap wellbeing check-in dots */
+  .staterow{display:flex;align-items:center;gap:10px;padding:6px 0}
+  .staterow .sname{flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px}
+  .staterow .sdots{display:flex;gap:8px}
+  .sdot{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
+    opacity:.28;transition:opacity .15s,transform .1s,box-shadow .15s}
+  .sdot.on{opacity:1;box-shadow:0 0 0 3px var(--card),0 0 0 5px currentColor;transform:scale(1.08)}
+  .sdot:active{transform:scale(.92)}
+  .statepill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
+
   /* free-text journal entries (log style) */
   .logentry{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
   .logentry:last-child{border-bottom:0}
@@ -485,6 +495,18 @@ var I18N = (function(){
     "weight.waistTotal":{pl:"Zmiana pasa",en:"Waist change"},
     "weight.legendWaist":{pl:"Przerywana linia = obwód pasa (cm, prawa oś)",en:"Dashed line = waist (cm, right axis)"},
     "corr.waist":{pl:"Obwód pasa",en:"Waist"},
+    "corr.energy":{pl:"Energia",en:"Energy"},
+    "corr.mood":{pl:"Nastrój",en:"Mood"},
+    "corr.clarity":{pl:"Klarowność",en:"Clarity"},
+
+    // ---- 1-tap wellbeing check-ins ----
+    "state.title":{pl:"Samopoczucie",en:"How you feel"},
+    "state.energy":{pl:"Energia",en:"Energy"},
+    "state.mood":{pl:"Nastrój",en:"Mood"},
+    "state.clarity":{pl:"Klarowność",en:"Clarity"},
+    "state.hint":{pl:"Jeden tap — zapis automatyczny. Rano i wieczorem powstaną osobne wpisy.",en:"One tap — saved automatically. Morning and evening become separate check-ins."},
+    "state.checkinAt":{pl:"check-in z",en:"check-in at"},
+    "state.confirmDel":{pl:"Usunąć ten check-in?",en:"Delete this check-in?"},
 
     "bmi.title":{pl:"Twoje BMI",en:"Your BMI"},
     "bmi.sub":{pl:"BMI wg standardów WHO. Wzrost i waga są wymagane.",en:"BMI by WHO standards. Height and weight required."},
@@ -1045,6 +1067,20 @@ var DOMAIN = (function(){
       (state.weightLog||[]).forEach(function(e){
         if(e && e.weightKg!=null) out.push({date:e.date, value:Number(e.weightKg)});
       });
+    } else if(kind==="state"){
+      // wellbeing check-ins: daily average of the 1-5 taps
+      var byDay={};
+      (state.stateLog||[]).forEach(function(e){
+        if(e && e[key]!=null && e.ts){
+          var sd=String(e.ts).slice(0,10);
+          (byDay[sd]=byDay[sd]||[]).push(Number(e[key]));
+        }
+      });
+      for(var dk in byDay){ if(byDay.hasOwnProperty(dk)){
+        var arr=byDay[dk], sum=0;
+        for(var ai=0;ai<arr.length;ai++) sum+=arr[ai];
+        out.push({date:dk, value:Math.round(sum/arr.length*10)/10});
+      }}
     } else if(sourceId==="waist"){
       (state.weightLog||[]).forEach(function(e){
         if(e && e.waistCm!=null) out.push({date:e.date, value:Number(e.waistCm)});
@@ -1246,6 +1282,7 @@ var STORE = (function(){
       metrics:[],          // legacy symptom registry (kept for old data + correlations)
       dailyLog:[],         // legacy per-day slider entries (kept; notes surface in the journal)
       journal:[],          // free-text log entries: {id,ts,text}
+      stateLog:[],         // 1-tap wellbeing check-ins: {id,ts,energy,mood,clarity} (1-5 or null)
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
@@ -2309,6 +2346,56 @@ var UI = (function(){
     });});
   }
 
+  /* ---- 1-tap wellbeing check-ins (energy / mood / clarity, 1-5) ----
+     A tap saves instantly; taps within 3 hours fill the same check-in, so a
+     morning and an evening entry emerge naturally without any buttons. */
+  var STATE_PARAMS=[{key:"energy",icon:"⚡"},{key:"mood",icon:"🙂"},{key:"clarity",icon:"🧠"}];
+  var STATE_COLORS=["#dc2626","#f59e0b","#eab308","#84cc16","#16a34a"];
+  var CHECKIN_WINDOW_MS=3*3600*1000;
+  function currentCheckin(st){
+    var log=st.stateLog||[];
+    if(log.length && (Date.now()-new Date(log[0].ts).getTime()) < CHECKIN_WINDOW_MS) return log[0];
+    return null;
+  }
+  function logStateTap(st, key, val){
+    if(!st.stateLog) st.stateLog=[];
+    var cur=currentCheckin(st);
+    if(cur){ cur[key]=val; }
+    else{
+      var e={ id:uid(), ts:new Date().toISOString(), energy:null, mood:null, clarity:null };
+      e[key]=val;
+      st.stateLog.push(e);
+      st.stateLog.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+    }
+    STORE.save();
+  }
+  function statePillsHTML(e){
+    return STATE_PARAMS.map(function(p){
+      var v=e[p.key];
+      return v==null ? '' : '<span class="statepill" style="background:'+STATE_COLORS[v-1]+'">'+p.icon+' '+v+'</span>';
+    }).join('');
+  }
+  function stateCardHTML(st){
+    var cur=currentCheckin(st);
+    var sub = cur ? esc(I18N.t("state.checkinAt"))+' '+esc(fmtDateTime(cur.ts)) : esc(I18N.t("state.hint"));
+    var h='<div class="card"><h2>'+esc(I18N.t("state.title"))+'</h2><p class="sub" style="margin-bottom:6px">'+sub+'</p>';
+    STATE_PARAMS.forEach(function(p){
+      h+='<div class="staterow"><span class="sname">'+p.icon+' '+esc(I18N.t("state."+p.key))+'</span><span class="sdots">';
+      for(var v=1; v<=5; v++){
+        h+='<button type="button" class="sdot'+(cur&&cur[p.key]===v?" on":"")+'" data-sp="'+p.key+'" data-v="'+v
+          +'" style="background:'+STATE_COLORS[v-1]+';color:'+STATE_COLORS[v-1]+'" aria-label="'+esc(I18N.t("state."+p.key))+' '+v+'/5"></button>';
+      }
+      h+='</span></div>';
+    });
+    return h+'</div>';
+  }
+  function bindStateCard(st, rerender){
+    $all(".sdot").forEach(function(b){ b.addEventListener("click",function(){
+      logStateTap(st, b.getAttribute("data-sp"), parseInt(b.getAttribute("data-v"),10));
+      toast(I18N.t("common.saved")); rerender();
+    });});
+  }
+
   /* ============ DIARY (free-text journal / log) ============ */
   // Therapy-week context (Mounjaro / TRT) for a given date, counted from the
   // first logged shot of each substance. Empty until a first shot exists.
@@ -2344,6 +2431,9 @@ var UI = (function(){
     }
     var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
 
+    // 1-tap wellbeing check-in card
+    html+=stateCardHTML(st);
+
     // composer: therapy-week + dose context, textarea, editable timestamp (backfill)
     var whenVal = editing ? toLocalDT(editing.ts) : nowLocalDT();
     function ctxHtml(dISO){
@@ -2360,8 +2450,11 @@ var UI = (function(){
       + '<span class="muted tiny">'+esc(I18N.t("diary.ctrlEnter"))+'</span></div>'
       + '</div>';
 
-    // log list: journal entries plus notes from the old slider diary, newest first
+    // log list: journal entries, wellbeing check-ins and old slider-diary notes, newest first
     var items=(st.journal||[]).map(function(e){ return {id:e.id, key:String(e.ts), ts:e.ts, text:e.text, legacy:false}; });
+    (st.stateLog||[]).forEach(function(e){
+      items.push({id:e.id, key:String(e.ts), ts:e.ts, state:e, legacy:false});
+    });
     (st.dailyLog||[]).forEach(function(e){
       if(e && e.note) items.push({id:e.id, key:e.date+"T12:00", date:e.date, text:e.note, legacy:true});
     });
@@ -2378,9 +2471,11 @@ var UI = (function(){
         var meta='<span>'+esc(when)+'</span>'+weekPills(weekTags(st,dISO))
           +(it.legacy?'<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>':'');
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
-          +'<div class="ltext">'+esc(it.text)+'</div></div>'
-          +(it.legacy?'':'<button class="btn ghost sm jEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(it.id)+'">'+icon("edit")+'</button>'
-            +'<button class="btn ghost sm jDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>')
+          +'<div class="ltext">'+(it.state?statePillsHTML(it.state):esc(it.text))+'</div></div>'
+          +(it.legacy?'':(it.state
+            ?'<button class="btn ghost sm sDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>'
+            :'<button class="btn ghost sm jEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(it.id)+'">'+icon("edit")+'</button>'
+            +'<button class="btn ghost sm jDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>'))
           +'</div>';
       });
       html+=pagerHTML("jPg", journalPage, items.length);
@@ -2423,6 +2518,13 @@ var UI = (function(){
       if(journalEdit===id) journalEdit=null;
       STORE.save(); viewDiary();
     });});
+    $all(".sDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("state.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.stateLog=(st.stateLog||[]).filter(function(e){ return e.id!==id; });
+      STORE.save(); viewDiary();
+    });});
+    bindStateCard(st, viewDiary);
   }
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
@@ -2816,6 +2918,10 @@ var UI = (function(){
       if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
       html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span></div>';
     }
+    // latest wellbeing check-in from today
+    var todayCk=(st.stateLog||[]).filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
+      +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span></div>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
       html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span></div>'; }
@@ -2859,6 +2965,11 @@ var UI = (function(){
       opts.push({ id:"weight", label:I18N.t("corr.weight") });
       if(st.weightLog.some(function(e){return e.waistCm!=null;})) opts.push({ id:"waist", label:I18N.t("corr.waist") });
       if(st.weightLog.some(function(e){return e.doseMg!=null;})) opts.push({ id:"mounjaroDose", label:I18N.t("corr.mjDose") });
+    }
+    if((st.stateLog||[]).length){
+      opts.push({ id:"state:energy", label:I18N.t("corr.energy") });
+      opts.push({ id:"state:mood", label:I18N.t("corr.mood") });
+      opts.push({ id:"state:clarity", label:I18N.t("corr.clarity") });
     }
     return opts;
   }
