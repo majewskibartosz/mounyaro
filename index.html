@@ -593,8 +593,23 @@ var I18N = (function(){
     "opt.toDose":{pl:"Dawka docelowa (mg)",en:"Target dose (mg)"},
     "opt.step":{pl:"Krok zwiększania (mg)",en:"Increase step (mg)"},
     "opt.golden":{pl:"Doliczaj dodatkową dawkę „golden”",en:"Also count the extra “golden” dose"},
-    "opt.goldenWarn":{pl:"„Golden” to odrobina leku, która zostaje w penie po normalnych 4 dawkach. Nie jest oficjalnie zatwierdzona, a jej ilość nie jest pewna (nowy pen z 2026 r. ma jej mniej). Korzystasz na własną odpowiedzialność.",
-                      en:"The “golden” dose is the little bit of medicine left in the pen after the normal 4 doses. It isn't officially approved and the amount isn't certain (the 2026 pen has less). Use at your own risk."},
+    "opt.goldenWarn":{pl:"„Golden” to lek, który zostaje w penie po normalnych 4 dawkach — pobiera się go strzykawką insulinową 1 ml (U-100). Nie jest oficjalnie zatwierdzony, a jego ilość nie jest pewna (nowy pen z 2026 r. ma go mniej). Korzystasz na własną odpowiedzialność.",
+                      en:"The “golden” dose is the medicine left in the pen after the normal 4 doses — drawn with a 1 ml U-100 insulin syringe. It isn't officially approved and the amount isn't certain (the 2026 pen has less). Use at your own risk."},
+    "opt.goldenAuto":{pl:"Dawka golden liczona automatycznie: 0,6 ml = 60 j. insulinówki U-100 = jedna pełna dawka pena.",
+                      en:"Golden dose calculated automatically: 0.6 ml = 60 units on a U-100 insulin syringe = one full pen dose."},
+    "opt.clickEq":{pl:"1 klik = {mg} mg = 0,01 ml = 1 j. insulinówki (U-100)",
+                   en:"1 click = {mg} mg = 0.01 ml = 1 unit on a U-100 insulin syringe"},
+    "sch.title":{pl:"Rozpiska całego pena (golden przez insulinówkę)",en:"Full pen schedule (golden via insulin syringe)"},
+    "sch.intro":{pl:"Kliknięcia z pena, końcówkę dobierasz insulinówką z dawki golden, a brakującą resztę z nowego pena — nic się nie marnuje.",
+                 en:"Clicks from the pen, the tail topped up with the insulin syringe from the golden dose, and the missing rest from a new pen — nothing is wasted."},
+    "sch.pen":{pl:"Pen",en:"Pen"},
+    "sch.clicksCol":{pl:"Kliknięcia z pena",en:"Clicks from pen"},
+    "sch.syrCol":{pl:"Insulinówka (j.)",en:"Syringe (u)"},
+    "sch.newPenCol":{pl:"Z nowego pena",en:"From new pen"},
+    "sch.units":{pl:"j.",en:"u"},
+    "sch.cycle":{pl:"Cykl: {shots} dawek = {pens} pen(y), potem schemat powtarza się od nowa.",
+                 en:"Cycle: {shots} shots = {pens} pen(s), then the pattern repeats."},
+    "sch.truncated":{pl:"Pokazano pierwsze {n} dawek.",en:"Showing the first {n} shots."},
     "opt.calc":{pl:"Oblicz",en:"Calculate"},
     "opt.clicksPerWeek":{pl:"Kliknięć / tydzień",en:"Clicks / week"},
     "opt.weeksPerPen":{pl:"Tygodni z 1 pena",en:"Weeks per pen"},
@@ -3137,7 +3152,7 @@ var UI = (function(){
       +'<span>'+esc(I18N.t("opt.golden"))+'</span></label>'
     +'<div id="oGoldRow" class="'+(g.enabled?"":"hidden")+'">'
       +'<div class="warnbox" style="margin-bottom:10px">'+esc(I18N.t("opt.goldenWarn"))+'</div>'
-      +'<div class="field" style="max-width:240px"><label>'+esc(I18N.t("common.clicks"))+' (golden)</label><input type="number" inputmode="numeric" id="oGoldClicks" value="'+(g.extraClicks||8)+'"></div>'
+      +'<div class="note" style="margin-bottom:10px">'+esc(I18N.t("opt.goldenAuto"))+'</div>'
     +'</div>'
     +'<button class="btn" id="oCalc">'+esc(I18N.t("opt.calc"))+'</button>'
     +'</div>'
@@ -3376,12 +3391,8 @@ var UI = (function(){
       $("#oGoldRow").className = this.checked?"":"hidden";
       STORE.save();
     });
-    var gc=$("#oGoldClicks"); if(gc) gc.addEventListener("change",function(){
-      st.settings.goldenDose.extraClicks=Math.max(0,parseInt(this.value,10)||0); STORE.save();
-    });
     $("#oCalc").addEventListener("click",function(){
       st.settings.goldenDose.enabled = $("#oGold").checked;
-      if($("#oGoldClicks")) st.settings.goldenDose.extraClicks=Math.max(0,parseInt($("#oGoldClicks").value,10)||0);
       st.calc.costPerPen = $("#oPrice").value===""?null:parseFloat($("#oPrice").value);
       st.settings.currency = ($("#oCur").value||"PLN").toUpperCase();
       st.calc.intervalDays = Math.max(1, parseInt($("#oInterval").value,10)||7);
@@ -3503,6 +3514,7 @@ var UI = (function(){
       + stat(I18N.t("opt.leftover"), r.leftover+" "+I18N.t("common.clicks"))
       + '</div>';
     html+='<div class="note" style="margin-top:12px">'+esc(I18N.t("opt.budget"))+': <b>'+r.budget+' '+I18N.t("common.clicks")+'</b> · '+fmtNum(r.months,1)+' '+I18N.t("opt.months")+'</div>';
+    html+='<div class="note" style="margin-top:10px">'+esc(clickEqText(S))+'</div>';
     if(P!=null){
       html+='<div class="stats" style="margin-top:12px">'
         + stat(I18N.t("opt.costPerWeek"), fmtMoney(r.weeklyCost,cur))
@@ -3514,7 +3526,41 @@ var UI = (function(){
       html+='<div class="note" style="margin-top:10px">'+esc(I18N.t("opt.enterPrice"))+'</div>';
     }
     html+='</div>';
+    // whole-pen schedule incl. the golden dose drawn by insulin syringe
+    if(st.settings.goldenDose.enabled){
+      html+=penScheduleHTML(S, pattern.map(function(f){ return base*f; }));
+    }
     $("#optResult").innerHTML=html;
+  }
+  function clickEqText(S){
+    return I18N.t("opt.clickEq").replace("{mg}", fmtNum(DOMAIN.mgPerClick(S),3));
+  }
+  // Shot-by-shot table of a whole pen incl. golden: clicks / syringe / new pen.
+  function penScheduleHTML(S, doses){
+    var ps=DOMAIN.penSchedule(S, doses, 30);
+    if(ps.error) return "";
+    var html='<div class="card"><h2>'+esc(I18N.t("sch.title"))+'</h2>'
+      +'<p class="sub">'+esc(I18N.t("sch.intro"))+'</p>'
+      +'<div class="scroll"><table><thead><tr>'
+      +'<th>'+esc(I18N.t("opt.shot"))+'</th><th class="num">'+esc(I18N.t("sch.pen"))+'</th>'
+      +'<th class="num">'+esc(I18N.t("sch.clicksCol"))+'</th>'
+      +'<th class="num">'+esc(I18N.t("sch.syrCol"))+'</th>'
+      +'<th class="num">'+esc(I18N.t("sch.newPenCol"))+'</th></tr></thead><tbody>';
+    ps.shots.forEach(function(sh){
+      html+='<tr><td>#'+sh.n+' <span class="muted tiny">'+fmtNum(sh.mg,2)+' mg</span></td>'
+        +'<td class="num">'+sh.penNo+(sh.penNoNew?' <span class="tiny" style="color:var(--warn)">→'+sh.penNoNew+'</span>':'')+'</td>'
+        +'<td class="num">'+(sh.clicks?'<b>'+sh.clicks+'</b>':'—')+'</td>'
+        +'<td class="num">'+(sh.syringeUnits?'<b style="color:var(--warn)">'+sh.syringeUnits+' '+esc(I18N.t("sch.units"))+'</b>':'—')+'</td>'
+        +'<td class="num">'+(sh.newPenClicks?'<b>'+sh.newPenClicks+'</b>':'—')+'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+    html+='<div class="note" style="margin-top:10px">'
+      +esc(ps.cycleComplete
+        ? I18N.t("sch.cycle").replace("{shots}",ps.shots.length).replace("{pens}",ps.pens)
+        : I18N.t("sch.truncated").replace("{n}",ps.shots.length))
+      +'</div>';
+    html+='</div>';
+    return html;
   }
   function runProg(){
     var st=s(), pg=st.calc.prog;
