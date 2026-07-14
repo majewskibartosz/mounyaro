@@ -620,13 +620,16 @@ var I18N = (function(){
     "trk.pen":{pl:"pen",en:"pen"},
     "trk.inPen":{pl:"W penie teraz",en:"In the pen now"},
     "trk.golden":{pl:"golden",en:"golden"},
-    "trk.done":{pl:"zrobionych dawek",en:"shots done"},
+    "trk.done":{pl:"dawek w planie",en:"doses in the plan"},
+    "trk.fromLog":{pl:"z historii zastrzyków",en:"from the injection log"},
     "trk.reset":{pl:"Nowy pen (od zera)",en:"New pen (start over)"},
-    "trk.resetConfirm":{pl:"Zacząć od nowego pełnego pena? Licznik wróci do zera.",en:"Start from a fresh full pen? The counter goes back to zero."},
-    "trk.hint":{pl:"Licznik przesuwa się sam po zapisaniu pierwszego zastrzyku Mounjaro danego dnia — drugi wpis tego samego dnia (np. drugie wkłucie dawki mieszanej) już go nie zmienia. Przyciski − / + to ręczna korekta pozycji („ile dawek już pobrałem”): każde kliknięcie od razu zapisuje stan — to nie jest podgląd.",
-                en:"The counter advances when you log the first Mounjaro shot of a day — a second entry the same day (e.g. the extra needle of a mixed dose) doesn't move it. The − / + buttons manually correct the position (“doses I've already taken”): every press saves immediately — it is not a preview."},
-    "trk.minus":{pl:"Cofnij licznik o jedną dawkę",en:"Move the counter one dose back"},
-    "trk.plus":{pl:"Przesuń licznik o jedną dawkę do przodu",en:"Move the counter one dose forward"},
+    "trk.resetConfirm":{pl:"Zacząć od nowego pełnego pena? Plan wystartuje od zera — wcześniejsze wpisy nie będą już liczone.",
+                        en:"Start from a fresh full pen? The plan restarts from zero — earlier entries are no longer counted."},
+    "trk.hint":{pl:"Pozycja w planie liczy się sama z historii zastrzyków: każdy dzień z zapisanym zastrzykiem Mounjaro od startu planu to jedna dawka (drugi wpis tego samego dnia = drugie wkłucie tej samej dawki mieszanej). Usunięcie wpisu albo dopisanie wstecz od razu koryguje plan.",
+                en:"The plan position derives from the injection log: every day with a logged Mounjaro shot since the plan started counts as one dose (a second entry the same day = the extra needle of the same mixed dose). Deleting or backfilling an entry corrects the plan immediately."},
+    "trk.preDone":{pl:"Korekta: dawki bez wpisu w historii",en:"Correction: doses with no log entry"},
+    "trk.preDoneHint":{pl:"Np. dawki pobrane z tego pena, zanim zacząłeś je zapisywać w aplikacji.",
+                       en:"E.g. doses taken from this pen before you started logging them in the app."},
     "trk.strengthPending":{pl:"Obecny pen zostaje {old} mg — nowa moc {new} mg zadziała od NASTĘPNEGO pena. Dawka przejściowa zostanie przeliczona w mg.",
                            en:"The current pen stays {old} mg — the new {new} mg strength applies from the NEXT pen. The transition dose is recalculated in mg."},
     "trk.strengthHint":{pl:"Moc dotyczy następnego otwieranego pena — obecnego pena nie zmienisz.",
@@ -1412,7 +1415,7 @@ var STORE = (function(){
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
         prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
       jab:{ history:[] },
-      penTracker:{ enabled:false, strengthMg:null, dose:null, shotsDone:0, strengthChanges:[], doseChanges:[] },
+      penTracker:{ enabled:false, strengthMg:null, dose:null, anchor:null, preDone:0, shotsDone:0, strengthChanges:[], doseChanges:[] },
       bp:{ log:[] },
       // ---- health-tracking expansion (all new keys; merge() migrates old data) ----
       // Blood pressure + pulse already live in bp.log (its own tab); we read it
@@ -2865,6 +2868,29 @@ var UI = (function(){
     return d;
   }
   function trkHasChanges(pt){ return (pt.strengthChanges||[]).length>0 || (pt.doseChanges||[]).length>0; }
+  function nextDayISO(d){ var t=new Date(d+"T12:00:00"); t.setDate(t.getDate()+1); return t.toISOString().slice(0,10); }
+  // One-time migration from the old stored counter: from now on the position
+  // derives from the injection log, so the legacy count becomes the manual
+  // correction and counting starts today (tomorrow if today is already logged,
+  // because the legacy counter has that dose in it).
+  function trkEnsureAnchor(st){
+    var pt=st.penTracker;
+    if(pt.anchor) return;
+    var today=todayISO();
+    pt.anchor=(st.jab.history||[]).indexOf(today)>=0 ? nextDayISO(today) : today;
+    pt.preDone=pt.shotsDone||0;
+    STORE.save();
+  }
+  // Plan position = days with a logged Mounjaro shot since the plan anchor
+  // (the injection log is the source of truth; multiple entries on one day are
+  // the needles of a single mixed dose) + the no-log-entry correction.
+  function trkShotsDone(st){
+    var pt=st.penTracker;
+    trkEnsureAnchor(st);
+    var n=pt.preDone||0;
+    (st.jab.history||[]).forEach(function(d){ if(d>=pt.anchor) n++; });
+    return n;
+  }
   function trkSchedule(pt, cap){
     if(!(pt.dose>0)) return {error:"badInput"};
     return DOMAIN.penSchedule(pt.strengthMg||5, [pt.dose], cap,
@@ -2892,10 +2918,10 @@ var UI = (function(){
   }
   // breakdown of the shot the tracker expects NEXT (used to stamp log entries)
   function trkCurrentDraw(st){
-    var pt=st.penTracker;
-    var ps=trkSchedule(pt, pt.shotsDone+2);
+    var pt=st.penTracker, done=trkShotsDone(st);
+    var ps=trkSchedule(pt, done+2);
     if(ps.error) return null;
-    var cur=trkShotAt(ps, pt.shotsDone);
+    var cur=trkShotAt(ps, done);
     if(!cur.sh) return null;
     return { c:cur.sh.clicks, s:cur.sh.syringeUnits, n:cur.sh.newPenClicks,
              p:cur.sh.penNo+cur.off, pn:cur.sh.penNoNew!=null?cur.sh.penNoNew+cur.off:null,
@@ -2923,23 +2949,24 @@ var UI = (function(){
     var html='<div class="card">'
       +'<label class="toggle"><input type="checkbox" id="ptOn"'+(pt.enabled?" checked":"")+'><span class="switch"></span><span><b>'+esc(I18N.t("trk.toggle"))+'</b></span></label>';
     if(pt.enabled){
-      var ps=trkSchedule(pt, pt.shotsDone+8);
-      var cur=ps.error?null:trkShotAt(ps, pt.shotsDone);
+      var done=trkShotsDone(st);
+      var ps=trkSchedule(pt, done+8);
+      var cur=ps.error?null:trkShotAt(ps, done);
       if(cur && !cur.sh) cur=null;
       var curPen = cur ? cur.sh.penNo+cur.off : 1;
       var curS = cur ? cur.sh.penS : (pt.strengthMg||5);
       var nextPenS = trkStrengthOf(pt, curPen+1);
-      var doseNow = trkDoseAt(pt, pt.shotsDone);
+      var doseNow = trkDoseAt(pt, done);
       // the chips pick the strength of the NEXT pen to open — mid-plan the
       // current pen physically stays what it is
       html+='<div class="field" style="margin-top:12px"><label>'+esc(I18N.t("opt.penStrength"))+'</label>'+chipRow("ptStr",STRENGTHS,nextPenS,"mg")+'</div>';
       if(cur && nextPenS!==curS){
         html+='<div class="warnbox" style="margin:-4px 0 10px">'+esc(I18N.t("trk.strengthPending").replace("{old}",fmtNum(curS,(curS%1)?1:0)).replace("{new}",fmtNum(nextPenS,(nextPenS%1)?1:0)))+'</div>';
-      } else if(pt.shotsDone>0 || trkHasChanges(pt)){
+      } else if(done>0 || trkHasChanges(pt)){
         html+='<p class="tiny muted" style="margin:-4px 0 10px">'+esc(I18N.t("trk.strengthHint"))+'</p>';
       }
       html+='<div class="field" style="max-width:240px"><label>'+esc(I18N.t("trk.dose"))+'</label><input type="number" inputmode="decimal" step="0.25" id="ptDose" value="'+(doseNow!=null?doseNow:"")+'"></div>';
-      var dPend=(pt.doseChanges||[]).filter(function(e){return e.fromShot===pt.shotsDone;});
+      var dPend=(pt.doseChanges||[]).filter(function(e){return e.fromShot===done;});
       if(dPend.length){
         var dpv=dPend[dPend.length-1].dose;
         html+='<p class="tiny" style="margin:-4px 0 10px;color:#d97706">'+esc(I18N.t("trk.dosePending").replace("{new}",fmtNum(dpv,(dpv%1)?2:0)))+'</p>';
@@ -2953,21 +2980,21 @@ var UI = (function(){
           +(mixed?'<br>'+esc(clickEqText(sh.newPenS))+' — '+esc(I18N.t("trk.pen"))+' '+(sh.penNoNew+off):'')+'</p>';
         // pen state going INTO this shot (a drained pen was already swapped)
         var pen0=DOMAIN.CLICKS_PER_PEN, gold0=DOMAIN.GOLDEN_UNITS;
-        if(pt.shotsDone>0){
-          var prev=trkShotAt(ps, pt.shotsDone-1);
+        if(done>0){
+          var prev=trkShotAt(ps, done-1);
           pen0=prev.sh.penLeftAfter; gold0=prev.sh.goldenLeftAfter;
           if(pen0===0 && gold0===0){ pen0=DOMAIN.CLICKS_PER_PEN; gold0=DOMAIN.GOLDEN_UNITS; }
         }
         html+='<div style="border:2px solid #0ea5a4;border-radius:14px;padding:12px">'
           +'<div class="tiny" style="text-transform:uppercase;letter-spacing:.6px;color:#0ea5a4;font-weight:700">'
-            +esc(I18N.t("trk.now").replace("{n}",pt.shotsDone+1))+' · '+esc(I18N.t("trk.pen"))+' '+(sh.penNo+off)+' ('+esc(mgLbl(sh.penS))+')</div>'
+            +esc(I18N.t("trk.now").replace("{n}",done+1))+' · '+esc(I18N.t("trk.pen"))+' '+(sh.penNo+off)+' ('+esc(mgLbl(sh.penS))+')</div>'
           +'<div class="row" style="gap:6px;margin-top:8px">'+trkParts(sh,off)+'</div>'
           +'<div class="tiny muted" style="margin-top:6px">= '+fmtNum(sh.mg,2)+' mg</div>'
         +'</div>';
         html+=penBarHTML(pen0, gold0);
-        html+='<div class="tiny muted" style="margin:0 0 4px">'+esc(I18N.t("trk.beforeDose").replace("{n}",pt.shotsDone+1))+': <b style="color:var(--ink)">'+pen0+' '+esc(I18N.t("common.clicks"))+'</b> + <b style="color:#d97706">'+esc(I18N.t("trk.golden"))+' '+gold0+' '+esc(I18N.t("sch.units"))+'</b></div>';
+        html+='<div class="tiny muted" style="margin:0 0 4px">'+esc(I18N.t("trk.beforeDose").replace("{n}",done+1))+': <b style="color:var(--ink)">'+pen0+' '+esc(I18N.t("common.clicks"))+'</b> + <b style="color:#d97706">'+esc(I18N.t("trk.golden"))+' '+gold0+' '+esc(I18N.t("sch.units"))+'</b></div>';
         var nx='';
-        for(var k=pt.shotsDone+1;k<=pt.shotsDone+3;k++){
+        for(var k=done+1;k<=done+3;k++){
           var it=trkShotAt(ps,k); if(!it.sh) break;
           nx+='<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px dashed var(--line)">'
             +'<span class="muted tiny" style="flex:0 0 36px">#'+(k+1)+'</span>'
@@ -2975,12 +3002,13 @@ var UI = (function(){
               +' <span class="muted tiny">· '+esc(I18N.t("trk.willLeave"))+' '+it.sh.penLeftAfter+' '+esc(I18N.t("trk.clicksShort"))+' + '+it.sh.goldenLeftAfter+' '+esc(I18N.t("sch.units"))+'</span></span></div>';
         }
         if(nx) html+='<div style="margin-top:10px"><div class="tiny muted" style="font-weight:600;margin-bottom:2px">'+esc(I18N.t("trk.next"))+'</div>'+nx+'</div>';
-        html+='<div class="row" style="align-items:center;gap:8px;margin-top:12px">'
-          +'<button class="btn ghost sm" id="ptMinus" style="min-width:42px" title="'+esc(I18N.t("trk.minus"))+'">−</button>'
-          +'<span class="small"><b>'+pt.shotsDone+'</b> '+esc(I18N.t("trk.done"))+'</span>'
-          +'<button class="btn ghost sm" id="ptPlus" style="min-width:42px" title="'+esc(I18N.t("trk.plus"))+'">+</button>'
+        html+='<div class="row" style="align-items:center;gap:10px;margin-top:12px">'
+          +'<span class="small"><b>'+done+'</b> '+esc(I18N.t("trk.done"))+' <span class="muted tiny">('+esc(I18N.t("trk.fromLog"))+')</span></span>'
           +'<button class="btn ghost sm" id="ptReset">'+esc(I18N.t("trk.reset"))+'</button>'
         +'</div>';
+        html+='<div class="field" style="max-width:260px;margin-top:10px"><label>'+esc(I18N.t("trk.preDone"))+'</label>'
+          +'<input type="number" inputmode="numeric" min="0" id="ptPre" value="'+(pt.preDone||0)+'">'
+          +'<div class="tiny muted" style="margin-top:4px">'+esc(I18N.t("trk.preDoneHint"))+'</div></div>';
         html+='<p class="tiny muted" style="margin:8px 0 0">'+esc(I18N.t("trk.hint"))+'</p>';
         html+='<div class="rellinks" style="margin-top:10px"><a class="btn ghost" href="#optimizer">'+icon("calc")+esc(I18N.t("rel.toCalc"))+icon("arrow")+'</a></div>';
       }
@@ -3151,10 +3179,11 @@ var UI = (function(){
       if(!pt.doseChanges) pt.doseChanges=[];
       var ptRerender=function(){ captureDraft(); viewInject(); };
       // current shot (for pen numbering when recording mid-plan changes)
+      var ptDone=pt.enabled?trkShotsDone(st):0;
       var ptCur=null;
       (function(){
-        var ps=trkSchedule(pt, pt.shotsDone+8);
-        if(!ps.error){ var c=trkShotAt(ps, pt.shotsDone); if(c.sh) ptCur=c; }
+        var ps=trkSchedule(pt, ptDone+8);
+        if(!ps.error){ var c=trkShotAt(ps, ptDone); if(c.sh) ptCur=c; }
       })();
       if($("#ptOn")) $("#ptOn").addEventListener("change",function(){
         pt.enabled=this.checked;
@@ -3165,7 +3194,7 @@ var UI = (function(){
         STORE.save(); ptRerender();
       });
       bindChips("ptStr",function(v){
-        if(pt.shotsDone===0 && !trkHasChanges(pt)){
+        if(ptDone===0 && !trkHasChanges(pt)){
           pt.strengthMg=v;                    // plan untouched — move the anchor
         } else if(ptCur){
           // mid-plan: record "the NEXT pen has strength v" without rewriting
@@ -3180,24 +3209,30 @@ var UI = (function(){
       });
       if($("#ptDose")) $("#ptDose").addEventListener("change",function(){
         var v=this.value===""?null:parseFloat(this.value);
-        if(pt.shotsDone===0 && !trkHasChanges(pt)){
+        if(ptDone===0 && !trkHasChanges(pt)){
           pt.dose=v;
         } else if(v>0){
           // mid-plan: the new dose applies from the upcoming shot onward
-          pt.doseChanges=pt.doseChanges.filter(function(e){ return e.fromShot<pt.shotsDone; });
-          if(v!==trkDoseAt(pt, pt.shotsDone)) pt.doseChanges.push({fromShot:pt.shotsDone, dose:v});
+          pt.doseChanges=pt.doseChanges.filter(function(e){ return e.fromShot<ptDone; });
+          if(v!==trkDoseAt(pt, ptDone)) pt.doseChanges.push({fromShot:ptDone, dose:v});
         }
         STORE.save(); ptRerender();
       });
-      if($("#ptMinus")) $("#ptMinus").addEventListener("click",function(){ pt.shotsDone=Math.max(0,pt.shotsDone-1); STORE.save(); ptRerender(); });
-      if($("#ptPlus")) $("#ptPlus").addEventListener("click",function(){ pt.shotsDone++; STORE.save(); ptRerender(); });
+      if($("#ptPre")) $("#ptPre").addEventListener("change",function(){
+        pt.preDone=Math.max(0, parseInt(this.value,10)||0);
+        STORE.save(); ptRerender();
+      });
       if($("#ptReset")) $("#ptReset").addEventListener("click",function(){
         if(!confirm(I18N.t("trk.resetConfirm"))) return;
-        // collapse recorded changes into the new anchor: a fresh full pen at
-        // the latest strength and dose
+        // fresh full pen at the latest strength and dose; counting restarts
+        // from today (tomorrow when today's dose is already logged — it
+        // belonged to the finished plan)
         pt.strengthMg=trkStrengthOf(pt, Infinity);
         var dInf=trkDoseAt(pt, Infinity); if(dInf!=null) pt.dose=dInf;
-        pt.strengthChanges=[]; pt.doseChanges=[]; pt.shotsDone=0;
+        pt.strengthChanges=[]; pt.doseChanges=[];
+        pt.preDone=0; pt.shotsDone=0;
+        var tdy=todayISO();
+        pt.anchor=(st.jab.history||[]).indexOf(tdy)>=0 ? nextDayISO(tdy) : tdy;
         STORE.save(); ptRerender();
       });
     }
@@ -3239,16 +3274,17 @@ var UI = (function(){
         var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
         if(pos) entry.pos=pos;
         if(injSeg==="peptide" && name) entry.name=name;
-        // Only the FIRST Mounjaro entry of a day advances the pen tracker —
-        // a second entry the same day is the extra needle of the same mixed
-        // dose (insulin syringe + pen). The first entry is stamped with the
-        // planned breakdown so history shows what came from where.
+        // The tracker position derives from jab.history, so logging (and
+        // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
+        // a day — one new dose — is stamped with the planned breakdown so
+        // history shows what came from where; a second entry the same day is
+        // the extra needle of the same mixed dose.
         if(injSeg==="mounjaro" && st.penTracker.enabled
            && st.jab.history.indexOf(dateStr)===-1
-           && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===dateStr;})){
+           && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===dateStr;})
+           && (!st.penTracker.anchor || dateStr>=st.penTracker.anchor)){
           var pd=trkCurrentDraw(st);
           if(pd) entry.penDraw=pd;
-          st.penTracker.shotsDone++;
         }
         st.injLog.push(entry);
         if(injSeg==="mounjaro") mjDate=dateStr;
@@ -3265,23 +3301,19 @@ var UI = (function(){
     });});
     $all(".injDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("inj.confirmDel"))) return;
-      var id=b.getAttribute("data-id"), lastMjOfDay=false;
+      var id=b.getAttribute("data-id");
       if(id.indexOf("jab:")===0){           // legacy Mounjaro date only
         var d=id.slice(4);
         st.jab.history=st.jab.history.filter(function(x){return x!==d;});
-        lastMjOfDay=true;
       } else {
         var del=null;
         st.injLog=st.injLog.filter(function(e){ if(e.id===id){ del=e; return false; } return true; });
-        // Mounjaro: also drop the date from jab.history if no other entry covers it
-        if(del && del.substance==="mounjaro" && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===del.date;})){
+        // Mounjaro: also drop the date from jab.history if no other entry
+        // covers it — the pen tracker derives its position from jab.history,
+        // so this is all the bookkeeping a delete needs
+        if(del && del.substance==="mounjaro" && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===del.date;}))
           st.jab.history=st.jab.history.filter(function(x){return x!==del.date;});
-          lastMjOfDay=true;
-        }
       }
-      // the pen tracker steps back only when a day loses its LAST Mounjaro
-      // entry — mirrors the first-entry-of-the-day advance on logging
-      if(lastMjOfDay && st.penTracker.enabled) st.penTracker.shotsDone=Math.max(0,st.penTracker.shotsDone-1);
       if(injEdit===id) injEdit=null;
       STORE.save(); viewInject();
     });});
