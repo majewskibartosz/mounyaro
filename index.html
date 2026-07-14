@@ -796,6 +796,10 @@ var I18N = (function(){
    ========================================================================= */
 var DOMAIN = (function(){
   var CLICKS_PER_PEN = 240, CLICKS_PER_DOSE = 60, DOSES_PER_PEN = 4;
+  // Golden dose: ~0.6 ml of overfill left after the 4 labeled doses, drawn with
+  // a 1 ml U-100 insulin syringe. 240 clicks = 2.4 ml, so 1 click = 0.01 ml
+  // = 1 insulin unit; the golden dose = 60 units = 60 click-equivalents.
+  var GOLDEN_UNITS = 60;
   function round(n){ return Math.round(n); }
   function r3(n){ return Math.round(n*1000)/1000; }
 
@@ -803,7 +807,53 @@ var DOMAIN = (function(){
   function clicksForDose(D,S){ return Math.max(0, Math.round(D*CLICKS_PER_DOSE/S)); }
   function mgForClicks(c,S){ return c*S/CLICKS_PER_DOSE; }
   function totalMgPerPen(S){ return DOSES_PER_PEN*S; }
-  function budgetClicks(golden){ return CLICKS_PER_PEN + (golden && golden.enabled ? Math.max(0, golden.extraClicks||0) : 0); }
+  function budgetClicks(golden){ return CLICKS_PER_PEN + (golden && golden.enabled ? GOLDEN_UNITS : 0); }
+
+  // Whole-pen schedule including the golden dose, drawn with an insulin syringe.
+  // Clicks come from the pen while it still clicks; the last click-shot is
+  // topped up by syringe from the golden reservoir; leftover golden carries to
+  // the next shot, topped up with clicks from the NEW pen. Nothing is wasted.
+  // doses: array of per-shot mg (repeating pattern). Returns one full cycle
+  // (until a shot starts again on a fresh pen), capped at maxShots.
+  function penSchedule(S, doses, maxShots){
+    if(!doses || !doses.length) return {error:"badInput"};
+    var clicksArr = doses.map(function(d){ return clicksForDose(d,S); });
+    if(clicksArr.some(function(c){ return c<=0; })) return {error:"badInput"};
+    if(Math.max.apply(null,clicksArr) > CLICKS_PER_PEN + GOLDEN_UNITS) return {error:"tooBig"};
+    var cap = maxShots || 40;
+    var penClicks = CLICKS_PER_PEN, goldenLeft = GOLDEN_UNITS, penNo = 1;
+    var shots = [], cycleComplete = false, usedUnits = 0;
+    for(var n=0; n<cap; n++){
+      // a fully drained pen (no clicks, no golden) is swapped before the shot
+      if(penClicks===0 && goldenLeft===0){ penNo++; penClicks=CLICKS_PER_PEN; goldenLeft=GOLDEN_UNITS; }
+      // cycle closes when a shot starts on a fresh pen at the top of the pattern
+      if(n>0 && penClicks===CLICKS_PER_PEN && goldenLeft===GOLDEN_UNITS && n%clicksArr.length===0){ cycleComplete=true; break; }
+      var c = clicksArr[n % clicksArr.length];
+      var fromClicks = Math.min(penClicks, c); penClicks -= fromClicks;
+      var rest = c - fromClicks;
+      var fromSyringe = Math.min(goldenLeft, rest); goldenLeft -= fromSyringe;
+      rest -= fromSyringe;
+      var fromNew = 0, openedNew = false;
+      if(rest > 0){
+        penNo++; openedNew = true;
+        penClicks = CLICKS_PER_PEN - rest; goldenLeft = GOLDEN_UNITS;
+        fromNew = rest;
+      }
+      usedUnits += c;
+      shots.push({
+        n:n+1, dose:doses[n % doses.length], mg:r3(mgForClicks(c,S)), units:c,
+        clicks:fromClicks, syringeUnits:fromSyringe, newPenClicks:fromNew,
+        penNo: openedNew ? penNo-1 : penNo, penNoNew: openedNew ? penNo : null,
+        penLeftAfter: penClicks, goldenLeftAfter: goldenLeft
+      });
+    }
+    return {
+      shots: shots, cycleComplete: cycleComplete,
+      pens: cycleComplete ? usedUnits/(CLICKS_PER_PEN+GOLDEN_UNITS) : penNo,
+      mgPerClick: r3(mgPerClick(S)), goldenUnits: GOLDEN_UNITS, goldenMg: r3(mgForClicks(GOLDEN_UNITS,S)),
+      penUnits: CLICKS_PER_PEN + GOLDEN_UNITS
+    };
+  }
 
   function cost(P,S){
     return {
@@ -1261,8 +1311,9 @@ var DOMAIN = (function(){
 
   return {
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
+    GOLDEN_UNITS:GOLDEN_UNITS,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
-    totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost,
+    totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
@@ -1291,6 +1342,7 @@ var STORE = (function(){
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
         prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
       jab:{ history:[] },
+      penTracker:{ enabled:false, strengthMg:null, dose:null, shotsDone:0 },
       bp:{ log:[] },
       // ---- health-tracking expansion (all new keys; merge() migrates old data) ----
       // Blood pressure + pulse already live in bp.log (its own tab); we read it
