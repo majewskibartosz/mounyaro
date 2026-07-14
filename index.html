@@ -847,8 +847,27 @@ var DOMAIN = (function(){
   // the next shot, topped up with clicks from the NEW pen. Nothing is wasted.
   // doses: array of per-shot mg (repeating pattern). Returns one full cycle
   // (until a shot starts again on a fresh pen), capped at maxShots.
-  function penSchedule(S, doses, maxShots){
+  // opts (optional) records mid-plan changes without rewriting history:
+  //   strengthChanges: [{afterPen, s}] — pens numbered > afterPen use strength s
+  //     (a prescription change takes effect from the NEXT new pen);
+  //   doseChanges: [{fromShot, dose}] — shots (0-based) >= fromShot use this mg.
+  // Drawing is mg-based per source, so mixing pen strengths stays exact:
+  // units drawn from a source = round(remaining mg / mgPerClick(source strength)).
+  function penSchedule(S, doses, maxShots, opts){
     if(!doses || !doses.length) return {error:"badInput"};
+    opts = opts || {};
+    var sCh = opts.strengthChanges || [], dCh = opts.doseChanges || [];
+    function strengthOf(p){
+      var s=S;
+      for(var i=0;i<sCh.length;i++){ if(p>sCh[i].afterPen) s=sCh[i].s; }
+      return s;
+    }
+    function doseAt(n){
+      var d=doses[n % doses.length];
+      for(var i=0;i<dCh.length;i++){ if(n>=dCh[i].fromShot) d=dCh[i].dose; }
+      return d;
+    }
+    var uniform = !sCh.length && !dCh.length;
     var clicksArr = doses.map(function(d){ return clicksForDose(d,S); });
     if(clicksArr.some(function(c){ return c<=0; })) return {error:"badInput"};
     if(Math.max.apply(null,clicksArr) > CLICKS_PER_PEN + GOLDEN_UNITS) return {error:"tooBig"};
@@ -859,23 +878,32 @@ var DOMAIN = (function(){
       // a fully drained pen (no clicks, no golden) is swapped before the shot
       if(penClicks===0 && goldenLeft===0){ penNo++; penClicks=CLICKS_PER_PEN; goldenLeft=GOLDEN_UNITS; }
       // cycle closes when a shot starts on a fresh pen at the top of the pattern
-      if(n>0 && penClicks===CLICKS_PER_PEN && goldenLeft===GOLDEN_UNITS && n%clicksArr.length===0){ cycleComplete=true; break; }
-      var c = clicksArr[n % clicksArr.length];
-      var fromClicks = Math.min(penClicks, c); penClicks -= fromClicks;
-      var rest = c - fromClicks;
-      var fromSyringe = Math.min(goldenLeft, rest); goldenLeft -= fromSyringe;
-      rest -= fromSyringe;
-      var fromNew = 0, openedNew = false;
-      if(rest > 0){
-        penNo++; openedNew = true;
-        penClicks = CLICKS_PER_PEN - rest; goldenLeft = GOLDEN_UNITS;
-        fromNew = rest;
+      // (only meaningful while the plan is uniform — no pending changes)
+      if(uniform && n>0 && penClicks===CLICKS_PER_PEN && goldenLeft===GOLDEN_UNITS && n%clicksArr.length===0){ cycleComplete=true; break; }
+      var D = doseAt(n), Sp = strengthOf(penNo);
+      var Rmg = D;
+      var uWant = Math.round(Rmg/mgPerClick(Sp));
+      if(uWant<=0) return {error:"badInput"};
+      var fromClicks = Math.min(penClicks, uWant); penClicks -= fromClicks;
+      Rmg -= fromClicks*mgPerClick(Sp);
+      var fromSyringe = Math.min(goldenLeft, Math.max(0, Math.round(Rmg/mgPerClick(Sp)))); goldenLeft -= fromSyringe;
+      Rmg -= fromSyringe*mgPerClick(Sp);
+      var fromNew = 0, openedNew = false, Snew = null;
+      var uNew = Math.max(0, Math.round(Rmg/mgPerClick(strengthOf(penNo+1))));
+      if(uNew > 0){
+        penNo++; openedNew = true; Snew = strengthOf(penNo);
+        if(uNew > CLICKS_PER_PEN) return {error:"tooBig"};
+        penClicks = CLICKS_PER_PEN - uNew; goldenLeft = GOLDEN_UNITS;
+        fromNew = uNew;
+        Rmg -= uNew*mgPerClick(Snew);
       }
-      usedUnits += c;
+      var actualMg = D - Rmg;
+      usedUnits += fromClicks + fromSyringe + fromNew;
       shots.push({
-        n:n+1, dose:doses[n % doses.length], mg:r3(mgForClicks(c,S)), units:c,
+        n:n+1, dose:D, mg:r3(actualMg), units:fromClicks+fromSyringe+fromNew,
         clicks:fromClicks, syringeUnits:fromSyringe, newPenClicks:fromNew,
         penNo: openedNew ? penNo-1 : penNo, penNoNew: openedNew ? penNo : null,
+        penS: Sp, newPenS: Snew,
         penLeftAfter: penClicks, goldenLeftAfter: goldenLeft
       });
     }
