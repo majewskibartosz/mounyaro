@@ -623,8 +623,9 @@ var I18N = (function(){
     "trk.done":{pl:"zrobionych dawek",en:"shots done"},
     "trk.reset":{pl:"Nowy pen (od zera)",en:"New pen (start over)"},
     "trk.resetConfirm":{pl:"Zacząć od nowego pełnego pena? Licznik wróci do zera.",en:"Start from a fresh full pen? The counter goes back to zero."},
-    "trk.hint":{pl:"Licznik przesuwa się sam po zapisaniu zastrzyku Mounjaro. W razie potrzeby popraw go przyciskami − / +.",
-                en:"The counter advances automatically when you log a Mounjaro shot. Adjust with − / + if needed."},
+    "trk.hint":{pl:"Licznik przesuwa się sam po zapisaniu pierwszego zastrzyku Mounjaro danego dnia — drugi wpis tego samego dnia (np. drugie wkłucie dawki mieszanej) już go nie zmienia. W razie potrzeby popraw go przyciskami − / +.",
+                en:"The counter advances when you log the first Mounjaro shot of a day — a second entry the same day (e.g. the extra needle of a mixed dose) doesn't move it. Adjust with − / + if needed."},
+    "trk.clicksShort":{pl:"klik.",en:"clicks"},
     "trk.badDose":{pl:"Podaj dawkę i moc pena, aby zobaczyć plan.",en:"Enter a dose and pen strength to see the plan."},
     "opt.calc":{pl:"Oblicz",en:"Calculate"},
     "opt.clicksPerWeek":{pl:"Kliknięć / tydzień",en:"Clicks / week"},
@@ -2827,6 +2828,24 @@ var UI = (function(){
     if(sh.newPenClicks) p.push('<b>'+sh.newPenClicks+'</b> '+esc(I18N.t("trk.newPen"))+' ('+esc(I18N.t("trk.pen"))+' '+(sh.penNoNew+off)+')');
     return p.join(" + ");
   }
+  // breakdown of the shot the tracker expects NEXT (used to stamp log entries)
+  function trkCurrentDraw(st){
+    var pt=st.penTracker;
+    if(!(pt.dose>0)) return null;
+    var ps=DOMAIN.penSchedule(pt.strengthMg||5, [pt.dose], pt.shotsDone+2);
+    if(ps.error) return null;
+    var cur=trkShotAt(ps, pt.shotsDone);
+    if(!cur.sh) return null;
+    return { c:cur.sh.clicks, s:cur.sh.syringeUnits, n:cur.sh.newPenClicks,
+             p:cur.sh.penNo+cur.off, pn:cur.sh.penNoNew!=null?cur.sh.penNoNew+cur.off:null };
+  }
+  function penDrawLabel(d){
+    var p=[];
+    if(d.c) p.push(d.c+' '+I18N.t("trk.clicksShort"));
+    if(d.s) p.push('💉 '+d.s+' '+I18N.t("sch.units"));
+    if(d.n) p.push(d.n+' '+I18N.t("trk.clicksShort")+' ('+I18N.t("trk.pen")+' '+d.pn+')');
+    return p.join(' + ');
+  }
   // fuel-gauge of the current pen: 240-click section + 60-unit golden section
   function penBarHTML(penClicks, goldenLeft){
     var C=DOMAIN.CLICKS_PER_PEN, G=DOMAIN.GOLDEN_UNITS;
@@ -3000,7 +3019,8 @@ var UI = (function(){
       pageSlice(hlist, injPage).forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
-        html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')+'</td>'
+        html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
+          +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
             ? dosePill("", e.dose+" "+(e.unit||""), SUBSTANCE_COLORS[e.substance]||"#94a3b8",
@@ -3102,10 +3122,19 @@ var UI = (function(){
         var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
         if(pos) entry.pos=pos;
         if(injSeg==="peptide" && name) entry.name=name;
+        // Only the FIRST Mounjaro entry of a day advances the pen tracker —
+        // a second entry the same day is the extra needle of the same mixed
+        // dose (insulin syringe + pen). The first entry is stamped with the
+        // planned breakdown so history shows what came from where.
+        if(injSeg==="mounjaro" && st.penTracker.enabled
+           && st.jab.history.indexOf(dateStr)===-1
+           && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===dateStr;})){
+          var pd=trkCurrentDraw(st);
+          if(pd) entry.penDraw=pd;
+          st.penTracker.shotsDone++;
+        }
         st.injLog.push(entry);
         if(injSeg==="mounjaro") mjDate=dateStr;
-        // a newly logged Mounjaro shot advances the pen tracker
-        if(injSeg==="mounjaro" && st.penTracker.enabled) st.penTracker.shotsDone++;
       }
       // Mounjaro: keep the weekly ring's source of truth (jab.history) in sync with the chosen day
       if(mjDate && st.jab.history.indexOf(mjDate)===-1){ st.jab.history.push(mjDate); st.jab.history.sort(); }
@@ -3119,21 +3148,23 @@ var UI = (function(){
     });});
     $all(".injDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("inj.confirmDel"))) return;
-      var id=b.getAttribute("data-id"), wasMj=false;
+      var id=b.getAttribute("data-id"), lastMjOfDay=false;
       if(id.indexOf("jab:")===0){           // legacy Mounjaro date only
         var d=id.slice(4);
         st.jab.history=st.jab.history.filter(function(x){return x!==d;});
-        wasMj=true;
+        lastMjOfDay=true;
       } else {
         var del=null;
         st.injLog=st.injLog.filter(function(e){ if(e.id===id){ del=e; return false; } return true; });
         // Mounjaro: also drop the date from jab.history if no other entry covers it
-        if(del && del.substance==="mounjaro" && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===del.date;}))
+        if(del && del.substance==="mounjaro" && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===del.date;})){
           st.jab.history=st.jab.history.filter(function(x){return x!==del.date;});
-        wasMj=!!(del && del.substance==="mounjaro");
+          lastMjOfDay=true;
+        }
       }
-      // removing a Mounjaro shot steps the pen tracker back
-      if(wasMj && st.penTracker.enabled) st.penTracker.shotsDone=Math.max(0,st.penTracker.shotsDone-1);
+      // the pen tracker steps back only when a day loses its LAST Mounjaro
+      // entry — mirrors the first-entry-of-the-day advance on logging
+      if(lastMjOfDay && st.penTracker.enabled) st.penTracker.shotsDone=Math.max(0,st.penTracker.shotsDone-1);
       if(injEdit===id) injEdit=null;
       STORE.save(); viewInject();
     });});
