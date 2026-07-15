@@ -149,9 +149,10 @@
   .statepill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 3px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
   .statepill .pemoji{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
     border-radius:50%;background:rgba(0,0,0,.32);font-size:11px;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
-  /* injection-day marker (syringe next to dates) */
+  /* injection-day marker (syringe next to dates); .pre = reading taken before that day's shot */
   .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
   .injmark svg{width:13px;height:13px}
+  .injmark.pre{opacity:.35}
   .daymarks{margin-top:1px;line-height:1}
   .daymarks .injmark{margin-left:0;margin-right:5px}
   /* journal day grouping: quiet uppercase date + compact context pills on one line */
@@ -370,6 +371,7 @@ var I18N = (function(){
     "inj.seg.mounjaro":{pl:"Mounjaro",en:"Mounjaro"},
     "inj.seg.trt":{pl:"TRT",en:"TRT"},
     "inj.seg.peptide":{pl:"Peptydy",en:"Peptides"},
+    "inj.markPre":{pl:"pomiar przed zastrzykiem",en:"reading before the injection"},
     "inj.dose":{pl:"Dawka",en:"Dose"},
     "inj.logBtn":{pl:"Zapisz zastrzyk",en:"Log injection"},
     "inj.logToday":{pl:"Zrobiłem dziś",en:"Done today"},
@@ -1411,7 +1413,7 @@ var STORE = (function(){
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" } },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
-      weightLog:[],
+      weightLog:[],        // {id,date,weightKg,waistCm,doseMg,note}; ts (optional) = exact time when given
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
         prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
       jab:{ history:[] },
@@ -2245,6 +2247,7 @@ var UI = (function(){
     +   (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
     +   '<div class="grid g2">'
     +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+esc(editing?editing.date:todayISO())+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("common.time"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="time" id="wTime" value="'+(editing&&editing.ts?toLocalDT(editing.ts).slice(11,16):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0" value="'+(editing?esc(editing.weightKg):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100" value="'+(editing&&editing.waistCm!=null?esc(editing.waistCm):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="7.5" value="'+(editing?(editing.doseMg!=null?esc(editing.doseMg):''):(last!=null?esc(last):''))+'"></div>'
@@ -2262,7 +2265,7 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("weight.history"))+'</h2><div class="scroll"><table><tbody>';
       weightPage=pageClamp(weightPage, st.weightLog.length);
       pageSlice(st.weightLog, weightPage).forEach(function(e){
-        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+'</span>'+injDayMarkersBlock(st, e.date)
+        html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+(e.ts?'<span class="muted tiny"> '+esc(fmtTime(e.ts))+'</span>':'')+'</span>'+injDayMarkersBlock(st, e.date, e.ts)
             + (e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:25%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
             + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
@@ -2292,11 +2295,18 @@ var UI = (function(){
       if(isNaN(kg)||kg<=0){ $("#wKg").focus(); return; }
       var dose=$("#wDose").value===""?null:parseFloat($("#wDose").value);
       var waist=$("#wWaist").value===""?null:parseFloat($("#wWaist").value);
-      var fields={ date:$("#wDate").value||todayISO(), weightKg:kg,
+      // optional time -> full timestamp, so injection-day markers can tell
+      // whether the weigh-in happened before or after that day's shot
+      var wTs=null;
+      if($("#wTime").value){
+        var wWhen=new Date(($("#wDate").value||todayISO())+"T"+$("#wTime").value);
+        if(!isNaN(wWhen.getTime())) wTs=wWhen.toISOString();
+      }
+      var fields={ date:$("#wDate").value||todayISO(), ts:wTs, weightKg:kg,
                    waistCm:(waist==null||isNaN(waist)||waist<=0)?null:waist,
                    doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#wNote").value||"").trim() };
       if(editing){
-        editing.date=fields.date; editing.weightKg=fields.weightKg; editing.waistCm=fields.waistCm;
+        editing.date=fields.date; editing.ts=fields.ts; editing.weightKg=fields.weightKg; editing.waistCm=fields.waistCm;
         editing.doseMg=fields.doseMg; editing.note=fields.note;
         weightEdit=null;
       } else {
@@ -2432,7 +2442,7 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
-        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+injDayMarkersBlock(st, String(e.ts).slice(0,10))
+        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
             +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
@@ -2709,18 +2719,27 @@ var UI = (function(){
   // Injection-day marker: a small syringe per substance injected on that date,
   // shown next to dates in the weight/BP/diary histories so shot days stand
   // out at a glance. Legacy jab.history dates count as Mounjaro.
-  function injDayMarkers(st, dISO){
-    var subs=[];
-    (st.injLog||[]).forEach(function(e){ if(e && e.date===dISO && subs.indexOf(e.substance)<0) subs.push(e.substance); });
+  // When the reading's own timestamp (measTs) is known and falls before that
+  // substance's first shot of the day, the syringe renders dimmed: the day is
+  // still marked, but the reading predates the shot (e.g. fasting morning BP).
+  // No timestamp on either side -> full marker (we don't guess the order).
+  function injDayMarkers(st, dISO, measTs){
+    var subs=[], firstTs={};
+    (st.injLog||[]).forEach(function(e){
+      if(!e || e.date!==dISO) return;
+      if(subs.indexOf(e.substance)<0) subs.push(e.substance);
+      if(e.ts && (!firstTs[e.substance] || e.ts<firstTs[e.substance])) firstTs[e.substance]=e.ts;
+    });
     if(subs.indexOf("mounjaro")<0 && st.jab && (st.jab.history||[]).indexOf(dISO)>=0) subs.push("mounjaro");
     if(!subs.length) return "";
     return subs.map(function(sub){
-      return '<span class="injmark" title="'+esc(I18N.t("inj.seg."+sub))+'" style="color:'+(SUBSTANCE_COLORS[sub]||"#94a3b8")+'">'+icon("inject")+'</span>';
+      var pre = !!(measTs && firstTs[sub] && String(measTs)<firstTs[sub]);
+      return '<span class="injmark'+(pre?' pre':'')+'" title="'+esc(I18N.t("inj.seg."+sub))+(pre?' · '+esc(I18N.t("inj.markPre")):'')+'" style="color:'+(SUBSTANCE_COLORS[sub]||"#94a3b8")+'">'+icon("inject")+'</span>';
     }).join('');
   }
   // same markers on their own line (for narrow date columns in history tables)
-  function injDayMarkersBlock(st, dISO){
-    var m=injDayMarkers(st, dISO);
+  function injDayMarkersBlock(st, dISO, measTs){
+    var m=injDayMarkers(st, dISO, measTs);
     return m ? '<div class="daymarks">'+m+'</div>' : '';
   }
 
@@ -3349,19 +3368,20 @@ var UI = (function(){
     html+='</div>';
 
     // --- latest readings: BP, weight + delta, BMI --- (each dated: values come from different days)
-    function statDate(iso){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+injDayMarkers(st,iso)+'</span>':''; }
+    // ts (when the reading has one) dims the syringe for readings taken before that day's shot
+    function statDate(iso, ts){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+injDayMarkers(st,iso,ts)+'</span>':''; }
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10)):'')+'</div>';
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10), bpL.ts):'')+'</div>';
     var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData"), wcol="var(--ink)";
     if(wl.length>1){ var first=wl[wl.length-1].weightKg, d=curW-first; wcol=d<=0?"var(--good)":"var(--bad)"; wtxt+=" ("+(d>0?"+":"")+fmtNum(d,1)+")"; }
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span>'+(wl.length?statDate(wl[0].date):'')+'</div>';
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>';
     var waistL=wl.filter(function(e){return e.waistCm!=null;});
     if(waistL.length){
       var curWa=waistL[0].waistCm, watxt=fmtNum(curWa,1)+" cm", wacol="var(--ink)";
       if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
-      html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date)+'</div>';
+      html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date, waistL[0].ts)+'</div>';
     }
     // latest wellbeing values from today (notes with dots or legacy check-ins)
     var ckAll=(st.stateLog||[]).slice();
@@ -3370,10 +3390,10 @@ var UI = (function(){
     var todayCk=ckAll.filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
     html+='<div class="stat"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
       +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span>'
-      +(todayCk?statDate(String(todayCk.ts).slice(0,10)):'')+'</div>';
+      +(todayCk?statDate(String(todayCk.ts).slice(0,10), todayCk.ts):'')+'</div>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
-      html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date):'')+'</div>'; }
+      html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>'; }
     else { html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="font-size:13px" class="muted">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></div>'; }
     html+='</div></div>';
 
