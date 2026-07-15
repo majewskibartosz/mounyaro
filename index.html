@@ -2247,7 +2247,7 @@ var UI = (function(){
     +   (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
     +   '<div class="grid g2">'
     +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+esc(editing?editing.date:todayISO())+'"></div>'
-    +     '<div class="field"><label>'+esc(I18N.t("common.time"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="time" id="wTime" value="'+(editing&&editing.ts?toLocalDT(editing.ts).slice(11,16):'')+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("common.time"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="time" id="wTime" value="'+(editing?(editing.ts?toLocalDT(editing.ts).slice(11,16):''):nowLocalDT().slice(11,16))+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0" value="'+(editing?esc(editing.weightKg):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100" value="'+(editing&&editing.waistCm!=null?esc(editing.waistCm):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="7.5" value="'+(editing?(editing.doseMg!=null?esc(editing.doseMg):''):(last!=null?esc(last):''))+'"></div>'
