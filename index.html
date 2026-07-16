@@ -2725,6 +2725,10 @@ var UI = (function(){
   // still marked, but the reading predates the shot (e.g. fasting morning BP).
   // No timestamp on either side -> full marker (we don't guess the order).
   function injDayMarkers(st, dISO, measTs){
+    // Syringe indicator hidden for now — injection/weight correlation will be
+    // surfaced later in a dedicated analysis view. Return "" to suppress the
+    // markers everywhere without removing the (still-used) machinery below.
+    return "";
     var subs=[], firstTs={};
     (st.injLog||[]).forEach(function(e){
       if(!e || e.date!==dISO) return;
