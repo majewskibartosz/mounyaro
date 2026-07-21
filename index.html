@@ -504,6 +504,9 @@ var I18N = (function(){
     "weight.change":{pl:"Zmiana",en:"Change"},
     "weight.total":{pl:"Łączna zmiana",en:"Total change"},
     "weight.totalPct":{pl:"Zmiana od startu (%)",en:"Change from start (%)"},
+    "weight.month":{pl:"Zmiana w tym miesiącu",en:"Change this month"},
+    "pulpit.monthShort":{pl:"mies.",en:"mo."},
+    "pulpit.totalShort":{pl:"łącznie",en:"total"},
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
     "chart.zoom7":{pl:"Przybliż: ostatnie 7 pomiarów",en:"Zoom in: last 7 readings"},
@@ -1147,6 +1150,22 @@ var DOMAIN = (function(){
     return { min: 18.5*h*h, max: 24.9*h*h };
   }
 
+  // Change within the current calendar month; log is newest-first.
+  // Baseline = last entry before the 1st of the month, else the earliest
+  // in-month entry. Null when the current month has no entries.
+  function monthChange(log, field, todayIso){
+    var m=todayIso.slice(0,7), inM=[], before=null;
+    for(var i=0;i<(log||[]).length;i++){
+      var e=log[i]; if(e[field]==null) continue;
+      var em=String(e.date).slice(0,7);
+      if(em===m) inM.push(e);
+      else if(em<m && !before) before=e;
+    }
+    if(!inM.length) return null;
+    var base = before ? before[field] : inM[inM.length-1][field];
+    return { cur:inM[0][field], base:base, diff:inM[0][field]-base };
+  }
+
   // Travel / import comparison: stretch a home pen vs buying in a destination
   // country. All home-currency amounts; destination prices converted via rate
   // (1 home = rate destination). Any scenario whose inputs are missing → null.
@@ -1391,7 +1410,7 @@ var DOMAIN = (function(){
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
-    healthyWeightRange:healthyWeightRange, travelCompare:travelCompare,
+    healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf,
@@ -2232,6 +2251,11 @@ var UI = (function(){
           + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
           + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+col+'">'+(diff>0?"+":"")+fmtNum(diff,1)+' kg</span></div>'
           + '<div class="stat"><span class="k">'+esc(I18N.t("weight.totalPct"))+'</span><span class="v" style="color:'+col+'">'+(pct>0?"+":"")+fmtNum(pct,1)+'%</span></div>';
+      var mc = DOMAIN.monthChange(st.weightLog, "weightKg", todayISO());
+      if(mc){
+        var mCol = mc.diff<=0?"var(--good)":"var(--bad)";
+        html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.month"))+'</span><span class="v" style="color:'+mCol+'">'+(mc.diff>0?"+":"")+fmtNum(mc.diff,1)+' kg</span></div>';
+      }
       if(waistLog.length){
         var wCur=waistLog[0].waistCm, wFirst=waistLog[waistLog.length-1].waistCm, wDiff=wCur-wFirst;
         var wCol = wDiff<=0?"var(--good)":"var(--bad)";
@@ -3379,9 +3403,16 @@ var UI = (function(){
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
     html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10), bpL.ts):'')+'</div>';
     var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
-    var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData"), wcol="var(--ink)";
-    if(wl.length>1){ var first=wl[wl.length-1].weightKg, d=curW-first; wcol=d<=0?"var(--good)":"var(--bad)"; wtxt+=" ("+(d>0?"+":"")+fmtNum(d,1)+")"; }
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="color:'+wcol+';font-size:18px">'+wtxt+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>';
+    var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData");
+    // month-to-date + total deltas on their own line, each coloured by its own sign
+    function dSpan(lbl,v){ return '<span style="color:'+(v<=0?"var(--good)":"var(--bad)")+'">'+esc(lbl)+' '+(v>0?"+":"")+fmtNum(v,1)+'</span>'; }
+    var wDeltas='';
+    if(wl.length>1){
+      var first=wl[wl.length-1].weightKg, d=curW-first;
+      var wmc=DOMAIN.monthChange(wl, "weightKg", today);
+      wDeltas='<span class="muted tiny" style="font-weight:600">'+(wmc?dSpan(I18N.t("pulpit.monthShort"),wmc.diff)+' · ':'')+dSpan(I18N.t("pulpit.totalShort"),d)+'</span>';
+    }
+    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="font-size:18px">'+wtxt+'</span>'+wDeltas+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>';
     var waistL=wl.filter(function(e){return e.waistCm!=null;});
     if(waistL.length){
       var curWa=waistL[0].waistCm, watxt=fmtNum(curWa,1)+" cm", wacol="var(--ink)";
