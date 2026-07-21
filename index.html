@@ -505,8 +505,8 @@ var I18N = (function(){
     "weight.total":{pl:"Łączna zmiana",en:"Total change"},
     "weight.totalPct":{pl:"Zmiana od startu (%)",en:"Change from start (%)"},
     "weight.month":{pl:"Zmiana w tym miesiącu",en:"Change this month"},
-    "pulpit.monthShort":{pl:"mies.",en:"mo."},
-    "pulpit.totalShort":{pl:"łącznie",en:"total"},
+    "pulpit.monthShort":{pl:"mc",en:"mo"},
+    "pulpit.totalShort":{pl:"Σ",en:"Σ"},
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
     "chart.zoom7":{pl:"Przybliż: ostatnie 7 pomiarów",en:"Zoom in: last 7 readings"},
@@ -3410,7 +3410,7 @@ var UI = (function(){
     if(wl.length>1){
       var first=wl[wl.length-1].weightKg, d=curW-first;
       var wmc=DOMAIN.monthChange(wl, "weightKg", today);
-      wDeltas='<span class="muted tiny" style="font-weight:600">'+(wmc?dSpan(I18N.t("pulpit.monthShort"),wmc.diff)+' · ':'')+dSpan(I18N.t("pulpit.totalShort"),d)+'</span>';
+      wDeltas='<span class="muted tiny" style="font-weight:600;white-space:nowrap">'+(wmc?dSpan(I18N.t("pulpit.monthShort"),wmc.diff)+' · ':'')+dSpan(I18N.t("pulpit.totalShort"),d)+'</span>';
     }
     html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="font-size:18px">'+wtxt+'</span>'+wDeltas+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>';
     var waistL=wl.filter(function(e){return e.waistCm!=null;});
