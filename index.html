@@ -409,6 +409,8 @@ var I18N = (function(){
     "inj.edit":{pl:"Edytuj",en:"Edit"},
     "inj.update":{pl:"Zaktualizuj zastrzyk",en:"Update injection"},
     "inj.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
+    "inj.sandbag":{pl:"Oznacz jako sandbagging",en:"Mark as sandbagging"},
+    "inj.sandbagBadge":{pl:"SB",en:"SB"},
     "inj.cancel":{pl:"Anuluj",en:"Cancel"},
     // injection sites (abdomen-centric, subcutaneous)
     "site.belly_ul":{pl:"Brzuch — góra lewa",en:"Abdomen — upper left"},
@@ -450,6 +452,8 @@ var I18N = (function(){
     "common.doseWeekLetter":{pl:"d",en:"d"},
     "set.doseWeeks":{pl:"Tydzień na obecnej dawce w pigułkach (d)",en:"Week on the current dose in pills (d)"},
     "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating."},
+    "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
+    "set.sandbaggingSub":{pl:"Pozwala oznaczać zastrzyki (na razie TRT) jako sandbagging. Po wyłączeniu oznaczone wpisy znikają z historii, mapy brzucha i obliczeń — dane zostają zapisane.",en:"Lets you mark injections (TRT for now) as sandbagging. When switched off, marked entries disappear from the history, the belly map and all calculations — the data itself is kept."},
     "common.edit":{pl:"Edytuj",en:"Edit"},
     "common.update":{pl:"Zaktualizuj",en:"Update"},
     "common.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
@@ -1203,6 +1207,14 @@ var DOMAIN = (function(){
   }
 
   // ---- health-tracking expansion: pure series + rhythm helpers ----
+  // Injections visible to history, the belly map and every calculation.
+  // Entries flagged sandbag:true only count while settings.sandbagging is on;
+  // with the setting off they behave as if they didn't exist (data stays put).
+  function visibleInjLog(state){
+    var log=(state&&state.injLog)||[];
+    if(state && state.settings && state.settings.sandbagging) return log;
+    return log.filter(function(e){ return !(e&&e.sandbag); });
+  }
   // Everything trackable becomes a time series [{date,value}] sorted ascending.
   // sourceId formats: "metric:<id>", "inj:<substance>", "vital:sys|dia|pulse"
   // (read from bp.log), "weight", "mounjaroDose".
@@ -1215,7 +1227,7 @@ var DOMAIN = (function(){
           out.push({date:e.date, value:Number(e.values[key])});
       });
     } else if(kind==="inj"){
-      (state.injLog||[]).forEach(function(e){
+      visibleInjLog(state).forEach(function(e){
         if(e && e.substance===key && e.dose!=null && e.dose!=="")
           out.push({date:e.date, value:Number(e.dose)});
       });
@@ -1259,7 +1271,7 @@ var DOMAIN = (function(){
   // count as Mounjaro (they predate the multi-substance injLog).
   function firstInjDateFor(state, substance){
     var first=null;
-    ((state&&state.injLog)||[]).forEach(function(e){
+    visibleInjLog(state).forEach(function(e){
       if(e && e.substance===substance && e.date && (!first || e.date<first)) first=e.date;
     });
     if(substance==="mounjaro" && state && state.jab && state.jab.history){
@@ -1275,7 +1287,7 @@ var DOMAIN = (function(){
       if(dose==null || !date || (uptoISO && date>uptoISO)) return;
       if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg"};
     }
-    ((state&&state.injLog)||[]).forEach(function(e){
+    visibleInjLog(state).forEach(function(e){
       if(e && e.substance===substance) consider(e.date, e.dose, e.unit);
     });
     // Mounjaro dose is also logged alongside weight entries
@@ -1292,7 +1304,7 @@ var DOMAIN = (function(){
   // or null when no dosed entry covers the date.
   function doseStreakAsOf(state, substance, uptoISO){
     var doses=[];
-    ((state&&state.injLog)||[]).forEach(function(e){
+    visibleInjLog(state).forEach(function(e){
       if(e && e.substance===substance && e.dose!=null && e.date && (!uptoISO || e.date<=uptoISO))
         doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg"});
     });
@@ -1370,14 +1382,14 @@ var DOMAIN = (function(){
   function recentInjPos(state, todayISOstr, maxDays, legacyCm){
     maxDays=maxDays||14;
     var t0=new Date(todayISOstr+"T12:00:00"), out=[];
-    ((state&&state.injLog)||[]).forEach(function(e){
+    visibleInjLog(state).forEach(function(e){
       if(!e || !e.date) return;
       var age=Math.round((t0-new Date(e.date+"T12:00:00"))/86400000);
       if(age<0 || age>maxDays) return;
       var pos=e.pos || (legacyCm && e.site && legacyCm[e.site]) || null;
       if(!pos) return;
       out.push({ pos:{x:pos.x,y:pos.y}, substance:e.substance, date:e.date, ts:e.ts||null,
-                 dose:e.dose, unit:e.unit, ageDays:age });
+                 dose:e.dose, unit:e.unit, ageDays:age, sandbag:!!e.sandbag });
     });
     out.sort(function(a,b){ var ka=a.ts||a.date, kb=b.ts||b.date; return ka<kb?1:ka>kb?-1:0; });
     var counts={};
@@ -1412,7 +1424,7 @@ var DOMAIN = (function(){
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
-    seriesFor:seriesFor, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
+    seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
@@ -1431,7 +1443,8 @@ var STORE = (function(){
       settings:{ lang:"pl", theme:"light", currency:"PLN", showDoseWeeks:true, goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
-        fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" } },
+        fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" },
+        sandbagging:false },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],        // {id,date,weightKg,waistCm,doseMg,note}; ts (optional) = exact time when given
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
@@ -2840,10 +2853,11 @@ var UI = (function(){
       var p=cmToSvg(r.pos), c=SUBSTANCE_COLORS[r.substance]||"#94a3b8";
       var op=Math.max(0.35, 1-(r.ageDays/14)*0.65);
       var tip=(r.ts?fmtDateTime(r.ts):r.date)+" · "+I18N.t("inj.seg."+r.substance)
-        +(r.dose!=null?" · "+r.dose+" "+(r.unit||""):"");
+        +(r.dose!=null?" · "+r.dose+" "+(r.unit||""):"")
+        +(r.sandbag?" · "+I18N.t("inj.sandbag"):"");
       svg+='<g opacity="'+op.toFixed(2)+'">'
         +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+minR+'" fill="none" stroke="'+c+'" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>'
-        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="6.5" fill="'+c+'" stroke="#fff" stroke-width="1.4"/>'
+        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="6.5" fill="'+c+'" stroke="#fff" stroke-width="1.4"'+(r.sandbag?' stroke-dasharray="2.5 2" fill-opacity="0.55"':'')+'/>'
         +'<text x="'+p.x.toFixed(1)+'" y="'+(p.y+2.6).toFixed(1)+'" font-size="7.5" font-weight="800" fill="#fff" text-anchor="middle">'+r.order+'</text>'
         +'<title>'+esc(tip)+'</title></g>';
     });
@@ -2881,13 +2895,13 @@ var UI = (function(){
   }
   function lastInjDate(st, substance){
     var d=null;
-    (st.injLog||[]).forEach(function(e){ if(e.substance===substance && (!d || e.date>d)) d=e.date; });
+    DOMAIN.visibleInjLog(st).forEach(function(e){ if(e.substance===substance && (!d || e.date>d)) d=e.date; });
     return d;
   }
 
   var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
   var injPage=0;  // history page (5 rows each)
-  var injDraft={dose:"",name:"",when:""};             // preserves typed dose/blend/time across the site-pick re-render
+  var injDraft={dose:"",name:"",when:"",sandbag:null}; // preserves typed dose/blend/time/flag across the site-pick re-render (sandbag null = untouched)
   /* ---- Mounjaro pen tracker: clicks + insulin-syringe golden dose ---- */
   // Shot at absolute 0-based index k in a repeating schedule: wraps the cycle
   // and offsets pen numbers by the completed cycles.
@@ -3152,6 +3166,11 @@ var UI = (function(){
         +(!selForMap?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
     }
     html+='<div class="center tiny muted" style="margin-top:4px">'+esc(I18N.t("inj.mapHint"))+'</div>';
+    // sandbagging flag (TRT only, and only while the setting is on)
+    if(injSeg==="trt" && st.settings.sandbagging){
+      var sbChecked = injDraft.sandbag!=null ? injDraft.sandbag : (editing ? !!editing.sandbag : false);
+      html+='<label class="toggle" style="margin-top:10px"><input type="checkbox" id="injSandbag"'+(sbChecked?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("inj.sandbag"))+'</span></label>';
+    }
     html+='<div class="row" style="margin-top:10px"><button class="btn" id="injLog">'+esc(editing?I18N.t("inj.update"):I18N.t("inj.logBtn"))+'</button>';
     if(editing) html+='<button class="btn ghost" id="injCancel">'+esc(I18N.t("inj.cancel"))+'</button>';
     html+='</div>';
@@ -3164,7 +3183,7 @@ var UI = (function(){
 
     // ---- history for this substance (editable) ----
     // Mounjaro: union of injLog entries and legacy jab.history dates (which predate injLog).
-    var hlist=(st.injLog||[]).filter(function(e){return e.substance===injSeg;}).slice();
+    var hlist=DOMAIN.visibleInjLog(st).filter(function(e){return e.substance===injSeg;}).slice();
     if(injSeg==="mounjaro"){
       var haveDate={}; hlist.forEach(function(e){ haveDate[e.date]=true; });
       (st.jab.history||[]).forEach(function(d){
@@ -3178,7 +3197,9 @@ var UI = (function(){
       pageSlice(hlist, injPage).forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
-        html+='<tr><td>'+esc(whenLbl)+(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
+        html+='<tr><td>'+esc(whenLbl)
+          +(e.sandbag?' <span class="pill" title="'+esc(I18N.t("inj.sandbag"))+'" style="background:#94a3b822;color:var(--muted);padding:1px 6px;font-size:10px;vertical-align:middle">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')
+          +(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
           +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
@@ -3197,10 +3218,11 @@ var UI = (function(){
       if($("#injDose")) injDraft.dose=$("#injDose").value;
       if($("#injName")) injDraft.name=$("#injName").value;
       if($("#injDate")) injDraft.when=$("#injDate").value ? $("#injDate").value+"T"+($("#injTime").value||"12:00") : "";
+      if($("#injSandbag")) injDraft.sandbag=$("#injSandbag").checked;
     }
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
-      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:""}; viewInject();
+      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject();
     });});
     bindPager("injPg", function(){return injPage;}, function(v){injPage=v;}, viewInject);
     // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
@@ -3304,6 +3326,9 @@ var UI = (function(){
       var wv=$("#injDate")&&$("#injDate").value ? $("#injDate").value+"T"+($("#injTime").value||"12:00") : "";
       var when=wv?new Date(wv):new Date(); if(isNaN(when.getTime())) when=new Date();
       var ts=when.toISOString(), dateStr=ts.slice(0,10);
+      // sandbag flag: only when the checkbox is rendered (TRT + setting on);
+      // null leaves an edited entry's stored flag untouched
+      var sb=$("#injSandbag")?$("#injSandbag").checked:null;
       if(injSeg==="peptide") st.inj.peptide.name=name||"";   // remember last blend
       var mjDate;
       if(editing && editing.jabOnly){
@@ -3316,11 +3341,13 @@ var UI = (function(){
         editing.dose=dose; editing.ts=ts; editing.date=dateStr;
         if(injSel){ editing.site=site; editing.pos=pos; }  // spot only changes when re-picked
         if(injSeg==="peptide") editing.name=name||"";
+        if(sb!==null){ if(sb) editing.sandbag=true; else delete editing.sandbag; }
         if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
         var unitCode=(injSeg==="peptide")?"j":"mg";
         var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
         if(pos) entry.pos=pos;
+        if(sb) entry.sandbag=true;
         if(injSeg==="peptide" && name) entry.name=name;
         // The tracker position derives from jab.history, so logging (and
         // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
@@ -3340,10 +3367,10 @@ var UI = (function(){
       // Mounjaro: keep the weekly ring's source of truth (jab.history) in sync with the chosen day
       if(mjDate && st.jab.history.indexOf(mjDate)===-1){ st.jab.history.push(mjDate); st.jab.history.sort(); }
       st.injLog.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
-      injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:""};
+      injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
       STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
-    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:"",when:""}; viewInject(); });
+    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject(); });
     $all(".injEdit").forEach(function(b){ b.addEventListener("click",function(){
       injEdit=b.getAttribute("data-id"); injSel=null; viewInject(); window.scrollTo(0,0);
     });});
@@ -3434,7 +3461,7 @@ var UI = (function(){
     html+='</div></div>';
 
     // --- mini body map (link to injections) ---
-    if((st.injLog||[]).length){
+    if(DOMAIN.visibleInjLog(st).length){
       html+='<div class="card"><a href="#inject" style="text-decoration:none;color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</a>'
         +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div></div>';
     }
@@ -3458,7 +3485,7 @@ var UI = (function(){
       opts.push({ id:"metric:"+m.id, label:m.name });
     });
     ["mounjaro","trt","peptide"].forEach(function(k){
-      if((st.injLog||[]).some(function(e){return e.substance===k && e.dose!=null;}))
+      if(DOMAIN.visibleInjLog(st).some(function(e){return e.substance===k && e.dose!=null;}))
         opts.push({ id:"inj:"+k, label:I18N.t("inj.seg."+k)+" "+I18N.t("corr.injDose") });
     });
     if((st.bp&&st.bp.log&&st.bp.log.length)){
@@ -4062,6 +4089,9 @@ var UI = (function(){
     +'<div class="card"><h2>'+esc(I18N.t("set.doseWeeks"))+'</h2><p class="sub">'+esc(I18N.t("set.doseWeeksSub"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setDoseWeeks"'+(st.settings.showDoseWeeks?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.doseWeeks"))+'</span></label>'
     +'</div>'
+    +'<div class="card"><h2>'+esc(I18N.t("set.sandbagging"))+'</h2><p class="sub">'+esc(I18N.t("set.sandbaggingSub"))+'</p>'
+    +'<label class="toggle"><input type="checkbox" id="setSandbag"'+(st.settings.sandbagging?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.sandbagging"))+'</span></label>'
+    +'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("fx.toggle"))+'</h2><p class="sub">'+esc(I18N.t("fx.desc"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setFxAuto"'+(st.settings.fxAuto?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("fx.toggle"))+'</span></label>'
     + fxStatusHTML()
@@ -4090,6 +4120,8 @@ var UI = (function(){
     $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
     $("#setDoseWeeks").addEventListener("change",function(){ st.settings.showDoseWeeks=this.checked; STORE.save(); });
+    // repaint immediately: flipping this hides/reveals sandbagged injections everywhere
+    $("#setSandbag").addEventListener("change",function(){ st.settings.sandbagging=this.checked; STORE.save(); render(); });
     // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
     var pcMode="home";
     function renderPenCosts(mode){
