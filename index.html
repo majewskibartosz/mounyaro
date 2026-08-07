@@ -190,6 +190,8 @@
   .rellinks .btn{width:100%}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
   .minipill{padding:1px 6px;font-size:10px;background:#94a3b822;color:var(--muted);vertical-align:middle;white-space:nowrap}
+  .minipill.sb{background:#f59e0b2b;color:#d97706}
+  :root[data-theme="dark"] .minipill.sb{color:#fbbf24}
   .muted{color:var(--muted)}
   .small{font-size:13px}
   .tiny{font-size:12px}
@@ -3216,7 +3218,7 @@ var UI = (function(){
         var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
         html+='<tr><td>'+esc(whenLbl)
           +' <span class="nowrap">'+dowBadge(e.date)
-          +(e.sandbag?' <span class="pill minipill" title="'+esc(I18N.t("inj.sandbag"))+'">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')+'</span>'
+          +(e.sandbag?' <span class="pill minipill sb" title="'+esc(I18N.t("inj.sandbag"))+'">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')+'</span>'
           +(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
           +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
