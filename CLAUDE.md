@@ -9,7 +9,8 @@ A privacy-first weight tracker + Mounjaro (tirzepatide) KwikPen clicks calculato
 ## Running & verifying
 
 - **Run:** open `index.html` directly in a browser (`file://`), or serve the folder over HTTP (e.g. `python3 -m http.server`).
-- **No tests, no lint, no build.** There is nothing to install or compile.
+- **Tests:** `node --test` from the repo root (Node ≥18, zero dependencies). The suite in `tests/` extracts the DOMAIN and STORE modules straight out of `index.html` (see `tests/extract.js`) and runs them in a bare `vm` context — DOMAIN as-is, STORE with a fake `localStorage`. Beware: arrays returned from those modules are cross-realm, so copy them (`Array.from`) before `assert.deepStrictEqual`. Keep new pure logic covered here.
+- **No lint, no build.** There is nothing to install or compile.
 - **PWA offline cache and the "linked file" auto-save only activate over `http(s)`**, not `file://` (the service worker bootstrap checks `location.protocol`). `localStorage` works on `file://`. To exercise those features, serve over HTTP.
 - **Verify visually** by screenshotting in a browser at both mobile and desktop widths — the layout is responsive with a `760px` breakpoint, and behavior differs between the two.
 

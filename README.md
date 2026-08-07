@@ -39,6 +39,15 @@ Every Mounjaro KwikPen = **240 clicks** = **4 labeled doses** (60 clicks per dos
 PWA/offline-cache and linked-file features only activate when the app is served over `https`,
 not from a local file — but the app itself is fully functional offline either way.)
 
+### Tests (for developers)
+
+Pure logic (the `DOMAIN` module) and storage migration (`STORE`) are covered by unit tests
+that need only Node ≥18 — no dependencies, nothing to install:
+
+```
+node --test
+```
+
 ### Host for free on Vercel (static, no build)
 
 1. Push this repo to GitHub (already done if you're reading this there).
