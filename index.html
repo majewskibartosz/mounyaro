@@ -484,13 +484,13 @@ var I18N = (function(){
     "common.delete":{pl:"Usuń",en:"Delete"},
     "common.date":{pl:"Data",en:"Date"},
     "common.time":{pl:"Godzina",en:"Time"},
-    "common.dow0":{pl:"nd",en:"Su"},
     "common.dow1":{pl:"pn",en:"Mo"},
     "common.dow2":{pl:"wt",en:"Tu"},
     "common.dow3":{pl:"śr",en:"We"},
     "common.dow4":{pl:"cz",en:"Th"},
     "common.dow5":{pl:"pt",en:"Fr"},
     "common.dow6":{pl:"so",en:"Sa"},
+    "common.dow7":{pl:"nd",en:"Su"},
     "common.note":{pl:"Notatka",en:"Note"},
     "common.optional":{pl:"opcjonalnie",en:"optional"},
     "install.btn":{pl:"Zainstaluj",en:"Install app"},
@@ -1338,8 +1338,8 @@ var DOMAIN = (function(){
     }
     return { dose:cur.dose, unit:cur.unit, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
   }
-  // Day of week for an ISO date, 0=Sunday (noon anchor dodges UTC drift).
-  function dowIndex(dateISO){ return new Date(dateISO+"T12:00:00").getDay(); }
+  // ISO day of week for an ISO date: 1=Monday .. 7=Sunday (noon anchor dodges UTC drift).
+  function dowIndex(dateISO){ return ((new Date(dateISO+"T12:00:00").getDay()+6)%7)+1; }
   // 1-based therapy week: week 1 = the first 7 days from the first shot.
   // null when there is no start date or the date precedes it.
   function therapyWeek(firstISO, dateISO){

@@ -104,19 +104,19 @@ test("spotCheck via recentInjPos: a spot next to a hidden sandbagged shot is fin
   assert.strictEqual(chk.nearShot, true);
 });
 
-test("dowIndex: maps ISO dates to 0=Sunday..6=Saturday", function () {
-  assert.strictEqual(DOMAIN.dowIndex("2026-08-02"), 0); // Sunday
+test("dowIndex: ISO numbering, 1=Monday..7=Sunday", function () {
   assert.strictEqual(DOMAIN.dowIndex("2026-08-03"), 1); // Monday
   assert.strictEqual(DOMAIN.dowIndex("2026-08-05"), 3); // Wednesday
   assert.strictEqual(DOMAIN.dowIndex("2026-08-07"), 5); // Friday
   assert.strictEqual(DOMAIN.dowIndex("2026-08-08"), 6); // Saturday
+  assert.strictEqual(DOMAIN.dowIndex("2026-08-02"), 7); // Sunday
 });
 
 test("dowIndex: noon anchor keeps the date stable across timezones", function () {
-  // consecutive days always advance by exactly one weekday slot
+  // consecutive days always advance by exactly one weekday slot (7 wraps to 1)
   for (var d = 1; d <= 6; d++) {
     var a = DOMAIN.dowIndex("2026-08-0" + d), b = DOMAIN.dowIndex("2026-08-0" + (d + 1));
-    assert.strictEqual((a + 1) % 7, b);
+    assert.strictEqual(a % 7 + 1, b);
   }
 });
 
