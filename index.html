@@ -189,6 +189,7 @@
   .rellinks{margin-top:12px}
   .rellinks .btn{width:100%}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .minipill{padding:1px 6px;font-size:10px;background:#94a3b822;color:var(--muted);vertical-align:middle;white-space:nowrap}
   .muted{color:var(--muted)}
   .small{font-size:13px}
   .tiny{font-size:12px}
@@ -483,6 +484,13 @@ var I18N = (function(){
     "common.delete":{pl:"Usuń",en:"Delete"},
     "common.date":{pl:"Data",en:"Date"},
     "common.time":{pl:"Godzina",en:"Time"},
+    "common.dow0":{pl:"nd",en:"Su"},
+    "common.dow1":{pl:"pn",en:"Mo"},
+    "common.dow2":{pl:"wt",en:"Tu"},
+    "common.dow3":{pl:"śr",en:"We"},
+    "common.dow4":{pl:"cz",en:"Th"},
+    "common.dow5":{pl:"pt",en:"Fr"},
+    "common.dow6":{pl:"so",en:"Sa"},
     "common.note":{pl:"Notatka",en:"Note"},
     "common.optional":{pl:"opcjonalnie",en:"optional"},
     "install.btn":{pl:"Zainstaluj",en:"Install app"},
@@ -1330,6 +1338,8 @@ var DOMAIN = (function(){
     }
     return { dose:cur.dose, unit:cur.unit, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
   }
+  // Day of week for an ISO date, 0=Sunday (noon anchor dodges UTC drift).
+  function dowIndex(dateISO){ return new Date(dateISO+"T12:00:00").getDay(); }
   // 1-based therapy week: week 1 = the first 7 days from the first shot.
   // null when there is no start date or the date precedes it.
   function therapyWeek(firstISO, dateISO){
@@ -1425,7 +1435,7 @@ var DOMAIN = (function(){
     healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
-    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf,
+    firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
   };
@@ -2480,7 +2490,7 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
-        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
+        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(String(e.ts).slice(0,10))+injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
             +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
@@ -2753,6 +2763,13 @@ var UI = (function(){
     return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+(label?label+' ':'')+esc(txt)
       +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')
       +(doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+doseWeek:'')+'</span>';
+  }
+  // Tiny weekday chip ("pt"/"Fr") shown next to dates in the injection and BP
+  // histories; tooltip carries the full weekday name.
+  function dowBadge(dISO){
+    if(!dISO) return "";
+    var full=""; try{ full=new Date(dISO+"T12:00:00").toLocaleDateString(I18N.lang==="en"?"en-GB":"pl-PL",{weekday:"long"}); }catch(e){}
+    return '<span class="pill minipill" title="'+esc(full)+'">'+esc(I18N.t("common.dow"+DOMAIN.dowIndex(dISO)))+'</span>';
   }
   // Injection-day marker: a small syringe per substance injected on that date,
   // shown next to dates in the weight/BP/diary histories so shot days stand
@@ -3198,7 +3215,8 @@ var UI = (function(){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
         html+='<tr><td>'+esc(whenLbl)
-          +(e.sandbag?' <span class="pill" title="'+esc(I18N.t("inj.sandbag"))+'" style="background:#94a3b822;color:var(--muted);padding:1px 6px;font-size:10px;vertical-align:middle">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')
+          +' <span class="nowrap">'+dowBadge(e.date)
+          +(e.sandbag?' <span class="pill minipill" title="'+esc(I18N.t("inj.sandbag"))+'">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')+'</span>'
           +(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
           +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'

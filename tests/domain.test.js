@@ -104,6 +104,22 @@ test("spotCheck via recentInjPos: a spot next to a hidden sandbagged shot is fin
   assert.strictEqual(chk.nearShot, true);
 });
 
+test("dowIndex: maps ISO dates to 0=Sunday..6=Saturday", function () {
+  assert.strictEqual(DOMAIN.dowIndex("2026-08-02"), 0); // Sunday
+  assert.strictEqual(DOMAIN.dowIndex("2026-08-03"), 1); // Monday
+  assert.strictEqual(DOMAIN.dowIndex("2026-08-05"), 3); // Wednesday
+  assert.strictEqual(DOMAIN.dowIndex("2026-08-07"), 5); // Friday
+  assert.strictEqual(DOMAIN.dowIndex("2026-08-08"), 6); // Saturday
+});
+
+test("dowIndex: noon anchor keeps the date stable across timezones", function () {
+  // consecutive days always advance by exactly one weekday slot
+  for (var d = 1; d <= 6; d++) {
+    var a = DOMAIN.dowIndex("2026-08-0" + d), b = DOMAIN.dowIndex("2026-08-0" + (d + 1));
+    assert.strictEqual((a + 1) % 7, b);
+  }
+});
+
 test("suggestSpot via recentInjPos: hidden sandbagged shots don't repel the suggestion", function () {
   var log = [trt("c", "2026-08-06", 50, { x: 8, y: 0 }, { sandbag: true })];
   var sugOff = DOMAIN.suggestSpot(DOMAIN.recentInjPos(mkState(false, log), TODAY, 14, null));
