@@ -88,6 +88,47 @@ test("doseStreakAsOf: a sandbagged dose change is invisible while OFF", function
   assert.strictEqual(on.dose, 50);
 });
 
+test("doseStreakAsOf: same mg but a new injection interval breaks the streak", function () {
+  var log = [
+    trt("a", "2026-07-01", 25, null, { every: 2 }),
+    trt("b", "2026-07-03", 25, null, { every: 2 }),
+    trt("c", "2026-07-10", 25, null, { every: 1 }),
+    trt("d", "2026-07-11", 25, null, { every: 1 })
+  ];
+  var s = DOMAIN.doseStreakAsOf(mkState(false, log), "trt", "2026-07-20");
+  assert.strictEqual(s.dose, 25);
+  assert.strictEqual(s.every, 1);
+  assert.strictEqual(s.sinceISO, "2026-07-10");
+  assert.strictEqual(s.weeks, 2);
+});
+
+test("doseStreakAsOf: first stamped entry after legacy unstamped ones starts a new streak", function () {
+  var log = [
+    trt("a", "2026-07-01", 25),
+    trt("b", "2026-07-03", 25),
+    trt("c", "2026-07-10", 25, null, { every: 1 })
+  ];
+  var s = DOMAIN.doseStreakAsOf(mkState(false, log), "trt", "2026-07-12");
+  assert.strictEqual(s.sinceISO, "2026-07-10");
+});
+
+test("doseStreakAsOf: unchanged interval keeps the streak running", function () {
+  var log = [
+    trt("a", "2026-07-01", 25, null, { every: 2 }),
+    trt("b", "2026-07-03", 25, null, { every: 2 }),
+    trt("c", "2026-07-05", 25, null, { every: 2 })
+  ];
+  var s = DOMAIN.doseStreakAsOf(mkState(false, log), "trt", "2026-07-10");
+  assert.strictEqual(s.sinceISO, "2026-07-01");
+  assert.strictEqual(s.every, 2);
+});
+
+test("lastDoseAsOf: carries the stamped interval, null when the entry lacks one", function () {
+  var log = [trt("a", "2026-07-01", 25), trt("b", "2026-07-10", 25, null, { every: 1 })];
+  assert.strictEqual(DOMAIN.lastDoseAsOf(mkState(false, log), "trt", "2026-07-12").every, 1);
+  assert.strictEqual(DOMAIN.lastDoseAsOf(mkState(false, log), "trt", "2026-07-05").every, null);
+});
+
 test('seriesFor("inj:trt"): sandbagged points excluded while OFF', function () {
   assert.strictEqual(DOMAIN.seriesFor(mkState(false, LOG), "inj:trt").length, 2);
   assert.strictEqual(DOMAIN.seriesFor(mkState(true, LOG), "inj:trt").length, 3);

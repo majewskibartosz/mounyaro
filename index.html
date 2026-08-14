@@ -454,7 +454,7 @@ var I18N = (function(){
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
     "set.doseWeeks":{pl:"Tydzień na obecnej dawce w pigułkach (d)",en:"Week on the current dose in pills (d)"},
-    "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating."},
+    "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji. Przy TRT zmiana częstotliwości zastrzyków (co ile dni) liczy się jak zmiana dawki i zeruje licznik d.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating. For TRT a change of injection frequency (every how many days) counts as a dose change and resets the d counter."},
     "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
     "set.sandbaggingSub":{pl:"Pozwala oznaczać zastrzyki (na razie TRT) jako sandbagging. Po wyłączeniu oznaczone wpisy znikają z historii, mapy brzucha i obliczeń — dane zostają zapisane.",en:"Lets you mark injections (TRT for now) as sandbagging. When switched off, marked entries disappear from the history, the belly map and all calculations — the data itself is kept."},
     "common.edit":{pl:"Edytuj",en:"Edit"},
@@ -1291,44 +1291,49 @@ var DOMAIN = (function(){
   }
   // Most recent logged dose of a substance on or before a date (the dose the
   // user was on at that time). null when no dosed injection exists yet.
+  // every = injection interval in days stamped on that entry (TRT), null when
+  // the entry predates interval stamping or the substance has no interval.
   function lastDoseAsOf(state, substance, uptoISO){
     var best=null;
-    function consider(date, dose, unit){
+    function consider(date, dose, unit, every){
       if(dose==null || !date || (uptoISO && date>uptoISO)) return;
-      if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg"};
+      if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg", every:every!=null?every:null};
     }
     visibleInjLog(state).forEach(function(e){
-      if(e && e.substance===substance) consider(e.date, e.dose, e.unit);
+      if(e && e.substance===substance) consider(e.date, e.dose, e.unit, e.every);
     });
     // Mounjaro dose is also logged alongside weight entries
     if(substance==="mounjaro"){
       ((state&&state.weightLog)||[]).forEach(function(e){
-        if(e) consider(e.date, e.doseMg, "mg");
+        if(e) consider(e.date, e.doseMg, "mg", null);
       });
     }
-    return best ? {dose:best.dose, unit:best.unit} : null;
+    return best ? {dose:best.dose, unit:best.unit, every:best.every} : null;
   }
   // How long the dose in effect on uptoISO has been running: walks back
-  // through same-substance doses while they stay identical. Returns
-  // {dose, unit, sinceISO, weeks} (weeks is 1-based like therapyWeek),
+  // through same-substance doses while they stay identical. The dosage is the
+  // pair (mg per shot, injection interval stamped on the entry) — switching
+  // e.g. from 25 mg every 2 days to 25 mg daily is a dosage change and breaks
+  // the streak even though the per-shot mg is the same. Returns
+  // {dose, unit, every, sinceISO, weeks} (weeks is 1-based like therapyWeek),
   // or null when no dosed entry covers the date.
   function doseStreakAsOf(state, substance, uptoISO){
     var doses=[];
     visibleInjLog(state).forEach(function(e){
       if(e && e.substance===substance && e.dose!=null && e.date && (!uptoISO || e.date<=uptoISO))
-        doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg"});
+        doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg", every:e.every!=null?e.every:null});
     });
     if(substance==="mounjaro"){
       ((state&&state.weightLog)||[]).forEach(function(e){
         if(e && e.doseMg!=null && e.date && (!uptoISO || e.date<=uptoISO))
-          doses.push({date:e.date, dose:e.doseMg, unit:"mg"});
+          doses.push({date:e.date, dose:e.doseMg, unit:"mg", every:null});
       });
     }
     if(!doses.length) return null;
     doses.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
     var cur=doses[0], since=cur.date, changed=false;
     for(var i=1;i<doses.length;i++){
-      if(doses[i].dose!==cur.dose){ changed=true; break; }
+      if(doses[i].dose!==cur.dose || doses[i].every!==cur.every){ changed=true; break; }
       since=doses[i].date;
     }
     // Never changed? Then this dose has been running since the very first
@@ -1338,7 +1343,7 @@ var DOMAIN = (function(){
       var first=firstInjDateFor(state, substance);
       if(first && first<since) since=first;
     }
-    return { dose:cur.dose, unit:cur.unit, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
+    return { dose:cur.dose, unit:cur.unit, every:cur.every, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
   }
   // ISO day of week for an ISO date: 1=Monday .. 7=Sunday (noon anchor dodges UTC drift).
   function dowIndex(dateISO){ return ((new Date(dateISO+"T12:00:00").getDay()+6)%7)+1; }
@@ -2611,7 +2616,7 @@ var UI = (function(){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
         +esc(t.label)
-        +(t.dose?' '+esc(t.dose.dose+" "+t.dose.unit):'')
+        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every)):'')
         +' '+esc(I18N.t("common.weekLetter"))+t.week
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
@@ -2761,6 +2766,11 @@ var UI = (function(){
   // week on that substance as of that date ("t5"), styled exactly like the
   // rest of the pill text. manualMg is a legacy, manually entered Mounjaro
   // dose shown only when no injection data covers the date.
+  // dose text with the injection interval when the entry carries one:
+  // "25 mg/2d" = 25 mg per shot, every 2 days (language-neutral notation)
+  function doseTxt(dose, unit, every){
+    return dose+" "+unit+(every!=null?"/"+every+"d":"");
+  }
   function dosePill(label, txt, color, week, doseWeek){
     return '<span class="pill" style="background:'+color+'22;color:'+color+';padding:2px 7px;font-size:11px;white-space:nowrap">'+(label?label+' ':'')+esc(txt)
       +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')
@@ -2808,7 +2818,7 @@ var UI = (function(){
   function nowDosePill(st, sub, todayISOstr){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
-    return dosePill("", ld.dose+" "+ld.unit, SUBSTANCE_COLORS[sub]||"#94a3b8", w, doseWeekAsOf(st,sub,todayISOstr));
+    return dosePill("", doseTxt(ld.dose, ld.unit, ld.every), SUBSTANCE_COLORS[sub]||"#94a3b8", w, doseWeekAsOf(st,sub,todayISOstr));
   }
   // week on the current dose, only when the setting is on
   function doseWeekAsOf(st, sub, dISO){
@@ -2821,8 +2831,8 @@ var UI = (function(){
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", mj.dose+" "+mj.unit, SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
-    if(trt) parts.push(dosePill("TRT", trt.dose+" "+trt.unit, SUBSTANCE_COLORS.trt, wt, doseWeekAsOf(st,"trt",dISO)));
+    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every), SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
+    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every), SUBSTANCE_COLORS.trt, wt, doseWeekAsOf(st,"trt",dISO)));
     if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
@@ -3223,7 +3233,7 @@ var UI = (function(){
           +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
-            ? dosePill("", e.dose+" "+(e.unit||""), SUBSTANCE_COLORS[e.substance]||"#94a3b8",
+            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:null), SUBSTANCE_COLORS[e.substance]||"#94a3b8",
                 DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             : "—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
@@ -3362,11 +3372,17 @@ var UI = (function(){
         if(injSel){ editing.site=site; editing.pos=pos; }  // spot only changes when re-picked
         if(injSeg==="peptide") editing.name=name||"";
         if(sb!==null){ if(sb) editing.sandbag=true; else delete editing.sandbag; }
+        // interval backfill: re-saving a pre-stamping TRT entry adopts the
+        // current interval; an already-stamped entry keeps its historical one
+        if(injSeg==="trt" && editing.every==null) editing.every=Math.max(1, st.inj.trt.intervalDays||3);
         if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
         var unitCode=(injSeg==="peptide")?"j":"mg";
         var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
         if(pos) entry.pos=pos;
+        // TRT dosage = mg per shot + interval; snapshot the interval so a
+        // schedule change (e.g. every 2 days -> daily) reads as a dose change
+        if(injSeg==="trt") entry.every=Math.max(1, st.inj.trt.intervalDays||3);
         if(sb) entry.sandbag=true;
         if(injSeg==="peptide" && name) entry.name=name;
         // The tracker position derives from jab.history, so logging (and
