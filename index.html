@@ -3166,7 +3166,9 @@ var UI = (function(){
       // retro-stamp a date range with its real interval: pre-stamping entries
       // show a bare dose, and the d counter can only reset where the data says
       // the schedule changed. Overwrites, so a wrong stamp can be re-applied.
-      html+='<details class="note" style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
+      // Auto-expanded while any dosed TRT entry still lacks an interval.
+      var bfPending=(st.injLog||[]).some(function(e){ return e && e.substance==="trt" && e.dose!=null && e.every==null; });
+      html+='<details class="note" style="margin-top:10px"'+(bfPending?' open':'')+'><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
         +'<p class="sub">'+esc(I18N.t("inj.backfillSub"))+'</p>'
         +'<div class="grid g3">'
         +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
