@@ -394,6 +394,14 @@ var I18N = (function(){
     "inj.history":{pl:"Historia",en:"History"},
     "inj.empty":{pl:"Brak zastrzyków tej substancji.",en:"No injections for this substance yet."},
     "inj.intervalSet":{pl:"Co ile dni",en:"Days between shots"},
+    "inj.backfillTitle":{pl:"Uzupełnij dawkowanie w historii",en:"Backfill dosing in history"},
+    "inj.backfillSub":{pl:"Starsze wpisy nie mają zapisanego „co ile dni”, więc pigułka pokazuje samą dawkę. Oznacz zakres dat właściwym interwałem, aby historia odzwierciedlała realne dawkowanie (np. 25 mg/2d) i licznik d liczył się od faktycznej zmiany.",en:"Older entries carry no “every how many days”, so the pill shows the bare dose. Stamp a date range with the right interval so history reflects the real dosing (e.g. 25 mg/2d) and the d counter starts at the actual change."},
+    "inj.backfillFrom":{pl:"Od",en:"From"},
+    "inj.backfillTo":{pl:"Do",en:"To"},
+    "inj.backfillApply":{pl:"Oznacz wpisy",en:"Apply"},
+    "inj.backfillConfirm":{pl:"Ustawić ten interwał dla tylu wpisów TRT:",en:"Set this interval on this many TRT entries:"},
+    "inj.backfillDone":{pl:"Zaktualizowane wpisy:",en:"Entries updated:"},
+    "inj.backfillNone":{pl:"Brak wpisów TRT w tym zakresie.",en:"No TRT entries in this range."},
     "inj.nextIn":{pl:"następny za",en:"next in"},
     "inj.due":{pl:"termin dziś",en:"due today"},
     "inj.overdue":{pl:"po terminie",en:"overdue"},
@@ -3155,6 +3163,17 @@ var UI = (function(){
         html+=progressBar(ip.frac, color, lt, rl);
       } else { html+='<div class="empty">'+esc(I18N.t("inj.empty"))+'</div>'; }
       html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="trtEvery" min="1" value="'+iv+'"></div>';
+      // retro-stamp a date range with its real interval: pre-stamping entries
+      // show a bare dose, and the d counter can only reset where the data says
+      // the schedule changed. Overwrites, so a wrong stamp can be re-applied.
+      html+='<details class="note" style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
+        +'<p class="sub">'+esc(I18N.t("inj.backfillSub"))+'</p>'
+        +'<div class="grid g3">'
+        +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.backfillTo"))+'</label><input type="date" id="bfTo"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="bfEvery" min="1" value="'+iv+'"></div>'
+        +'</div>'
+        +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
     } else {
       var cfg=st.inj.peptide, cp=DOMAIN.cycleProgress(cfg, today);
       if(cp){
@@ -3339,6 +3358,19 @@ var UI = (function(){
     // config inputs
     if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewInject(); });
     if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=Math.max(1,parseInt(this.value,10)||3); STORE.save(); viewInject(); });
+    // stamp the chosen interval onto every TRT entry in the date range
+    // (sandbag-hidden ones included — the schedule was a fact either way)
+    if($("#bfApply")) $("#bfApply").addEventListener("click",function(){
+      var from=$("#bfFrom").value||null, to=$("#bfTo").value||null;
+      var bev=Math.max(1, parseInt($("#bfEvery").value,10)||1);
+      var hits=(st.injLog||[]).filter(function(e){
+        return e && e.substance==="trt" && e.date && (!from||e.date>=from) && (!to||e.date<=to);
+      });
+      if(!hits.length){ toast(I18N.t("inj.backfillNone")); return; }
+      if(!confirm(I18N.t("inj.backfillConfirm")+" "+hits.length)) return;
+      hits.forEach(function(e){ e.every=bev; });
+      STORE.save(); toast(I18N.t("inj.backfillDone")+" "+hits.length); viewInject();
+    });
     if($("#pepLen")) $("#pepLen").addEventListener("change",function(){ st.inj.peptide.cycleDays=Math.max(1,parseInt(this.value,10)||56); STORE.save(); viewInject(); });
     if($("#pepStart")) $("#pepStart").addEventListener("change",function(){ st.inj.peptide.cycleStart=this.value||null; STORE.save(); viewInject(); });
     // log / update
