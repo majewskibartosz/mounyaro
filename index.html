@@ -484,6 +484,10 @@ var I18N = (function(){
     "ill.endDate":{pl:"Koniec",en:"End"},
     "ill.save":{pl:"Zapisz epizod",en:"Save episode"},
     "ill.update":{pl:"Zaktualizuj epizod",en:"Update episode"},
+    "ill.applyChanges":{pl:"Zapisz zmiany",en:"Save changes"},
+    "ill.startHint":{pl:"zmień datę i zapisz zmiany, aby przesunąć początek wstecz",en:"change the date and save to move the start back"},
+    "ill.drop":{pl:"Usuń epizod",en:"Delete episode"},
+    "ill.confirmDrop":{pl:"Usunąć ten epizod? Oznaczenia choroby znikną z wpisów i wykresów.",en:"Delete this episode? The illness marks disappear from entries and charts."},
     "ill.past":{pl:"Poprzednie epizody",en:"Past episodes"},
     "ill.none":{pl:"Brak epizodów choroby.",en:"No illness episodes yet."},
     "ill.days":{pl:"dni",en:"days"},
@@ -2846,15 +2850,19 @@ var UI = (function(){
     else illSeed=null;
     html+='<div class="card"><h2>&#129298; '+esc(I18N.t("ill.title"))+'</h2>';
     if(illOpen){
-      html+='<div class="banner" style="margin:0 0 10px;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
+      html+='<div class="banner" id="illNow" style="margin:0 0 10px;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
         +'<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+(illNow?illNow.dayN:1)
         +(illOpen.label?' &middot; '+esc(illOpen.label):'')+'</div>'
-        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(illOpen.start)+'"></div>'
-        + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="illEnd" value="'+esc(today)+'"></div></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.startHint"))+')</span></label><input type="date" id="illStart" value="'+esc(illOpen.start)+'"></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'" value="'+esc(illOpen.label||"")+'"></div>'
         + illSevHtml(illDraft.severity, "illsev")
-        + '<div class="row" style="margin-top:10px"><button class="btn" id="illFinish">'+esc(I18N.t("ill.end"))+'</button>'
-        + '<button class="btn ghost" id="illApply">'+esc(I18N.t("ill.update"))+'</button></div>';
+        + '<div class="row" style="margin-top:10px"><button class="btn ghost" id="illApply">'+esc(I18N.t("ill.applyChanges"))+'</button>'
+        + '<button class="btn danger" id="illDrop">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>'
+        // ending it is a separate act from correcting it, hence its own block
+        + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
+        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="illEnd" value="'+esc(today)+'"></div>'
+        + '<div class="field" style="display:flex;align-items:flex-end"><button class="btn" id="illFinish" style="width:100%">'+esc(I18N.t("ill.end"))+'</button></div></div>'
+        + '</div>';
     } else if(illOpenForm){
       html+='<p class="sub">'+esc(I18N.t("ill.sub"))+'</p>'
         + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(today)+'"></div>'
@@ -3081,6 +3089,19 @@ var UI = (function(){
       illOpen.label=String($("#illLabel").value||"").trim().slice(0,60);
       illOpen.severity=illDraft.severity||null;
       illSeed=null; illCommit();
+    });
+    if($("#illDrop")) $("#illDrop").addEventListener("click",function(){
+      if(!confirm(I18N.t("ill.confirmDrop"))) return;
+      var id=illOpen.id;
+      st.illness=(st.illness||[]).filter(function(e){ return e.id!==id; });
+      illSeed=null; STORE.save(); viewDiary();
+    });
+    // live day-count preview, so it is obvious the start field does something
+    if($("#illStart")) $("#illStart").addEventListener("input",function(){
+      var bn=$("#illNow"), v=this.value;
+      if(!bn || !v || v>today) return;
+      bn.innerHTML='<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '
+        +(daysBetweenISO(v, today)+1)+(illOpen.label?' &middot; '+esc(illOpen.label):'');
     });
     if($("#illFinish")) $("#illFinish").addEventListener("click",function(){
       illOpen.start=$("#illStart").value||illOpen.start;
