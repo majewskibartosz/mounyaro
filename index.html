@@ -458,9 +458,39 @@ var I18N = (function(){
     "diary.whenHint":{pl:"domyślnie teraz — zmień, aby dodać wstecz",en:"defaults to now — change to backfill"},
     "diary.update":{pl:"Zaktualizuj notatkę",en:"Update note"},
     "diary.editing":{pl:"Edytujesz notatkę — zmień treść lub czas i zaktualizuj.",en:"Editing a note — change the text or time and update."},
+
+    // ---- illness / infection episodes ----
+    "ill.title":{pl:"Choroba / infekcja",en:"Illness / infection"},
+    "ill.sub":{pl:"Zaznacz początek — każdy kolejny wpis będzie oznaczony jako czas infekcji, aż zaznaczysz koniec.",en:"Mark the start — every later note is flagged as infection time until you mark the end."},
+    "ill.start":{pl:"Zacznij chorobę",en:"Start illness"},
+    "ill.end":{pl:"Zakończ chorobę",en:"End illness"},
+    "ill.ongoing":{pl:"Trwa infekcja",en:"Infection ongoing"},
+    "ill.short":{pl:"Choroba",en:"Ill"},
+    "ill.dayN":{pl:"dzień",en:"day"},
+    "ill.label":{pl:"Nazwa (opcjonalnie)",en:"Name (optional)"},
+    "ill.labelPh":{pl:"np. angina, przeziębienie",en:"e.g. strep throat, cold"},
+    "ill.severity":{pl:"Nasilenie",en:"Severity"},
+    "ill.sev1":{pl:"łagodne",en:"mild"},
+    "ill.sev2":{pl:"średnie",en:"moderate"},
+    "ill.sev3":{pl:"ciężkie",en:"severe"},
+    "ill.startDate":{pl:"Początek",en:"Start"},
+    "ill.endDate":{pl:"Koniec",en:"End"},
+    "ill.save":{pl:"Zapisz epizod",en:"Save episode"},
+    "ill.update":{pl:"Zaktualizuj epizod",en:"Update episode"},
+    "ill.past":{pl:"Poprzednie epizody",en:"Past episodes"},
+    "ill.none":{pl:"Brak epizodów choroby.",en:"No illness episodes yet."},
+    "ill.days":{pl:"dni",en:"days"},
+    "ill.day1":{pl:"dzień",en:"day"},
+    "ill.confirmDel":{pl:"Usunąć ten epizod choroby?",en:"Delete this illness episode?"},
+    "ill.alreadyOpen":{pl:"Epizod już trwa — najpierw go zakończ.",en:"An episode is already open — end it first."},
+    "ill.noneOpen":{pl:"Żaden epizod nie trwa.",en:"No episode is open."},
+    "ill.markStart":{pl:"To początek choroby",en:"This is the start of an illness"},
+    "ill.markEnd":{pl:"To koniec choroby",en:"This is the end of the illness"},
+    "ill.legend":{pl:"Zacieniowane = choroba",en:"Shaded = illness"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
+    "common.dayLetter":{pl:"d",en:"d"},
     "set.doseWeeks":{pl:"Tydzień na obecnej dawce w pigułkach (d)",en:"Week on the current dose in pills (d)"},
     "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji. Przy TRT zmiana częstotliwości zastrzyków (co ile dni) liczy się jak zmiana dawki i zeruje licznik d.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating. For TRT a change of injection frequency (every how many days) counts as a dose change and resets the d counter."},
     "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
@@ -2679,6 +2709,72 @@ var UI = (function(){
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
   }
+  // ---- illness / infection episodes ----
+  // Severity 1-3 (mild -> severe). The 🤒 glyph labels every chip, so sharing
+  // amber with the peptide pill can't be misread.
+  var ILL_COLORS=["#f59e0b","#f97316","#dc2626"], ILL_FALLBACK="#f97316";
+  function illColor(sev){ return sev?ILL_COLORS[sev-1]:ILL_FALLBACK; }
+  // "🤒 Choroba d3 · angina" — the day number is what makes a run of sick days
+  // scannable without opening anything.
+  function illPill(ill, withLabel){
+    if(!ill) return "";
+    var c=illColor(ill.severity);
+    return '<span class="pill illpill" style="background:'+c+'22;color:'+c+'">&#129298; '
+      +esc(I18N.t("ill.short"))+' '+esc(I18N.t("common.dayLetter"))+ill.dayN
+      +(withLabel&&ill.label?' &middot; '+esc(ill.label):'')+'</span>';
+  }
+  // Three tap-to-pick severity pills (same idiom as the weight-chart series chips).
+  // cls scopes them, so the episode card and the composer can each show a set.
+  function illSevHtml(sel, cls){
+    var out='<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">'
+      +'<span class="muted tiny" style="font-weight:700">'+esc(I18N.t("ill.severity"))+'</span>';
+    for(var v=1;v<=3;v++){
+      var c=ILL_COLORS[v-1], on=(sel===v);
+      out+='<button type="button" class="pill '+cls+(on?' on':'')+'" data-v="'+v+'" style="cursor:pointer;border:0;background:'
+        +(on?c:'var(--soft)')+';color:'+(on?'#fff':'var(--muted)')+'">'+esc(I18N.t("ill.sev"+v))+'</button>';
+    }
+    return out+'</div>';
+  }
+  // Severity pills mutate the draft only — no re-render, so a half-typed note survives.
+  function bindIllSev(cls, draft){
+    $all("."+cls).forEach(function(b){ b.addEventListener("click", function(){
+      var v=parseInt(b.getAttribute("data-v"),10);
+      draft.severity = (draft.severity===v)?null:v;
+      $all("."+cls).forEach(function(x){
+        var xv=parseInt(x.getAttribute("data-v"),10), on=(xv===draft.severity);
+        x.classList.toggle("on", on);
+        x.style.background = on?ILL_COLORS[xv-1]:"var(--soft)";
+        x.style.color = on?"#fff":"var(--muted)";
+      });
+    });});
+  }
+  // At most one open episode at a time — refuse instead of silently stacking.
+  function startIllness(startISO, label, severity){
+    var st=s();
+    if(DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
+    if(!st.illness) st.illness=[];
+    st.illness.push({ id:uid(), start:startISO, end:null,
+                      label:String(label||"").trim().slice(0,60), severity:severity||null });
+    return true;
+  }
+  // Closing before the start would make the episode cover nothing — clamp to the start.
+  function endIllness(endISO){
+    var ep=DOMAIN.openIllness(s());
+    if(!ep){ toast(I18N.t("ill.noneOpen")); return false; }
+    ep.end = (endISO<ep.start) ? ep.start : endISO;
+    return true;
+  }
+  var illOpenForm=false;   // "start illness" form expanded
+  var illEditId=null;      // past episode being edited
+  var illPage=0;           // past-episode list page
+  var illDraft={ severity:null };   // severity pick for the episode card form
+  var jIllDraft={ severity:null };  // severity pick for the composer's "start" toggle
+  var illSeed=null;                 // which form illDraft currently belongs to
+  // Seed the card draft once per form identity, so a re-render doesn't undo a
+  // deliberate deselect but switching forms doesn't inherit the other's pick.
+  function illSeedFor(key, sev){
+    if(illSeed!==key){ illSeed=key; illDraft.severity=(sev==null?null:sev); }
+  }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
   var journalPage=0;     // notes list page (5 each)
   function viewDiary(){
@@ -2690,15 +2786,99 @@ var UI = (function(){
     }
     var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
 
+    // --- illness / infection episodes: the always-visible start/end control ---
+    // One open episode at a time, so this card is either "start" or "end" — never both.
+    var illOpen=DOMAIN.openIllness(st), illNow=illOpen?DOMAIN.illnessAsOf(st,today):null;
+    var illEd=null;
+    if(illEditId){
+      (st.illness||[]).forEach(function(e){ if(e.id===illEditId) illEd=e; });
+      if(!illEd) illEditId=null;
+    }
+    var illC=illColor(illOpen?illOpen.severity:null);
+    if(illEditId) illSeedFor("edit:"+illEditId, (illEd||{}).severity);
+    else if(illOpen) illSeedFor("open:"+illOpen.id, illOpen.severity);
+    else if(illOpenForm) illSeedFor("new", null);
+    else illSeed=null;
+    html+='<div class="card"><h2>&#129298; '+esc(I18N.t("ill.title"))+'</h2>';
+    if(illOpen){
+      html+='<div class="banner" style="margin:0 0 10px;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
+        +'<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+(illNow?illNow.dayN:1)
+        +(illOpen.label?' &middot; '+esc(illOpen.label):'')+'</div>'
+        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(illOpen.start)+'"></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="illEnd" value="'+esc(today)+'"></div></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'" value="'+esc(illOpen.label||"")+'"></div>'
+        + illSevHtml(illDraft.severity, "illsev")
+        + '<div class="row" style="margin-top:10px"><button class="btn" id="illFinish">'+esc(I18N.t("ill.end"))+'</button>'
+        + '<button class="btn ghost" id="illApply">'+esc(I18N.t("ill.update"))+'</button></div>';
+    } else if(illOpenForm){
+      html+='<p class="sub">'+esc(I18N.t("ill.sub"))+'</p>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(today)+'"></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'"></div>'
+        + illSevHtml(illDraft.severity, "illsev")
+        + '<div class="row" style="margin-top:10px"><button class="btn" id="illSave">'+esc(I18N.t("ill.save"))+'</button>'
+        + '<button class="btn ghost" id="illCancel">'+esc(I18N.t("common.cancel"))+'</button></div>';
+    } else {
+      html+='<p class="sub">'+esc(I18N.t("ill.sub"))+'</p>'
+        + '<div class="row"><button class="btn" id="illBegin">&#129298; '+esc(I18N.t("ill.start"))+'</button></div>';
+    }
+    // past (closed) episodes, newest first — where dates get corrected after the fact
+    var illPast=DOMAIN.illnessEpisodes(st).filter(function(e){ return !!e.end; });
+    if(illPast.length){
+      html+='<h2 style="margin-top:16px">'+esc(I18N.t("ill.past"))+'</h2>';
+      illPage=pageClamp(illPage, illPast.length);
+      pageSlice(illPast, illPage).forEach(function(e){
+        var c=illColor(e.severity), n=daysBetweenISO(e.start, e.end)+1;
+        if(illEditId===e.id){
+          html+='<div class="logentry"><div class="lbody">'
+            +'<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" class="illEdStart" value="'+esc(e.start)+'"></div>'
+            +'<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" class="illEdEnd" value="'+esc(e.end)+'"></div></div>'
+            +'<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" class="illEdLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'" value="'+esc(e.label||"")+'"></div>'
+            +illSevHtml(illDraft.severity, "illsev")
+            +'<div class="row" style="margin-top:10px"><button class="btn sm" id="illEdSave">'+esc(I18N.t("ill.update"))+'</button>'
+            +'<button class="btn ghost sm" id="illEdCancel">'+esc(I18N.t("common.cancel"))+'</button></div>'
+            +'</div></div>';
+        } else {
+          html+='<div class="logentry"><div class="lbody"><div class="lmeta">'
+            +'<span class="pill" style="background:'+c+'22;color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
+            +'<span>'+n+' '+esc(I18N.t(n===1?"ill.day1":"ill.days"))+'</span>'
+            +(e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
+            +'</div>'+(e.label?'<div class="ltext">'+esc(e.label)+'</div>':'')+'</div>'
+            +'<button class="btn ghost sm illEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button>'
+            +'<button class="btn ghost sm illDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
+            +'</div>';
+        }
+      });
+      html+=pagerHTML("illPg", illPage, illPast.length);
+    }
+    html+='</div>';
+
     // composer: therapy-week + dose context, textarea, editable timestamp (backfill)
     var whenVal = editing ? toLocalDT(editing.ts) : nowLocalDT();
     function ctxHtml(dISO){
       var tags=weekTags(st, dISO);
       return tags.length ? weekPills(tags) : '<span class="muted tiny">'+esc(I18N.t("diary.ctxNone"))+'</span>';
     }
+    // One toggle, never two: the note's own date decides whether it can open an
+    // episode or close the running one. Hidden while editing an existing note —
+    // episode dates are corrected in the card above, not by moving a note.
+    function illToggleHtml(dISO){
+      if(editing) return "";
+      var on=DOMAIN.illnessAsOf(st, dISO);
+      if(on && on.ongoing){
+        return '<label class="toggle" style="margin:0 0 10px"><input type="checkbox" id="jIllEnd"><span class="switch"></span>'
+          +'<span>&#129298; '+esc(I18N.t("ill.markEnd"))+' <span class="muted tiny">('+esc(I18N.t("ill.dayN"))+' '+on.dayN+')</span></span></label>';
+      }
+      if(on) return "";   // inside a closed episode: nothing to open or close here
+      return '<label class="toggle" style="margin:0 0 6px"><input type="checkbox" id="jIllStart"><span class="switch"></span>'
+        +'<span>&#129298; '+esc(I18N.t("ill.markStart"))+'</span></label>'
+        +'<div id="jIllMore" style="display:none;margin:0 0 10px">'
+        +'<div class="field"><input type="text" id="jIllLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'"></div>'
+        +illSevHtml(jIllDraft.severity, "jillsev")+'</div>';
+    }
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
       + (editing?'<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.editing"))+'</div>':'')
       + '<div class="row" id="jCtx" style="margin:0 0 10px">'+ctxHtml(whenVal.slice(0,10))+'</div>'
+      + '<div id="jIll">'+illToggleHtml(whenVal.slice(0,10))+'</div>'
       + stateRowsHTML()
       + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'">'+(editing?esc(editing.text):'')+'</textarea></div>'
       + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="date" id="jDate" value="'+whenVal.slice(0,10)+'"></div>'
@@ -2778,6 +2958,14 @@ var UI = (function(){
         st.journal.push(entry);
       }
       st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      // the note itself can open or close an illness episode, dated by the note
+      // same day key the list groups by (String(ts).slice(0,10)), so the chip
+      // always lands on the day header the note appears under
+      var dISO=when.toISOString().slice(0,10);
+      var cbS=$("#jIllStart"), cbE=$("#jIllEnd");
+      if(cbS && cbS.checked) startIllness(dISO, ($("#jIllLabel")||{}).value, jIllDraft.severity);
+      else if(cbE && cbE.checked) endIllness(dISO);
+      jIllDraft.severity=null;
       stateDraft={ energy:null, mood:null, clarity:null };
       journalPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
@@ -2788,8 +2976,11 @@ var UI = (function(){
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // backfilling? recompute the therapy-week/dose pills for the picked date
+    // (innerHTML on these two containers only — the textarea keeps what's typed)
     $("#jDate").addEventListener("input",function(){
-      var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml(this.value||today);
+      var d=this.value||today;
+      var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml(d);
+      var ic=$("#jIll"); if(ic){ ic.innerHTML=illToggleHtml(d); bindIllToggle(); }
     });
     $("#jText").addEventListener("keydown",function(ev){
       if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
@@ -2814,6 +3005,56 @@ var UI = (function(){
       STORE.save(); viewDiary();
     });});
     bindStateDots();
+    // --- illness card + composer toggle wiring ---
+    function bindIllToggle(){
+      var cbS=$("#jIllStart");
+      if(cbS) cbS.addEventListener("change",function(){
+        var more=$("#jIllMore"); if(more) more.style.display=this.checked?"block":"none";
+      });
+      bindIllSev("jillsev", jIllDraft);
+    }
+    bindIllToggle();
+    function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
+    if($("#illBegin")) $("#illBegin").addEventListener("click",function(){ illOpenForm=true; illSeed=null; viewDiary(); });
+    if($("#illCancel")) $("#illCancel").addEventListener("click",function(){ illOpenForm=false; illSeed=null; viewDiary(); });
+    if($("#illSave")) $("#illSave").addEventListener("click",function(){
+      if(!startIllness($("#illStart").value||today, $("#illLabel").value, illDraft.severity)) return;
+      illOpenForm=false; illSeed=null; illCommit();
+    });
+    // "update" keeps the episode running; "end" closes it on the picked date
+    if($("#illApply")) $("#illApply").addEventListener("click",function(){
+      illOpen.start=$("#illStart").value||illOpen.start;
+      illOpen.label=String($("#illLabel").value||"").trim().slice(0,60);
+      illOpen.severity=illDraft.severity||null;
+      illSeed=null; illCommit();
+    });
+    if($("#illFinish")) $("#illFinish").addEventListener("click",function(){
+      illOpen.start=$("#illStart").value||illOpen.start;
+      illOpen.label=String($("#illLabel").value||"").trim().slice(0,60);
+      illOpen.severity=illDraft.severity||null;
+      if(!endIllness($("#illEnd").value||today)) return;
+      illSeed=null; illCommit();
+    });
+    $all(".illEdit").forEach(function(b){ b.addEventListener("click",function(){
+      illEditId=b.getAttribute("data-id"); illSeed=null; viewDiary();
+    });});
+    $all(".illDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("ill.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.illness=(st.illness||[]).filter(function(e){ return e.id!==id; });
+      if(illEditId===id){ illEditId=null; illSeed=null; }
+      STORE.save(); viewDiary();
+    });});
+    if($("#illEdCancel")) $("#illEdCancel").addEventListener("click",function(){ illEditId=null; illSeed=null; viewDiary(); });
+    if($("#illEdSave")) $("#illEdSave").addEventListener("click",function(){
+      var a=$(".illEdStart").value||illEd.start, b=$(".illEdEnd").value||illEd.end;
+      illEd.start=a; illEd.end=(b<a)?a:b;   // an end before the start collapses to one day
+      illEd.label=String($(".illEdLabel").value||"").trim().slice(0,60);
+      illEd.severity=illDraft.severity||null;
+      illEditId=null; illSeed=null; illCommit();
+    });
+    bindIllSev("illsev", illDraft);
+    bindPager("illPg", function(){return illPage;}, function(v){illPage=v;}, viewDiary);
   }
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
