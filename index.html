@@ -471,6 +471,7 @@ var I18N = (function(){
     "ill.start":{pl:"Zacznij chorobę",en:"Start illness"},
     "ill.end":{pl:"Zakończ chorobę",en:"End illness"},
     "ill.ongoing":{pl:"Trwa infekcja",en:"Infection ongoing"},
+    "ill.ongoingShort":{pl:"trwa",en:"ongoing"},
     "ill.short":{pl:"Choroba",en:"Ill"},
     "ill.dayN":{pl:"dzień",en:"day"},
     "ill.label":{pl:"Nazwa (opcjonalnie)",en:"Name (optional)"},
@@ -1896,6 +1897,38 @@ function doseColor(mg){
    CHART — inline SVG weight trend + dose colouring
    ========================================================================= */
 var CHART = (function(){
+  // Illness episodes as shaded vertical bands drawn behind the gridlines and
+  // every series, so a sick stretch is visible against the trend. spans come
+  // from DOMAIN.illnessSpans, already clipped to the chart's date window with
+  // ongoing episodes clamped to its right edge. Days are noon-anchored here as
+  // everywhere else, so a band grows half a day at each end to cover the whole
+  // day; the pixel clamp is what actually clips it to the plot box.
+  var ILL_BAND_L=["#f59e0b","#f97316","#dc2626"];
+  var ILL_BAND_D=["#fbbf24","#fb923c","#f87171"];
+  var HALF_DAY=43200000;
+  function illBands(spans, X, x0, x1, yTop, height, dark, flat){
+    if(!spans || !spans.length || flat) return "";   // flat = one reading, no time axis
+    var pal=dark?ILL_BAND_D:ILL_BAND_L, out="";
+    spans.forEach(function(sp){
+      var sev=sp.severity||2, col=pal[sev-1], op=(dark?0.13:0.09)+sev*0.03;
+      var a=X(new Date(sp.from+"T12:00:00").getTime()-HALF_DAY);
+      var b=X(new Date(sp.to+"T12:00:00").getTime()+HALF_DAY);
+      a=Math.max(x0, Math.min(x1, a)); b=Math.max(x0, Math.min(x1, b));
+      if(b<=a) return;                               // entirely outside the window
+      if(b-a<1.6) b=Math.min(x1, a+1.6);             // a one-day episode stays visible
+      out+='<g><title>'+esc((sp.label||I18N.t("ill.short"))+" · "+sp.from+" → "
+          +(sp.ongoing?I18N.t("ill.ongoingShort"):sp.to))+'</title>'
+        +'<rect x="'+a.toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+(b-a).toFixed(1)
+        +'" height="'+height.toFixed(1)+'" fill="'+col+'" fill-opacity="'+op.toFixed(3)+'"/>'
+        +'<line x1="'+a.toFixed(1)+'" y1="'+yTop.toFixed(1)+'" x2="'+a.toFixed(1)+'" y2="'+(yTop+height).toFixed(1)
+        +'" stroke="'+col+'" stroke-width="1" stroke-opacity="'+(dark?0.7:0.55)+'"/>'
+        +(sp.ongoing?'':'<line x1="'+b.toFixed(1)+'" y1="'+yTop.toFixed(1)+'" x2="'+b.toFixed(1)+'" y2="'+(yTop+height).toFixed(1)
+          +'" stroke="'+col+'" stroke-width="1" stroke-opacity="'+(dark?0.7:0.55)+'" stroke-dasharray="3 2"/>')
+        +'</g>';
+    });
+    return out;
+  }
+
   // opts.showWeight / opts.showWaist toggle the two series (both default on).
   // With the weight hidden, the time axis spans only the waist-measurement
   // period and the waist gets the full chart height.
@@ -1962,6 +1995,7 @@ var CHART = (function(){
     function WofY(y){ return minW + (wBot-y)/(wBot-wTop)*(maxW-minW); }
 
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="weight chart">';
+    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, dark, maxX===minX);
     // gridlines + y ticks
     var rows=4;
     for(var r=0;r<=rows;r++){
@@ -2023,7 +2057,8 @@ var CHART = (function(){
   }
 
   // Blood-pressure chart: systolic + diastolic (+ pulse) over time, irregular timestamps OK.
-  function renderBP(log){
+  function renderBP(log, opts){
+    opts=opts||{};
     var data = log.slice().filter(function(e){return e.sys!=null&&e.dia!=null;})
                   .sort(function(a,b){ return a.ts<b.ts?-1:a.ts>b.ts?1:0; });
     if(data.length===0) return '<div class="empty">'+esc(I18N.t("bp.empty"))+'</div>';
@@ -2036,7 +2071,9 @@ var CHART = (function(){
     var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
     function X(t){ return maxX===minX ? mL+iw/2 : mL+(t-minX)/(maxX-minX)*iw; }
     function Y(v){ return mT+(1-(v-minY)/(maxY-minY))*ih; }
+    var dark=document.documentElement.getAttribute("data-theme")==="dark";
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="blood pressure chart">';
+    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, dark, maxX===minX);
     var rows=4;
     for(var r=0;r<=rows;r++){
       var val=minY+(maxY-minY)*r/rows, y=Y(val);
@@ -2360,7 +2397,7 @@ var UI = (function(){
             + serChip("w", weightShow.w, I18N.t("common.weight"), "#0ea5a4")
             + serChip("g", weightShow.g, I18N.t("weight.waist"), "#6366f1")
             + '</div>' : '')
-        + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g})+'</div>';
+        + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g, illness:illSpansFor(chartLog,"date")})+'</div>';
     if(st.weightLog.length){
       var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
       var diff=cur-first;
@@ -2368,6 +2405,7 @@ var UI = (function(){
       var col = diff<=0?"var(--good)":"var(--bad)";
       var waistLog = st.weightLog.filter(function(e){ return e.waistCm!=null; }); // newest first
       html+='<div class="legend">'
+          + (illSpansFor(chartLog,"date").length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
           + (weightShow.w?'<span>'+esc(I18N.t("weight.legendDose"))+'</span>':'')
           + (weightShow.g&&waistLog.length?'<span style="color:#6366f1">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
           + '</div>'
@@ -2548,11 +2586,12 @@ var UI = (function(){
     // chart card (on top); "+" zooms to the last 7 readings for a closer trend
     var chartLog = (bpZoom && log.length>CHART_ZOOM_N) ? log.slice(0,CHART_ZOOM_N) : log;
     html+='<div class="card">'+zoomHeader("bp.chartTitle","bpZoom",bpZoom,log.length)
-        + '<div id="bpChart">'+CHART.renderBP(chartLog)+'</div>';
+        + '<div id="bpChart">'+CHART.renderBP(chartLog, {illness:illSpansFor(chartLog,"ts")})+'</div>';
     if(log.length){
       var L=log[0];
       // colour key matching the chart lines: red=systolic, blue=diastolic, grey=pulse
       html+='<div class="legend">'
+          + (illSpansFor(chartLog,"ts").length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
           + '<span><i style="background:#dc2626;border-radius:50%"></i>'+esc(I18N.t("bp.legSys"))+'</span>'
           + '<span><i style="background:#0284c7;border-radius:50%"></i>'+esc(I18N.t("bp.legDia"))+'</span>'
           + '<span><i style="background:#94a3b8;border-radius:50%"></i>'+esc(I18N.t("bp.legPulse"))+'</span>'
@@ -3139,6 +3178,14 @@ var UI = (function(){
     if(!st.settings.showDoseWeeks) return null;
     var s=DOMAIN.doseStreakAsOf(st, sub, dISO);
     return s?s.weeks:null;
+  }
+  // Illness bands for a chart: the window comes from the visible (possibly
+  // zoomed) log, stretched to today so an ongoing episode reaches the right edge.
+  function illSpansFor(log, key){
+    if(!log || !log.length) return [];
+    var ds=log.map(function(e){ return String(e[key]).slice(0,10); }).sort();
+    var to=ds[ds.length-1], today=todayISO();
+    return DOMAIN.illnessSpans(s(), ds[0], to>today?to:today);
   }
   function dosePillsAsOf(st, dISO, manualMg){
     var mj=DOMAIN.lastDoseAsOf(st,"mounjaro",dISO), trt=DOMAIN.lastDoseAsOf(st,"trt",dISO);
