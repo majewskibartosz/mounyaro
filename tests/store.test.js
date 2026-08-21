@@ -52,3 +52,31 @@ test("round-trip: sandbag flag and setting survive load -> save", function () {
   assert.strictEqual(persisted.settings.sandbagging, true);
   assert.strictEqual(persisted.injLog[0].sandbag, true);
 });
+
+test("migration: a backup without illness episodes gains an empty list", function () {
+  var old = {
+    schemaVersion: 1,
+    settings: { lang: "pl" },
+    journal: [{ id: "j1", ts: "2026-08-17T04:45:00.000Z", text: "note" }]
+  };
+  var ls = harness.fakeLocalStorage();
+  ls.setItem(KEY, JSON.stringify(old));
+  var STORE = harness.loadStore(ls);
+  STORE.load();
+  assert.deepStrictEqual(Array.from(STORE.state.illness), []);
+  assert.strictEqual(STORE.state.journal.length, 1);
+});
+
+test("illness episodes survive a load/save round-trip, open one included", function () {
+  var eps = [
+    { id: "e1", start: "2026-07-01", end: "2026-07-06", label: "angina", severity: 3 },
+    { id: "e2", start: "2026-08-17", end: null, label: "", severity: 1 }
+  ];
+  var ls = harness.fakeLocalStorage();
+  ls.setItem(KEY, JSON.stringify({ schemaVersion: 1, illness: eps }));
+  var STORE = harness.loadStore(ls);
+  STORE.load();
+  STORE.save();
+  var out = JSON.parse(ls.getItem(KEY));
+  assert.deepStrictEqual(out.illness, eps);
+});

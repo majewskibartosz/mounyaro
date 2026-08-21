@@ -170,3 +170,88 @@ test("suggestSpot via recentInjPos: hidden sandbagged shots don't repel the sugg
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
   assert.ok(dist(sugOn, { x: 8, y: 0 }) >= DOMAIN.SPOT_MIN_CM);
 });
+
+// ---- illness / infection episodes ----
+function ill(id, start, end, extra) {
+  return Object.assign({ id: id, start: start, end: end || null, label: "", severity: null }, extra || {});
+}
+function illState(episodes) {
+  return { illness: episodes };
+}
+
+test("openIllness: returns the episode without an end date", function () {
+  var st = illState([ill("a", "2026-07-01", "2026-07-05"), ill("b", "2026-08-01", null)]);
+  assert.strictEqual(DOMAIN.openIllness(st).id, "b");
+});
+
+test("openIllness: null when every episode is closed, and on empty state", function () {
+  assert.strictEqual(DOMAIN.openIllness(illState([ill("a", "2026-07-01", "2026-07-05")])), null);
+  assert.strictEqual(DOMAIN.openIllness({}), null);
+});
+
+test("illnessAsOf: the start day is day 1 and carries the total length", function () {
+  var st = illState([ill("a", "2026-08-01", "2026-08-06", { label: "angina", severity: 2 })]);
+  var r = DOMAIN.illnessAsOf(st, "2026-08-01");
+  assert.strictEqual(r.dayN, 1);
+  assert.strictEqual(r.total, 6);
+  assert.strictEqual(r.label, "angina");
+  assert.strictEqual(r.severity, 2);
+  assert.strictEqual(r.ongoing, false);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-08-04").dayN, 4);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-08-06").dayN, 6);
+});
+
+test("illnessAsOf: null before the start and after the end", function () {
+  var st = illState([ill("a", "2026-08-01", "2026-08-06")]);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-07-31"), null);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-08-07"), null);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, null), null);
+});
+
+test("illnessAsOf: an open episode covers every later date and keeps counting", function () {
+  var st = illState([ill("a", "2026-08-01", null)]);
+  var r = DOMAIN.illnessAsOf(st, "2026-09-10");
+  assert.strictEqual(r.ongoing, true);
+  assert.strictEqual(r.total, null);
+  assert.strictEqual(r.dayN, 41);
+});
+
+test("illnessAsOf: on overlap the later start wins", function () {
+  var st = illState([ill("a", "2026-08-01", "2026-08-20"), ill("b", "2026-08-10", "2026-08-14")]);
+  var r = DOMAIN.illnessAsOf(st, "2026-08-12");
+  assert.strictEqual(r.id, "b");
+  assert.strictEqual(r.dayN, 3);
+  // outside the nested one we fall back to the outer episode
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-08-18").id, "a");
+});
+
+test("illnessAsOf: day counts survive a DST change (noon anchor)", function () {
+  // 2026-03-29 is the EU spring-forward; the span must still be exactly 12 days
+  var st = illState([ill("a", "2026-03-25", "2026-04-05")]);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-04-05").dayN, 12);
+  assert.strictEqual(DOMAIN.illnessAsOf(st, "2026-04-05").total, 12);
+});
+
+test("illnessSpans: clips to the window and clamps an open episode to its end", function () {
+  var st = illState([ill("a", "2026-07-20", "2026-08-03"), ill("b", "2026-08-20", null)]);
+  var out = Array.from(DOMAIN.illnessSpans(st, "2026-08-01", "2026-08-31"));
+  assert.deepStrictEqual(pluck(out, "id"), ["a", "b"]);
+  assert.strictEqual(out[0].from, "2026-08-01");   // clipped to the window start
+  assert.strictEqual(out[0].to, "2026-08-03");
+  assert.strictEqual(out[1].from, "2026-08-20");
+  assert.strictEqual(out[1].to, "2026-08-31");     // ongoing -> clamped to the window end
+  assert.strictEqual(out[1].ongoing, true);
+});
+
+test("illnessSpans: episodes outside the window are dropped; empty state gives []", function () {
+  var st = illState([ill("a", "2026-05-01", "2026-05-04"), ill("b", "2026-12-01", "2026-12-04")]);
+  assert.deepStrictEqual(pluck(DOMAIN.illnessSpans(st, "2026-08-01", "2026-08-31"), "id"), []);
+  assert.deepStrictEqual(pluck(DOMAIN.illnessSpans({}, "2026-08-01", "2026-08-31"), "id"), []);
+});
+
+test("illnessSpans: an end before the start collapses to a single day", function () {
+  var st = illState([ill("a", "2026-08-10", "2026-08-04")]);
+  var out = Array.from(DOMAIN.illnessSpans(st, null, null));
+  assert.strictEqual(out[0].from, "2026-08-10");
+  assert.strictEqual(out[0].to, "2026-08-10");
+});

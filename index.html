@@ -1422,6 +1422,54 @@ var DOMAIN = (function(){
     return out;
   }
 
+  // ---- illness / infection episodes ----
+  // Day-grained periods: {id,start,end,label,severity}. end===null means the
+  // episode is still running, so it covers every date from its start onwards.
+  // Same noon anchor as therapyWeek so day counts survive DST changes.
+  function illnessDaySpan(aISO, bISO){
+    return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000);
+  }
+  function illnessEpisodes(state){
+    return ((state&&state.illness)||[]).filter(function(e){ return e && e.start; })
+      .slice().sort(function(a,b){ return a.start<b.start?1:a.start>b.start?-1:0; });  // newest first
+  }
+  // The one episode without an end date, or null. At most one is ever open.
+  function openIllness(state){
+    var eps=illnessEpisodes(state);
+    for(var i=0;i<eps.length;i++){ if(!eps[i].end) return eps[i]; }
+    return null;
+  }
+  // Episode covering a date + which day of it that is (1-based), or null.
+  // On overlap the latest start wins, so a nested episode reads as the current one.
+  function illnessAsOf(state, dateISO){
+    if(!dateISO) return null;
+    var best=null;
+    illnessEpisodes(state).forEach(function(e){
+      if(dateISO<e.start) return;
+      if(e.end && dateISO>e.end) return;
+      if(!best || e.start>best.start) best=e;
+    });
+    if(!best) return null;
+    return { id:best.id, start:best.start, end:best.end||null, ongoing:!best.end,
+             label:best.label||"", severity:best.severity||null,
+             dayN:illnessDaySpan(best.start, dateISO)+1,
+             total:best.end?illnessDaySpan(best.start, best.end)+1:null };
+  }
+  // Episodes overlapping [fromISO,toISO] (either bound may be null = open), clipped
+  // to that window so a chart can draw them straight onto its own x-domain.
+  function illnessSpans(state, fromISO, toISO){
+    var out=[];
+    illnessEpisodes(state).forEach(function(e){
+      var a=e.start, b=e.end||toISO||e.start;
+      if(b<a) b=a;                                  // malformed end: treat as a one-day episode
+      if(toISO && a>toISO) return;
+      if(fromISO && b<fromISO) return;
+      out.push({ id:e.id, from:(fromISO&&a<fromISO)?fromISO:a, to:(toISO&&b>toISO)?toISO:b,
+                 severity:e.severity||null, label:e.label||"", ongoing:!e.end });
+    });
+    return out.sort(function(a,b){ return a.from<b.from?-1:a.from>b.from?1:0; });
+  }
+
   // Peptide cycle progress. cfg:{cycleDays,cycleStart}. Returns null if no start.
   function cycleProgress(cfg, todayISOstr){
     if(!cfg || !cfg.cycleStart || !cfg.cycleDays) return null;
@@ -1451,6 +1499,7 @@ var DOMAIN = (function(){
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
+    illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
   };
@@ -1485,6 +1534,7 @@ var STORE = (function(){
       journal:[],          // free-text log entries: {id,ts,text}
       stateLog:[],         // 1-tap wellbeing check-ins: {id,ts,energy,mood,clarity} (1-5 or null)
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
+      illness:[],          // illness/infection episodes: {id,start,end,label,severity} (end:null = still running)
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
             peptide:{ unit:"j", cycleDays:56, cycleStart:null, name:"" } }
