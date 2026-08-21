@@ -3779,6 +3779,18 @@ var UI = (function(){
     var st=s(), today=todayISO();
     var html='<h1 class="page">'+esc(I18N.t("pulpit.title"))+'</h1>';
 
+    // --- illness banner: only while an episode is running, so a healthy day
+    // adds no clutter. The end button lives in the journal, hence the link. ---
+    var illNow=DOMAIN.illnessAsOf(st, today);
+    if(illNow && illNow.ongoing){
+      var ic=illColor(illNow.severity);
+      html+='<div class="banner" style="background:'+ic+'1a;border-color:'+ic+'59;color:'+ic
+        +';display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">'
+        +'<span>&#129298; <b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+illNow.dayN
+        +(illNow.label?' &middot; '+esc(illNow.label):'')+'</span>'
+        +'<a class="btn ghost sm" href="#diary">'+esc(I18N.t("ill.end"))+'</a></div>';
+    }
+
     // --- rhythm widgets ---
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.rhythm"))+'</h2>';
     // Mounjaro
