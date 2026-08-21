@@ -170,6 +170,12 @@
   .logentry .lbody{flex:1;min-width:0}
   .logentry .lmeta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .logentry .ltext{font-size:14.5px;white-space:pre-wrap;overflow-wrap:break-word}
+  /* illness/infection days: a coloured rail down every entry inside an episode,
+     so a sick stretch reads as one unbroken stripe while scrolling. The hue
+     comes inline from the severity, hence only the geometry lives here. */
+  .logentry.ill{border-left-width:3px;border-left-style:solid;padding-left:10px;margin-left:-1px}
+  .dayhead.ill{border-bottom-width:2px}
+  .dayhead .illpill,.logentry .illpill{padding:2px 7px;font-size:10.5px;text-transform:none;letter-spacing:0}
   /* segment switcher (substances) */
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
@@ -2716,12 +2722,12 @@ var UI = (function(){
   function illColor(sev){ return sev?ILL_COLORS[sev-1]:ILL_FALLBACK; }
   // "🤒 Choroba d3 · angina" — the day number is what makes a run of sick days
   // scannable without opening anything.
-  function illPill(ill, withLabel){
+  function illPill(ill){
     if(!ill) return "";
     var c=illColor(ill.severity);
     return '<span class="pill illpill" style="background:'+c+'22;color:'+c+'">&#129298; '
       +esc(I18N.t("ill.short"))+' '+esc(I18N.t("common.dayLetter"))+ill.dayN
-      +(withLabel&&ill.label?' &middot; '+esc(ill.label):'')+'</span>';
+      +(ill.label?' &middot; '+esc(ill.label):'')+'</span>';
   }
   // Three tap-to-pick severity pills (same idiom as the weight-chart series chips).
   // cls scopes them, so the episode card and the composer can each show a set.
@@ -2914,17 +2920,26 @@ var UI = (function(){
       var lastDay=null;
       pageSlice(items, journalPage).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
+        // the illness flag is day-derived, so it lands on every item type
+        var ill=DOMAIN.illnessAsOf(st, dISO), ic=ill?illColor(ill.severity):null;
         if(dISO!==lastDay){
           lastDay=dISO;
-          html+='<div class="dayhead"><span>'+esc(dayLabel(dISO))+injDayMarkers(st,dISO)+'</span>'+weekPills(weekTags(st,dISO))+'</div>';
+          html+='<div class="dayhead'+(ill?' ill':'')+'"'
+            +(ill?' style="border-bottom-color:'+ic+'66;color:'+ic+'"':'')+'>'
+            +'<span>'+esc(dayLabel(dISO))+injDayMarkers(st,dISO)+'</span>'
+            +illPill(ill)+weekPills(weekTags(st,dISO))+'</div>';
         }
+        // no chip on the entry itself: every page re-renders its day header, so
+        // the chip up there plus this rail already carry it without repeating
         var meta=(it.legacy
           ? '<span class="pill" style="background:var(--soft);color:var(--muted)">'+esc(I18N.t("diary.legacyTag"))+'</span>'
           : '<span>'+esc(fmtTime(it.ts))+'</span>');
         var body = it.state ? statePillsHTML(it.state)
           : (it.vals?statePillsHTML(it.vals):'')
             + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '');
-        html+='<div class="logentry"><div class="lbody"><div class="lmeta">'+meta+'</div>'
+        html+='<div class="logentry'+(ill?' ill':'')+'"'
+          +(ill?' style="border-left-color:'+ic+';background:linear-gradient(90deg,'+ic+'14,transparent 55%)"':'')
+          +'><div class="lbody"><div class="lmeta">'+meta+'</div>'
           +'<div class="ltext">'+body+'</div></div>'
           +(it.legacy?'':(it.state
             ?'<button class="btn ghost sm sDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>'
