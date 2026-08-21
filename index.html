@@ -486,6 +486,7 @@ var I18N = (function(){
     "ill.update":{pl:"Zaktualizuj epizod",en:"Update episode"},
     "ill.applyChanges":{pl:"Zapisz zmiany",en:"Save changes"},
     "ill.startHint":{pl:"zmień datę i zapisz zmiany, aby przesunąć początek wstecz",en:"change the date and save to move the start back"},
+    "ill.endNewHint":{pl:"zostaw puste — choroba trwa, aż ją zakończysz",en:"leave empty — the illness runs until you end it"},
     "ill.drop":{pl:"Usuń epizod",en:"Delete episode"},
     "ill.confirmDrop":{pl:"Usunąć ten epizod? Oznaczenia choroby znikną z wpisów i wykresów.",en:"Delete this episode? The illness marks disappear from entries and charts."},
     "ill.past":{pl:"Poprzednie epizody",en:"Past episodes"},
@@ -2798,11 +2799,14 @@ var UI = (function(){
     });});
   }
   // At most one open episode at a time — refuse instead of silently stacking.
-  function startIllness(startISO, label, severity){
+  // A retrospective episode (endISO given) is born closed, so it never touches
+  // that invariant and can be backfilled even while another episode is running.
+  function startIllness(startISO, endISO, label, severity){
     var st=s();
-    if(DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
+    if(!endISO && DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
     if(!st.illness) st.illness=[];
-    st.illness.push({ id:uid(), start:startISO, end:null,
+    st.illness.push({ id:uid(), start:startISO,
+                      end:endISO ? ((endISO<startISO)?startISO:endISO) : null,
                       label:String(label||"").trim().slice(0,60), severity:severity||null });
     return true;
   }
@@ -2865,7 +2869,8 @@ var UI = (function(){
         + '</div>';
     } else if(illOpenForm){
       html+='<p class="sub">'+esc(I18N.t("ill.sub"))+'</p>'
-        + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(today)+'"></div>'
+        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(today)+'"></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.endNewHint"))+')</span></label><input type="date" id="illEndNew"></div></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'"></div>'
         + illSevHtml(illDraft.severity, "illsev")
         + '<div class="row" style="margin-top:10px"><button class="btn" id="illSave">'+esc(I18N.t("ill.save"))+'</button>'
@@ -3025,7 +3030,7 @@ var UI = (function(){
       // always lands on the day header the note appears under
       var dISO=when.toISOString().slice(0,10);
       var cbS=$("#jIllStart"), cbE=$("#jIllEnd");
-      if(cbS && cbS.checked) startIllness(dISO, ($("#jIllLabel")||{}).value, jIllDraft.severity);
+      if(cbS && cbS.checked) startIllness(dISO, null, ($("#jIllLabel")||{}).value, jIllDraft.severity);
       else if(cbE && cbE.checked) endIllness(dISO);
       jIllDraft.severity=null;
       stateDraft={ energy:null, mood:null, clarity:null };
@@ -3080,7 +3085,7 @@ var UI = (function(){
     if($("#illBegin")) $("#illBegin").addEventListener("click",function(){ illOpenForm=true; illSeed=null; viewDiary(); });
     if($("#illCancel")) $("#illCancel").addEventListener("click",function(){ illOpenForm=false; illSeed=null; viewDiary(); });
     if($("#illSave")) $("#illSave").addEventListener("click",function(){
-      if(!startIllness($("#illStart").value||today, $("#illLabel").value, illDraft.severity)) return;
+      if(!startIllness($("#illStart").value||today, $("#illEndNew").value||null, $("#illLabel").value, illDraft.severity)) return;
       illOpenForm=false; illSeed=null; illCommit();
     });
     // "update" keeps the episode running; "end" closes it on the picked date
