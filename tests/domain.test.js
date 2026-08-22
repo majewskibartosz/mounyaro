@@ -482,3 +482,52 @@ test("lastDoseAsOf and doseStreakAsOf work per peptide id", function () {
   assert.strictEqual(DOMAIN.lastDoseAsOf(st, "pep2", "2026-08-05").dose, 2);
   assert.strictEqual(DOMAIN.doseStreakAsOf(st, "pep1", "2026-08-05").sinceISO, "2026-08-01");
 });
+
+// ---- peptide reconstitution ----
+
+test("vialConc: mg of powder over ml of water", function () {
+  assert.strictEqual(DOMAIN.vialConc(10, 2), 5);
+  assert.strictEqual(DOMAIN.vialConc(5, 2), 2.5);
+  assert.strictEqual(DOMAIN.vialConc(10, 0), null);   // no water, no solution
+  assert.strictEqual(DOMAIN.vialConc(0, 2), null);
+  assert.strictEqual(DOMAIN.vialConc(null, 2), null);
+});
+
+test("unitsForDose: a U-100 syringe reads 100 units per ml", function () {
+  // 10 mg in 2 ml = 5 mg/ml; 2.5 mg is half a ml
+  assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", 5), 50);
+  assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", 10), 25);
+  assert.strictEqual(DOMAIN.unitsForDose(250, "mcg", 5), 5);
+  assert.strictEqual(DOMAIN.unitsForDose(1, "mg", 8), 12.5);
+});
+
+test("unitsForDose: nothing to convert without mg or a concentration", function () {
+  assert.strictEqual(DOMAIN.unitsForDose(30, "j", 5), null);     // dose already in IU
+  assert.strictEqual(DOMAIN.unitsForDose(30, "IU", 5), null);
+  assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", null), null); // no vial yet
+  assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", 0), null);
+  assert.strictEqual(DOMAIN.unitsForDose(0, "mg", 5), null);
+});
+
+test("doseToMg: mcg scales down, IU has no mg equivalent", function () {
+  assert.strictEqual(DOMAIN.doseToMg(250, "mcg"), 0.25);
+  assert.strictEqual(DOMAIN.doseToMg(2.5, "mg"), 2.5);
+  assert.strictEqual(DOMAIN.doseToMg(30, "j"), null);
+});
+
+test("vialAsOf: a backdated shot uses the vial that was open then", function () {
+  var vials = [{ id: "v1", date: "2026-07-01", mg: 10, ml: 2 },
+               { id: "v2", date: "2026-08-10", mg: 10, ml: 1 }];
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-08-20").id, "v2");
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-08-10").id, "v2");   // the day it was mixed
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-08-09").id, "v1");
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-06-30"), null);      // before the first vial
+  assert.strictEqual(DOMAIN.vialAsOf([], "2026-08-20"), null);
+});
+
+test("reconstitution end to end: 10 mg vial, 2 ml water, 2.5 mg dose", function () {
+  var v = DOMAIN.vialAsOf([{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 }], "2026-08-05");
+  var conc = DOMAIN.vialConc(v.mg, v.ml);
+  assert.strictEqual(conc, 5);
+  assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", conc), 50);
+});

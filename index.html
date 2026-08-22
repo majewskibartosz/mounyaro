@@ -975,6 +975,41 @@ var DOMAIN = (function(){
   function mgPerClick(S){ return S/CLICKS_PER_DOSE; }
   function clicksForDose(D,S){ return Math.max(0, Math.round(D*CLICKS_PER_DOSE/S)); }
   function mgForClicks(c,S){ return c*S/CLICKS_PER_DOSE; }
+
+  /* ---- peptide reconstitution ----
+     A vial of powder (mg) dissolved in bacteriostatic water (ml) gives a
+     concentration, and the dose is drawn on a U-100 insulin syringe where
+     1 ml = 100 units — the same relation the KwikPen click maths already
+     leans on (1 click = 0.01 ml = 1 insulin unit). */
+  var SYRINGE_UNITS_PER_ML = 100;
+  function vialConc(mg, ml){
+    mg=Number(mg); ml=Number(ml);
+    if(!isFinite(mg) || !isFinite(ml) || mg<=0 || ml<=0) return null;
+    return mg/ml;
+  }
+  // A dose prescribed in IU has no mg equivalent, so there is nothing to convert.
+  function doseToMg(dose, unit){
+    var d=Number(dose);
+    if(!isFinite(d) || d<=0) return null;
+    if(unit==="mg") return d;
+    if(unit==="mcg") return d/1000;
+    return null;
+  }
+  function unitsForDose(dose, unit, mgPerMl, unitsPerMl){
+    var mg=doseToMg(dose, unit);
+    if(mg==null || !mgPerMl || mgPerMl<=0) return null;
+    return mg/mgPerMl*(unitsPerMl||SYRINGE_UNITS_PER_ML);
+  }
+  // The vial in use on a date: the newest one dissolved on or before it, so a
+  // backdated shot is measured against the concentration of its own time.
+  function vialAsOf(vials, dateISO){
+    var best=null;
+    (vials||[]).forEach(function(v){
+      if(!v || !v.date || (dateISO && v.date>dateISO)) return;
+      if(!best || v.date>best.date) best=v;
+    });
+    return best;
+  }
   function totalMgPerPen(S){ return DOSES_PER_PEN*S; }
   function budgetClicks(golden){ return CLICKS_PER_PEN + (golden && golden.enabled ? GOLDEN_UNITS : 0); }
 
@@ -1649,6 +1684,8 @@ var DOMAIN = (function(){
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     GOLDEN_UNITS:GOLDEN_UNITS,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
+    SYRINGE_UNITS_PER_ML:SYRINGE_UNITS_PER_ML, vialConc:vialConc, doseToMg:doseToMg,
+    unitsForDose:unitsForDose, vialAsOf:vialAsOf,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
