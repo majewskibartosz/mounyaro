@@ -3005,7 +3005,7 @@ var UI = (function(){
       var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), dateISO);
       if(w==null) return;
       out.push({ label:(sub==="mounjaro"?"MJ":"TRT"), week:w,
-                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO),
+                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO), every:substInterval(st,sub),
                  doseWeek:doseWeekAsOf(st,sub,dateISO), color:SUBSTANCE_COLORS[sub] });
     });
     return out;
@@ -3015,7 +3015,7 @@ var UI = (function(){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
         +esc(t.label)
-        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every)):'')
+        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every!=null?t.dose.every:t.every)):'')
         +' '+esc(I18N.t("common.weekLetter"))+t.week
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
@@ -3621,10 +3621,21 @@ var UI = (function(){
   }
 
   // single-substance pill for "now": "2.5 mg t5 · d5" (no label — context names it)
+  // The configured cadence for any substance. Entries logged before intervals
+  // were stamped carry no `every`, so a pill would read "2.5 mg" with no idea
+  // how often — fall back to what the substance is actually set to.
+  function substInterval(st, sub){
+    var p=peptideById(st, sub);
+    if(p) return pepInterval(st, p);
+    if(sub==="mounjaro") return parseEvery(st.calc.intervalDays,7);
+    if(sub==="trt") return parseEvery(st.inj.trt.intervalDays,3);
+    return null;
+  }
   function nowDosePill(st, sub, todayISOstr){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
-    return dosePill("", doseTxt(ld.dose, ld.unit, ld.every), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
+    var ev=(ld.every!=null)?ld.every:substInterval(st, sub);
+    return dosePill("", doseTxt(ld.dose, ld.unit, ev), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
   }
   // week on the current dose, only when the setting is on
   function doseWeekAsOf(st, sub, dISO){
@@ -3648,8 +3659,8 @@ var UI = (function(){
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every), SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
-    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every), SUBSTANCE_COLORS.trt, wt, doseWeekAsOf(st,"trt",dISO)));
+    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every!=null?mj.every:substInterval(st,"mounjaro")), SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
+    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every!=null?trt.every:substInterval(st,"trt")), SUBSTANCE_COLORS.trt, wt, doseWeekAsOf(st,"trt",dISO)));
     if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", SUBSTANCE_COLORS.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
@@ -4347,7 +4358,9 @@ var UI = (function(){
 
   /* ============ DASHBOARD (Pulpit) ============ */
   function rhythmRow(label, color, frac, right, pill){
-    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:700"><span>'+esc(label)+(pill?' '+pill:'')+'</span><span class="muted tiny">'+esc(right||"")+'</span></div>'
+    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:nowrap;font-size:14px;font-weight:700">'
+      +'<span style="min-width:0;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap"><span class="nowrap">'+esc(label)+'</span>'+(pill||'')+'</span>'
+      +'<span class="muted tiny" style="flex:0 0 auto;white-space:nowrap">'+esc(right||"")+'</span></div>'
       + progressBar(frac, color, "", "") + '</div>';
   }
   function viewDash(){
