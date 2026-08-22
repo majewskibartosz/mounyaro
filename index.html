@@ -2931,7 +2931,7 @@ var UI = (function(){
     var anyWaist = st.weightLog.some(function(e){ return e.waistCm!=null; });
     function serChip(key, on, label, color){
       return '<button type="button" class="pill wSer" data-s="'+key+'" style="cursor:pointer;border:0;background:'
-        +(on?color+'22':'var(--soft)')+';color:'+(on?color:'var(--muted)')+'">'+esc(label)+'</button>';
+        +(on?color+PAL.tintA:'var(--soft)')+';color:'+(on?color:'var(--muted)')+'">'+esc(label)+'</button>';
     }
     html+='<div class="card">'+rangeHeader("weight.chartTitle","wRg",weightRange,win)
         + (anyWaist ? '<div class="row" style="gap:6px;margin:0 0 8px">'
@@ -3312,7 +3312,7 @@ var UI = (function(){
   // Same notation as the history dose pills: "Mounjaro 2.5 mg t5 · d5"
   function weekPills(tags){
     return tags.map(function(t){
-      return '<span class="pill" style="background:'+t.color+'22;color:'+t.color+'">'
+      return '<span class="pill" style="background:'+t.color+PAL.tintA+';color:'+t.color+'">'
         +esc(t.label)
         +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every!=null?t.dose.every:t.every)):'')
         +' '+esc(I18N.t("common.weekLetter"))+t.week
@@ -3328,7 +3328,7 @@ var UI = (function(){
   function illPill(ill){
     if(!ill) return "";
     var c=illColor(ill.severity);
-    return '<span class="pill illpill" style="background:'+c+'22;color:'+c+'">&#129298; '
+    return '<span class="pill illpill" style="background:'+c+PAL.tintA+';color:'+c+'">&#129298; '
       +esc(I18N.t("ill.short"))+' '+esc(I18N.t("common.dayLetter"))+ill.dayN
       +(ill.label?' &middot; '+esc(ill.label):'')+'</span>';
   }
@@ -3466,7 +3466,7 @@ var UI = (function(){
             +'</div></div>';
         } else {
           html+='<div class="logentry"><div class="lbody"><div class="lmeta">'
-            +'<span class="pill" style="background:'+c+'22;color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
+            +'<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
             +'<span>'+n+' '+esc(I18N.t(n===1?"ill.day1":"ill.days"))+'</span>'
             +(e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
             +'</div>'+(e.label?'<div class="ltext">'+esc(e.label)+'</div>':'')+'</div>'
@@ -4028,7 +4028,7 @@ var UI = (function(){
     return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"");
   }
   function dosePill(label, txt, color, week, doseWeek){
-    return '<span class="pill dosepill" style="background:'+color+'22;color:'+color+'">'+(label?label+' ':'')+esc(txt)
+    return '<span class="pill dosepill" style="background:'+color+PAL.tintA+';color:'+color+'">'+(label?label+' ':'')+esc(txt)
       +(week!=null?' '+esc(I18N.t("common.weekLetter"))+week:'')
       +(doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+doseWeek:'')+'</span>';
   }
@@ -5372,7 +5372,7 @@ var UI = (function(){
         +(P!=null?'<th class="num">'+esc(I18N.t("opt.perShot"))+'</th>':'')+'</tr></thead><tbody>';
     r.shots.forEach(function(sh,i){
       html+='<tr><td>#'+(i+1)+' <span class="muted tiny">'+esc(sh.fraction===0.5?I18N.t("opt.half"):I18N.t("opt.full"))+'</span></td>'
-          +'<td><span class="pill" style="background:'+doseColor(sh.dose)+'22;color:'+doseColor(sh.dose)+'">'+fmtNum(sh.actualMg,2)+' mg</span></td>'
+          +'<td><span class="pill" style="background:'+doseColor(sh.dose)+PAL.tintA+';color:'+doseColor(sh.dose)+'">'+fmtNum(sh.actualMg,2)+' mg</span></td>'
           +'<td class="num">'+sh.clicks+'</td>'
           +(P!=null?'<td class="num">'+fmtMoney(sh.costPerShot,cur)+'</td>':'')+'</tr>';
     });
@@ -5471,7 +5471,7 @@ var UI = (function(){
     r.schedule.forEach(function(d){
       for(var i=0;i<d.weeks;i++){ wk++;
         html+='<tr><td>'+wk+'</td>'
-          +'<td><span class="pill" style="background:'+doseColor(d.mg)+'22;color:'+doseColor(d.mg)+'">'+fmtNum(d.mg,2)+' mg</span></td>'
+          +'<td><span class="pill" style="background:'+doseColor(d.mg)+PAL.tintA+';color:'+doseColor(d.mg)+'">'+fmtNum(d.mg,2)+' mg</span></td>'
           +'<td class="num">'+d.clicks+(d.feasible?'':' ⚠')+'</td>'
           +(P!=null&&!isNaN(P)?'<td class="num">'+fmtMoney(d.costPerWeek,cur)+'</td>':'')+'</tr>';
       }
