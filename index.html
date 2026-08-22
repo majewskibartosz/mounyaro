@@ -16,6 +16,9 @@
     --brand:#0ea5a4; --brand-dk:#0b827f; --accent:#6366f1;
     --good:#16a34a; --warn:#f59e0b; --bad:#dc2626; --info:#0284c7;
     --warnbg:#fff7ed; --warnline:#fed7aa; --warnink:#9a3412;
+    --danger-bg:#fee2e2; --switch-off:#cbd5e1; --on-brand:#ffffff;
+    --pill-bg:#94a3b822; --sb-bg:#f59e0b2b; --sb-ink:#d97706;
+    --brand-t10:#0ea5a41a; --brand-t14:#0ea5a424; --brand-t18:#0ea5a42e; --brand-t35:#0ea5a459;
     --radius:16px; --shadow:0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.05);
   }
   :root[data-theme="dark"]{
@@ -23,7 +26,10 @@
     --headbg:rgba(11,18,32,.92);
     --ink:#e8eef5; --muted:#94a3b8; --line:#2b3a4d;
     --brand:#14b8b6; --brand-dk:#5eead4;
+    --accent:#818cf8; --good:#22c55e; --bad:#ef4444; --info:#38bdf8;
     --warnbg:#3a2a14; --warnline:#7c5418; --warnink:#fbbf24;
+    --switch-off:#2b3a4d; --sb-ink:#fbbf24;
+    --brand-t10:#14b8b61a; --brand-t14:#14b8b624; --brand-t18:#14b8b62e; --brand-t35:#14b8b659;
     --shadow:0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
   }
   html{transition:background .2s,color .2s}
@@ -44,12 +50,12 @@
   .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;white-space:nowrap}
   #installBtn{padding:7px 10px;font-size:13px;white-space:nowrap;flex-shrink:0}
   @media(max-width:430px){ .head-inner{gap:7px} .logo{font-size:15px} .logo .dot{width:11px;height:11px} }
-  .logo .dot{width:14px;height:14px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(14,165,164,.18)}
+  .logo .dot{width:14px;height:14px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px var(--brand-t18)}
   .spacer{flex:1}
   .iconbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);width:38px;height:34px;border-radius:999px;cursor:pointer;font-size:16px;line-height:1}
   .lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--card)}
   .lang button{border:0;background:transparent;padding:6px 12px;font-weight:700;color:var(--muted);cursor:pointer;font-size:13px}
-  .lang button.on{background:var(--brand);color:#fff}
+  .lang button.on{background:var(--brand);color:var(--on-brand)}
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin:0 0 16px}
   .card h2{margin:0 0 4px;font-size:17px}
@@ -69,7 +75,7 @@
     width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;font-size:16px;
     background:var(--input);color:var(--ink);font-family:inherit;
   }
-  input:focus,select:focus,textarea:focus{outline:2px solid rgba(14,165,164,.35);border-color:var(--brand)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand-t35);border-color:var(--brand)}
   .grid{display:grid;gap:12px}
   .g2{grid-template-columns:1fr 1fr}
   .g3{grid-template-columns:1fr 1fr 1fr}
@@ -84,7 +90,7 @@
     transition:border-color .15s,background .15s,box-shadow .15s}
   .chip .cv{display:block;font-weight:800;font-size:16px;line-height:1.1}
   .chip .cu{display:block;font-size:11px;color:var(--muted);margin-top:2px}
-  .chip.on{border-color:var(--brand);background:rgba(14,165,164,.10);box-shadow:0 0 0 1px var(--brand) inset}
+  .chip.on{border-color:var(--brand);background:var(--brand-t10);box-shadow:0 0 0 1px var(--brand) inset}
 
   /* compact price tiles (per-pen costs) */
   .pcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -121,21 +127,21 @@
 
   .btn{
     border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;
-    background:var(--brand);color:#fff;transition:filter .15s,transform .05s;
+    background:var(--brand);color:var(--on-brand);transition:filter .15s,transform .05s;
     display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;
   }
   .btn svg{width:18px;height:18px;flex-shrink:0}
   .btn:hover{filter:brightness(1.05)}
   .btn:active{transform:translateY(1px)}
   .btn.ghost{background:var(--soft);color:var(--ink);border:1px solid var(--line)}
-  .btn.danger{background:#fee2e2;color:var(--bad)}
+  .btn.danger{background:var(--danger-bg);color:var(--bad)}
   .btn.sm{padding:8px 12px;font-size:13px}
   .btn.sm svg{width:15px;height:15px}
   /* Full/Half pattern toggles: fixed width so switching label never shifts layout */
   button.fracBtn{min-width:104px;text-align:center}
 
   .toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
-  .switch{width:44px;height:26px;border-radius:999px;background:#cbd5e1;position:relative;transition:background .2s}
+  .switch{width:44px;height:26px;border-radius:999px;background:var(--switch-off);position:relative;transition:background .2s}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
   .toggle input{display:none}
   .toggle input:checked + .switch{background:var(--brand)}
@@ -154,7 +160,7 @@
     opacity:.5;transition:opacity .15s,transform .1s,box-shadow .15s}
   .sdot.on{opacity:1;box-shadow:0 0 0 3px var(--card),0 0 0 5px currentColor;transform:scale(1.08)}
   .sdot:active{transform:scale(.92)}
-  .statepill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 3px;border-radius:999px;font-size:12px;font-weight:800;color:#fff;margin-right:4px}
+  .statepill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 3px;border-radius:999px;font-size:12px;font-weight:800;color:var(--on-brand);margin-right:4px}
   .statepill .pemoji{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
     border-radius:50%;background:rgba(0,0,0,.32);font-size:11px;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
   /* injection-day marker (syringe next to dates); .pre = reading taken before that day's shot */
@@ -227,9 +233,8 @@
   .rellinks{margin-top:12px}
   .rellinks .btn{width:100%}
   .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
-  .minipill{padding:1px 6px;font-size:10px;background:#94a3b822;color:var(--muted);vertical-align:middle;white-space:nowrap}
-  .minipill.sb{background:#f59e0b2b;color:#d97706}
-  :root[data-theme="dark"] .minipill.sb{color:#fbbf24}
+  .minipill{padding:1px 6px;font-size:10px;background:var(--pill-bg);color:var(--muted);vertical-align:middle;white-space:nowrap}
+  .minipill.sb{background:var(--sb-bg);color:var(--sb-ink)}
   .muted{color:var(--muted)}
   .small{font-size:13px}
   .tiny{font-size:12px}
@@ -282,7 +287,7 @@
     padding:6px 2px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:3px}
   nav.tabs a .ic{display:flex;align-items:center;justify-content:center}
   nav.tabs a .ic svg{width:23px;height:23px;display:block}
-  nav.tabs a.on{color:var(--brand);background:rgba(14,165,164,.10)}
+  nav.tabs a.on{color:var(--brand);background:var(--brand-t10)}
 
   /* On wider screens the tab bar moves to the top, sitting directly under the
      header as a self-contained segmented bar (instead of a fixed bottom bar). */
@@ -3123,7 +3128,7 @@ var UI = (function(){
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
         html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(String(e.ts).slice(0,10))+injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
-            +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:#0ea5a422;color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
+            +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:var(--brand-t14);color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
             + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')+'</td>'
@@ -5112,7 +5117,7 @@ var UI = (function(){
         tv.rate=rate; STORE.save();
         var fx=st.settings.fx;
         wrap.innerHTML='<div class="row" style="gap:8px;align-items:center"><input type="text" value="'+rate+'" readonly style="max-width:140px;background:var(--soft)">'
-          +'<span class="pill" style="background:rgba(14,165,164,.14);color:var(--brand)">'+esc(I18N.t("fx.badge"))+'</span>'
+          +'<span class="pill" style="background:var(--brand-t14);color:var(--brand)">'+esc(I18N.t("fx.badge"))+'</span>'
           +'<button type="button" class="btn ghost sm" id="oFxRefresh">'+esc(I18N.t("fx.refresh"))+'</button></div>'
           +'<div class="tiny muted" style="margin-top:5px">🌐 '+esc(I18N.t("fx.online"))+(fx&&fx.updated?' · '+esc(fx.updated):'')+'</div>';
       } else {
