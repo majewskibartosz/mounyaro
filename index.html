@@ -573,9 +573,19 @@ var I18N = (function(){
     "pulpit.totalShort":{pl:"tot",en:"tot"},
     "weight.legendDose":{pl:"Kolor punktu = dawka (mg)",en:"Point colour = dose (mg)"},
     "weight.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
-    "chart.zoom7":{pl:"Przybliż: ostatnie 7 pomiarów",en:"Zoom in: last 7 readings"},
-    "chart.zoomAll":{pl:"Oddal: cała historia",en:"Zoom out: full history"},
-    "chart.last7":{pl:"ostatnie 7 pomiarów",en:"last 7 readings"},
+    "chart.range7":{pl:"7d",en:"7d"},
+    "chart.range14":{pl:"14d",en:"14d"},
+    "chart.range30":{pl:"30d",en:"30d"},
+    "chart.range90":{pl:"90d",en:"90d"},
+    "chart.rangeAll":{pl:"Wszystko",en:"All"},
+    "chart.prevRange":{pl:"Wcześniejszy okres",en:"Earlier period"},
+    "chart.nextRange":{pl:"Późniejszy okres",en:"Later period"},
+    "bp.winSys":{pl:"Sys śr.",en:"Sys avg"},
+    "bp.winDia":{pl:"Dia śr.",en:"Dia avg"},
+    "bp.winPulse":{pl:"Puls śr.",en:"Pulse avg"},
+    "weight.winAvg":{pl:"Śr. waga",en:"Avg weight"},
+    "weight.winRange":{pl:"Min–maks",en:"Min–max"},
+    "weight.winChange":{pl:"Zmiana (okres)",en:"Change (period)"},
     "weight.waistCm":{pl:"Obwód pasa (cm)",en:"Waist (cm)"},
     "weight.waist":{pl:"Obwód pasa",en:"Waist"},
     "weight.waistTotal":{pl:"Zmiana pasa",en:"Waist change"},
@@ -2326,25 +2336,34 @@ var UI = (function(){
     });});
   }
 
-  /* ---- chart zoom: "+" narrows to the last N readings, "−" restores full history ---- */
-  var CHART_ZOOM_N=7;
-  function zoomHeader(titleKey, cls, zoomed, total){
-    // "+" is always shown (heavily faded once active); "−" appears only while zoomed
-    var btns = total>CHART_ZOOM_N
-      ? '<div class="row" style="gap:6px;flex-wrap:nowrap">'
-        +'<button type="button" class="btn ghost sm '+cls+'" data-z="1" style="min-width:40px'+(zoomed?';opacity:.25;cursor:default':'')+'" title="'+esc(I18N.t("chart.zoom7"))+'"'+(zoomed?' disabled':'')+'>+</button>'
-        +(zoomed?'<button type="button" class="btn ghost sm '+cls+'" data-z="0" style="min-width:40px" title="'+esc(I18N.t("chart.zoomAll"))+'">&minus;</button>':'')
+  /* ---- chart range: day-window presets (7/14/30/90/all) + ‹ › history paging ---- */
+  var RANGE_PRESETS=[7,14,30,90,null];   // null = full history
+  function rangeHeader(titleKey, cls, state, win){
+    // ‹ pages back in time (offset+1), › forward; both vanish in "all" mode.
+    var arrows = state.days!=null
+      ? '<div class="row" style="gap:6px;flex-wrap:nowrap;align-items:center">'
+        +'<button type="button" class="btn ghost sm '+cls+'" data-d="1" title="'+esc(I18N.t("chart.prevRange"))+'"'+(win.atOldest?' disabled':'')+'>&lsaquo;</button>'
+        +'<span class="muted small" style="white-space:nowrap">'+esc(fmtDate(win.from,true))+' &ndash; '+esc(fmtDate(win.to,true))+'</span>'
+        +'<button type="button" class="btn ghost sm '+cls+'" data-d="-1" title="'+esc(I18N.t("chart.nextRange"))+'"'+(win.atNewest?' disabled':'')+'>&rsaquo;</button>'
         +'</div>'
       : '';
+    var seg='<div class="seg" style="margin:6px 0 8px">';
+    RANGE_PRESETS.forEach(function(d){
+      var on = d===state.days;
+      seg+='<button type="button" class="'+cls+(on?' on':'')+'" data-days="'+(d==null?'all':d)+'">'
+        +esc(I18N.t(d==null?"chart.rangeAll":"chart.range"+d))+'</button>';
+    });
+    seg+='</div>';
     return '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap;margin-bottom:4px">'
-      +'<h2 style="margin:0">'+esc(I18N.t(titleKey))
-      +(zoomed&&btns?' <span class="muted tiny" style="font-weight:600">('+esc(I18N.t("chart.last7"))+')</span>':'')+'</h2>'
-      +btns+'</div>';
+      +'<h2 style="margin:0">'+esc(I18N.t(titleKey))+'</h2>'+arrows+'</div>'+seg;
   }
-  function bindZoom(cls, setZ, rerender){
+  function bindRange(cls, state, rerender){
     $all("."+cls).forEach(function(b){ b.addEventListener("click",function(){
       if(b.disabled) return;
-      setZ(b.getAttribute("data-z")==="1"); rerender();
+      var days=b.getAttribute("data-days");
+      if(days!=null){ state.days = days==="all" ? null : parseInt(days,10); state.offset=0; }
+      else state.offset += parseInt(b.getAttribute("data-d"),10);   // chartWindow clamps
+      rerender();
     });});
   }
 
@@ -2456,7 +2475,7 @@ var UI = (function(){
   /* ============ WEIGHT ============ */
   var weightEdit=null;  // id of the entry being edited (null = adding a new one)
   var weightPage=0;     // history page (5 rows each)
-  var weightZoom=false; // chart: true = last 7 readings, false = full history
+  var weightRange={days:null, offset:0}; // chart day window: days null = full history
   var weightShow={w:true, g:true}; // chart series filter: w = weight, g = waist (girth)
   function viewWeight(){
     var st=s();
@@ -2471,20 +2490,23 @@ var UI = (function(){
     var html=''
     + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>';
 
-    // chart card (on top); "+" zooms to the last 7 readings so recent trends
-    // (e.g. waist, measured only recently) are readable
-    var chartLog = (weightZoom && st.weightLog.length>CHART_ZOOM_N) ? st.weightLog.slice(0,CHART_ZOOM_N) : st.weightLog;
+    // chart card (on top); the range bar narrows to a day window and ‹ › page it
+    var win=DOMAIN.chartWindow(st.weightLog, "date", weightRange.days, weightRange.offset, todayISO());
+    weightRange.offset=win.offset;   // keep state in sync with the clamp
+    var chartLog=win.entries;
+    function noonMs(iso){ return new Date(iso+"T12:00:00").getTime(); }
     var anyWaist = st.weightLog.some(function(e){ return e.waistCm!=null; });
     function serChip(key, on, label, color){
       return '<button type="button" class="pill wSer" data-s="'+key+'" style="cursor:pointer;border:0;background:'
         +(on?color+'22':'var(--soft)')+';color:'+(on?color:'var(--muted)')+'">'+esc(label)+'</button>';
     }
-    html+='<div class="card">'+zoomHeader("weight.chartTitle","wZoom",weightZoom,st.weightLog.length)
+    html+='<div class="card">'+rangeHeader("weight.chartTitle","wRg",weightRange,win)
         + (anyWaist ? '<div class="row" style="gap:6px;margin:0 0 8px">'
             + serChip("w", weightShow.w, I18N.t("common.weight"), "#0ea5a4")
             + serChip("g", weightShow.g, I18N.t("weight.waist"), "#6366f1")
             + '</div>' : '')
-        + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g, illness:illSpansFor(chartLog,"date")})+'</div>';
+        + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g, illness:illSpansFor(chartLog,"date",win),
+            minX:win.from?noonMs(win.from)-43200000:null, maxX:win.to?noonMs(win.to)+43200000:null})+'</div>';
     if(st.weightLog.length){
       var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
       var diff=cur-first;
@@ -2492,7 +2514,7 @@ var UI = (function(){
       var col = diff<=0?"var(--good)":"var(--bad)";
       var waistLog = st.weightLog.filter(function(e){ return e.waistCm!=null; }); // newest first
       html+='<div class="legend">'
-          + (illSpansFor(chartLog,"date").length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
+          + (illSpansFor(chartLog,"date",win).length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
           + (weightShow.w?'<span>'+esc(I18N.t("weight.legendDose"))+'</span>':'')
           + (weightShow.g&&waistLog.length?'<span style="color:#6366f1">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
           + '</div>'
@@ -2512,6 +2534,16 @@ var UI = (function(){
             + '<div class="stat"><span class="k">'+esc(I18N.t("weight.waistTotal"))+'</span><span class="v" style="color:'+wCol+'">'+(wDiff>0?"+":"")+fmtNum(wDiff,1)+' cm</span></div>';
       }
       html+='</div>';
+      // extra row scoped to the visible day window (range selector active)
+      var ws = weightRange.days!=null ? DOMAIN.weightWindowStats(chartLog) : null;
+      if(ws){
+        var wsCol = ws.change<=0?"var(--good)":"var(--bad)";
+        html+='<div class="stats" style="margin-top:8px">'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.winAvg"))+'</span><span class="v">'+fmtNum(ws.avg,1)+' kg</span></div>'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.winRange"))+'</span><span class="v">'+fmtNum(ws.min,1)+'&ndash;'+fmtNum(ws.max,1)+'</span></div>'
+          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.winChange"))+'</span><span class="v" style="color:'+wsCol+'">'+(ws.change>0?"+":"")+fmtNum(ws.change,1)+' kg</span></div>'
+          + '</div>';
+      }
     }
     html+='</div>';
 
@@ -2593,7 +2625,7 @@ var UI = (function(){
     });
     if($("#wCancel")) $("#wCancel").addEventListener("click",function(){ weightEdit=null; viewWeight(); });
     bindPager("wPg", function(){return weightPage;}, function(v){weightPage=v;}, viewWeight);
-    bindZoom("wZoom", function(v){weightZoom=v;}, viewWeight);
+    bindRange("wRg", weightRange, viewWeight);
     // series filter chips; never allow both off — turning off the last one flips to the other
     $all(".wSer").forEach(function(b){ b.addEventListener("click",function(){
       var k=b.getAttribute("data-s"), o=(k==="w")?"g":"w";
@@ -2653,7 +2685,7 @@ var UI = (function(){
   /* ============ BLOOD PRESSURE ============ */
   var bpEdit=null;  // id of the reading being edited (null = adding a new one)
   var bpPage=0;     // history page (5 rows each)
-  var bpZoom=false; // chart: true = last 7 readings, false = full history
+  var bpRange={days:null, offset:0}; // chart day window: days null = full history
   function viewBP(){
     var st=s();
     var log = st.bp.log || [];
@@ -2670,15 +2702,19 @@ var UI = (function(){
     var html=''
     + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
 
-    // chart card (on top); "+" zooms to the last 7 readings for a closer trend
-    var chartLog = (bpZoom && log.length>CHART_ZOOM_N) ? log.slice(0,CHART_ZOOM_N) : log;
-    html+='<div class="card">'+zoomHeader("bp.chartTitle","bpZoom",bpZoom,log.length)
-        + '<div id="bpChart">'+CHART.renderBP(chartLog, {illness:illSpansFor(chartLog,"ts")})+'</div>';
+    // chart card (on top); the range bar narrows to a day window and ‹ › page it
+    var win=DOMAIN.chartWindow(log, "ts", bpRange.days, bpRange.offset, todayISO());
+    bpRange.offset=win.offset;   // keep state in sync with the clamp
+    var chartLog=win.entries;
+    function noonMs(iso){ return new Date(iso+"T12:00:00").getTime(); }
+    html+='<div class="card">'+rangeHeader("bp.chartTitle","bpRg",bpRange,win)
+        + '<div id="bpChart">'+CHART.renderBP(chartLog, {illness:illSpansFor(chartLog,"ts",win),
+            minX:win.from?noonMs(win.from)-43200000:null, maxX:win.to?noonMs(win.to)+43200000:null})+'</div>';
     if(log.length){
       var L=log[0];
       // colour key matching the chart lines: red=systolic, blue=diastolic, grey=pulse
       html+='<div class="legend">'
-          + (illSpansFor(chartLog,"ts").length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
+          + (illSpansFor(chartLog,"ts",win).length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
           + '<span><i style="background:#dc2626;border-radius:50%"></i>'+esc(I18N.t("bp.legSys"))+'</span>'
           + '<span><i style="background:#0284c7;border-radius:50%"></i>'+esc(I18N.t("bp.legDia"))+'</span>'
           + '<span><i style="background:#94a3b8;border-radius:50%"></i>'+esc(I18N.t("bp.legPulse"))+'</span>'
@@ -2688,6 +2724,18 @@ var UI = (function(){
           + (L.pulse!=null?'<div class="stat"><span class="k">'+esc(I18N.t("bp.pulse"))+'</span><span class="v">'+L.pulse+'</span></div>':'')
           + '<div class="stat"><span class="k">'+esc(I18N.t("bp.when"))+'</span><span class="v" style="font-size:14px">'+esc(fmtDateTime(L.ts))+'</span></div>'
           + '</div>';
+      // extra row scoped to the visible day window (range selector active)
+      var bs = bpRange.days!=null ? DOMAIN.bpWindowStats(chartLog) : null;
+      if(bs){
+        function bpTile(key, mm){
+          return '<div class="stat"><span class="k">'+esc(I18N.t(key))+'</span><span class="v">'+Math.round(mm.avg)
+            +'</span><span class="muted tiny">'+Math.round(mm.min)+'&ndash;'+Math.round(mm.max)+'</span></div>';
+        }
+        html+='<div class="stats" style="margin-top:8px">'
+          + bpTile("bp.winSys", bs.sys) + bpTile("bp.winDia", bs.dia)
+          + (bs.pulse?bpTile("bp.winPulse", bs.pulse):'')
+          + '</div>';
+      }
     }
     html+='</div>';
 
@@ -2756,7 +2804,7 @@ var UI = (function(){
     });
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
     bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
-    bindZoom("bpZoom", function(v){bpZoom=v;}, viewBP);
+    bindRange("bpRg", bpRange, viewBP);
     // backfilling? recompute the dose/week pills for the picked date
     $("#bpDate").addEventListener("input",function(){
       var c=$("#bpCtx"); if(!c) return;
@@ -3289,7 +3337,10 @@ var UI = (function(){
   }
   // Illness bands for a chart: the window comes from the visible (possibly
   // zoomed) log, stretched to today so an ongoing episode reaches the right edge.
-  function illSpansFor(log, key){
+  function illSpansFor(log, key, win){
+    // An explicit chart window pins the spans exactly (a paged-back window must
+    // not stretch to today); otherwise derive the range from the visible log.
+    if(win && win.from) return DOMAIN.illnessSpans(s(), win.from, win.to);
     if(!log || !log.length) return [];
     var ds=log.map(function(e){ return String(e[key]).slice(0,10); }).sort();
     var to=ds[ds.length-1], today=todayISO();
