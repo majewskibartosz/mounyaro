@@ -474,7 +474,6 @@ var I18N = (function(){
     // ---- illness / infection episodes ----
     "ill.title":{pl:"Choroba / infekcja",en:"Illness / infection"},
     "ill.sub":{pl:"Zaznacz początek — każdy kolejny wpis będzie oznaczony jako czas infekcji, aż zaznaczysz koniec.",en:"Mark the start — every later note is flagged as infection time until you mark the end."},
-    "ill.start":{pl:"Zacznij chorobę",en:"Start illness"},
     "ill.end":{pl:"Zakończ chorobę",en:"End illness"},
     "ill.ongoing":{pl:"Trwa infekcja",en:"Infection ongoing"},
     "ill.ongoingShort":{pl:"trwa",en:"ongoing"},
@@ -2953,7 +2952,7 @@ var UI = (function(){
     ep.end = (endISO<ep.start) ? ep.start : endISO;
     return true;
   }
-  var illOpenForm=false;   // "start illness" form expanded
+  var illCardOpen=false;   // illness card expanded (collapsed = one summary row)
   var illEditId=null;      // past episode being edited
   var illPage=0;           // past-episode list page
   var illDraft={ severity:null };   // severity pick for the episode card form
@@ -2986,11 +2985,25 @@ var UI = (function(){
     var illC=illColor(illOpen?illOpen.severity:null);
     if(illEditId) illSeedFor("edit:"+illEditId, (illEd||{}).severity);
     else if(illOpen) illSeedFor("open:"+illOpen.id, illOpen.severity);
-    else if(illOpenForm) illSeedFor("new", null);
+    else if(illCardOpen) illSeedFor("new", null);
     else illSeed=null;
-    html+='<div class="card"><h2>&#129298; '+esc(I18N.t("ill.title"))+'</h2>';
-    if(illOpen){
-      html+='<div class="banner" id="illNow" style="margin:0 0 10px;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
+    // Collapsed by default: one summary row (plus a slim status strip while an
+    // episode runs) that expands into the full editor on tap, so the card reads
+    // as part of the diary instead of a screenful of its own.
+    html+='<div class="card">'
+      + '<div id="illHead" style="cursor:pointer">'
+      + '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap">'
+      + '<h2 style="margin:0">&#129298; '+esc(I18N.t("ill.title"))+'</h2>'
+      + '<span class="muted" style="font-size:14px">'+(illCardOpen?'&#9650;':'&#9660;')+'</span>'
+      + '</div>';
+    if(!illCardOpen && illOpen){
+      html+='<div class="banner" style="margin:8px 0 0;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
+        +'<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+(illNow?illNow.dayN:1)
+        +(illOpen.label?' &middot; '+esc(illOpen.label):'')+'</div>';
+    }
+    html+='</div>';
+    if(illCardOpen && illOpen){
+      html+='<div class="banner" id="illNow" style="margin:10px 0;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
         +'<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+(illNow?illNow.dayN:1)
         +(illOpen.label?' &middot; '+esc(illOpen.label):'')+'</div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.startHint"))+')</span></label><input type="date" id="illStart" value="'+esc(illOpen.start)+'"></div>'
@@ -3003,20 +3016,16 @@ var UI = (function(){
         + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="illEnd" value="'+esc(today)+'"></div>'
         + '<div class="field" style="display:flex;align-items:flex-end"><button class="btn" id="illFinish" style="width:100%">'+esc(I18N.t("ill.end"))+'</button></div></div>'
         + '</div>';
-    } else if(illOpenForm){
-      html+='<p class="sub">'+esc(I18N.t("ill.sub"))+'</p>'
+    } else if(illCardOpen){
+      html+='<p class="sub" style="margin-top:8px">'+esc(I18N.t("ill.sub"))+'</p>'
         + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(today)+'"></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.endNewHint"))+')</span></label><input type="date" id="illEndNew"></div></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'"></div>'
         + illSevHtml(illDraft.severity, "illsev")
-        + '<div class="row" style="margin-top:10px"><button class="btn" id="illSave">'+esc(I18N.t("ill.save"))+'</button>'
-        + '<button class="btn ghost" id="illCancel">'+esc(I18N.t("common.cancel"))+'</button></div>';
-    } else {
-      html+='<p class="sub">'+esc(I18N.t("ill.sub"))+'</p>'
-        + '<div class="row"><button class="btn" id="illBegin">&#129298; '+esc(I18N.t("ill.start"))+'</button></div>';
+        + '<div class="row" style="margin-top:10px"><button class="btn" id="illSave">'+esc(I18N.t("ill.save"))+'</button></div>';
     }
     // past (closed) episodes, newest first — where dates get corrected after the fact
-    var illPast=DOMAIN.illnessEpisodes(st).filter(function(e){ return !!e.end; });
+    var illPast=illCardOpen ? DOMAIN.illnessEpisodes(st).filter(function(e){ return !!e.end; }) : [];
     if(illPast.length){
       html+='<h2 style="margin-top:16px">'+esc(I18N.t("ill.past"))+'</h2>';
       illPage=pageClamp(illPage, illPast.length);
@@ -3218,11 +3227,10 @@ var UI = (function(){
     }
     bindIllToggle();
     function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
-    if($("#illBegin")) $("#illBegin").addEventListener("click",function(){ illOpenForm=true; illSeed=null; viewDiary(); });
-    if($("#illCancel")) $("#illCancel").addEventListener("click",function(){ illOpenForm=false; illSeed=null; viewDiary(); });
+    if($("#illHead")) $("#illHead").addEventListener("click",function(){ illCardOpen=!illCardOpen; illSeed=null; viewDiary(); });
     if($("#illSave")) $("#illSave").addEventListener("click",function(){
       if(!startIllness($("#illStart").value||today, $("#illEndNew").value||null, $("#illLabel").value, illDraft.severity)) return;
-      illOpenForm=false; illSeed=null; illCommit();
+      illSeed=null; illCommit();
     });
     // "update" keeps the episode running; "end" closes it on the picked date
     if($("#illApply")) $("#illApply").addEventListener("click",function(){
