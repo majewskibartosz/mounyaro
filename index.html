@@ -1988,6 +1988,18 @@ var CHART = (function(){
     return out;
   }
 
+  // Shared x-axis label ("D.M") and, for an explicit day window, one tick per
+  // day/every few days anchored to noon — walking back from the newest day so
+  // it always carries a label whatever the window length.
+  function dlabel(t){ var d=new Date(t); return d.getDate()+"."+(d.getMonth()+1); }
+  function dayTicks(minX, maxX){
+    var dayCount=Math.round((maxX-minX)/86400000);
+    var step = dayCount<=7 ? 1 : dayCount<=14 ? 2 : dayCount<=31 ? 7 : Math.ceil(dayCount/4);
+    var out=[];
+    for(var t=maxX-HALF_DAY; t>=minX; t-=step*86400000) out.push(t);
+    return out.reverse();
+  }
+
   // opts.showWeight / opts.showWaist toggle the two series (both default on).
   // With the weight hidden, the time axis spans only the waist-measurement
   // period and the waist gets the full chart height.
@@ -2011,6 +2023,10 @@ var CHART = (function(){
     var xsrc = showWeight ? data : waistPts;
     var xs = xsrc.map(function(e){ return new Date(e.date+"T12:00:00").getTime(); });
     var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+    // an explicit window (range selector) wins over the data extent, so sparse
+    // or empty stretches still span the full requested period
+    if(opts.minX!=null) minX=opts.minX;
+    if(opts.maxX!=null) maxX=opts.maxX;
     var ys = data.map(function(e){ return e.weightKg; });
     var minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
     if(minY===maxY){ minY-=1; maxY+=1; }
@@ -2066,13 +2082,18 @@ var CHART = (function(){
         svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+WC+'" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
       }
     }
-    // x labels (first, mid, last)
-    function dlabel(t){ var d=new Date(t); return (d.getDate())+"."+(d.getMonth()+1); }
-    var idxs = xsrc.length<=3 ? xsrc.map(function(_,i){return i;}) : [0, Math.floor((xsrc.length-1)/2), xsrc.length-1];
-    idxs.forEach(function(i){
-      var x=X(xs[i]);
-      svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
-    });
+    // x labels: day-anchored ticks inside an explicit window, else first/mid/last
+    if(opts.minX!=null && maxX>minX){
+      dayTicks(minX,maxX).forEach(function(t){
+        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(t)+'</text>';
+      });
+    } else {
+      var idxs = xsrc.length<=3 ? xsrc.map(function(_,i){return i;}) : [0, Math.floor((xsrc.length-1)/2), xsrc.length-1];
+      idxs.forEach(function(i){
+        var x=X(xs[i]);
+        svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
+      });
+    }
     // waist: dashed line + points on the right-hand scale. The indigo is
     // brightened in the dark theme and value labels get a card-coloured halo,
     // otherwise the series drowns against a dark background.
@@ -2124,6 +2145,8 @@ var CHART = (function(){
     var W=320,H=210,mL=30,mR=12,mT=12,mB=26, iw=W-mL-mR, ih=H-mT-mB;
     var xs=data.map(function(e){ return new Date(e.ts).getTime(); });
     var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+    if(opts.minX!=null) minX=opts.minX;
+    if(opts.maxX!=null) maxX=opts.maxX;
     var vals=[]; data.forEach(function(e){ vals.push(e.sys,e.dia); if(e.pulse!=null) vals.push(e.pulse); });
     var minY=Math.min.apply(null,vals), maxY=Math.max.apply(null,vals);
     if(minY===maxY){ minY-=10; maxY+=10; }
@@ -2139,9 +2162,14 @@ var CHART = (function(){
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
       svg+='<text x="'+(mL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+Math.round(val)+'</text>';
     }
-    function dlabel(t){ var d=new Date(t); return d.getDate()+"."+(d.getMonth()+1); }
-    var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0,Math.floor((data.length-1)/2),data.length-1];
-    idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
+    if(opts.minX!=null && maxX>minX){
+      dayTicks(minX,maxX).forEach(function(t){
+        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(t)+'</text>';
+      });
+    } else {
+      var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0,Math.floor((data.length-1)/2),data.length-1];
+      idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
+    }
     function line(key,color,dash){
       var pts=data.filter(function(e){return e[key]!=null;});
       if(pts.length>1){
