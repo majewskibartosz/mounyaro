@@ -3235,7 +3235,6 @@ var UI = (function(){
      re-rendering, so composed note text is never lost. Everything commits
      together with the "Save note" button — note alone, dots alone, or both. */
   var STATE_PARAMS=[{key:"energy",icon:"⚡"},{key:"mood",icon:"🙂"},{key:"clarity",icon:"🧠"}];
-  var STATE_COLORS=["#dc2626","#f97316","#fbbf24","#84cc16","#16a34a"];
   var stateDraft={ energy:null, mood:null, clarity:null };
   function stateDraftHasValues(){
     return STATE_PARAMS.some(function(p){ return stateDraft[p.key]!=null; });
@@ -3246,7 +3245,8 @@ var UI = (function(){
   function statePillsHTML(e){
     return STATE_PARAMS.map(function(p){
       var v=e[p.key];
-      return v==null ? '' : '<span class="statepill" style="background:'+STATE_COLORS[v-1]+'"><span class="pemoji">'+p.icon+'</span>'+v+'</span>';
+      // the pill's ink follows the pill's own colour, not the brand's
+      return v==null ? '' : '<span class="statepill" style="background:'+PAL.state[v-1]+';color:'+THEME.pickInk(PAL.state[v-1])+'"><span class="pemoji">'+p.icon+'</span>'+v+'</span>';
     }).join('');
   }
   function stateRowsHTML(){
@@ -3256,7 +3256,7 @@ var UI = (function(){
       h+='<div class="staterow"><span class="sname">'+p.icon+' '+esc(I18N.t("state."+p.key))+'</span><span class="sdots">';
       for(var v=1; v<=5; v++){
         h+='<button type="button" class="sdot'+(stateDraft[p.key]===v?" on":"")+'" data-sp="'+p.key+'" data-v="'+v
-          +'" style="background:'+STATE_COLORS[v-1]+';color:'+STATE_COLORS[v-1]+'" aria-label="'+esc(I18N.t("state."+p.key))+' '+v+'/5"></button>';
+          +'" style="background:'+PAL.state[v-1]+';color:'+PAL.state[v-1]+'" aria-label="'+esc(I18N.t("state."+p.key))+' '+v+'/5"></button>';
       }
       h+='</span></div>';
     });
@@ -3299,8 +3299,7 @@ var UI = (function(){
   // ---- illness / infection episodes ----
   // Severity 1-3 (mild -> severe). The 🤒 glyph labels every chip, so sharing
   // amber with the peptide pill can't be misread.
-  var ILL_COLORS=["#f59e0b","#f97316","#dc2626"], ILL_FALLBACK="#f97316";
-  function illColor(sev){ return sev?ILL_COLORS[sev-1]:ILL_FALLBACK; }
+  function illColor(sev){ return sev?PAL.sev[sev-1]:PAL.sev[1]; }
   // "🤒 Choroba d3 · angina" — the day number is what makes a run of sick days
   // scannable without opening anything.
   function illPill(ill){
@@ -3316,9 +3315,9 @@ var UI = (function(){
     var out='<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">'
       +'<span class="muted tiny" style="font-weight:700">'+esc(I18N.t("ill.severity"))+'</span>';
     for(var v=1;v<=3;v++){
-      var c=ILL_COLORS[v-1], on=(sel===v);
+      var c=PAL.sev[v-1], on=(sel===v);
       out+='<button type="button" class="pill '+cls+(on?' on':'')+'" data-v="'+v+'" style="cursor:pointer;border:0;background:'
-        +(on?c:'var(--soft)')+';color:'+(on?'#fff':'var(--muted)')+'">'+esc(I18N.t("ill.sev"+v))+'</button>';
+        +(on?c:'var(--soft)')+';color:'+(on?THEME.pickInk(c):'var(--muted)')+'">'+esc(I18N.t("ill.sev"+v))+'</button>';
     }
     return out+'</div>';
   }
@@ -3330,8 +3329,8 @@ var UI = (function(){
       $all("."+cls).forEach(function(x){
         var xv=parseInt(x.getAttribute("data-v"),10), on=(xv===draft.severity);
         x.classList.toggle("on", on);
-        x.style.background = on?ILL_COLORS[xv-1]:"var(--soft)";
-        x.style.color = on?"#fff":"var(--muted)";
+        x.style.background = on?PAL.sev[xv-1]:"var(--soft)";
+        x.style.color = on?THEME.pickInk(PAL.sev[xv-1]):"var(--muted)";
       });
     });});
   }
@@ -4123,7 +4122,7 @@ var UI = (function(){
       svg+='<line x1="8" y1="'+gy+'" x2="'+(BELLY_W-8)+'" y2="'+gy+'" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>';
     }
     // navel + 5 cm exclusion zone
-    svg+='<g><circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="'+navR+'" fill="rgba(220,38,38,.07)" stroke="#dc2626" stroke-width="1.4" stroke-dasharray="5 4"/>'
+    svg+='<g><circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="'+navR+'" fill="'+PAL.bad+'12" stroke="'+PAL.bad+'" stroke-width="1.4" stroke-dasharray="5 4"/>'
       +'<circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="3.4" fill="var(--muted)"/>'
       +'<title>'+esc(I18N.t("inj.navel"))+' · 5 cm</title></g>';
     // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge
@@ -4135,8 +4134,8 @@ var UI = (function(){
         +(r.sandbag?" · "+I18N.t("inj.sandbag"):"");
       svg+='<g opacity="'+op.toFixed(2)+'">'
         +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+minR+'" fill="none" stroke="'+c+'" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>'
-        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="7.4" fill="'+c+'" stroke="#fff" stroke-width="1.6"'+(r.sandbag?' stroke-dasharray="2.5 2" fill-opacity="0.55"':'')+'/>'
-        +'<text x="'+p.x.toFixed(1)+'" y="'+(p.y+3).toFixed(1)+'" font-size="8.6" font-weight="800" fill="#fff" text-anchor="middle">'+r.order+'</text>'
+        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="7.4" fill="'+c+'" stroke="'+PAL.halo+'" stroke-width="1.6"'+(r.sandbag?' stroke-dasharray="2.5 2" fill-opacity="0.55"':'')+'/>'
+        +'<text x="'+p.x.toFixed(1)+'" y="'+(p.y+3).toFixed(1)+'" font-size="8.6" font-weight="800" fill="'+THEME.pickInk(c)+'" text-anchor="middle">'+r.order+'</text>'
         +'<title>'+esc(tip)+'</title></g>';
     });
     // suggested spot (dashed, brand) when nothing is selected
@@ -4148,7 +4147,7 @@ var UI = (function(){
     }
     // selected spot: crosshair, red when it breaks the rules
     if(selPos){
-      var sel=cmToSvg(selPos), ok=DOMAIN.spotCheck(selPos, recent).ok, sc=ok?"var(--brand)":"#dc2626";
+      var sel=cmToSvg(selPos), ok=DOMAIN.spotCheck(selPos, recent).ok, sc=ok?"var(--brand)":PAL.bad;
       svg+='<g pointer-events="none"><circle cx="'+sel.x.toFixed(1)+'" cy="'+sel.y.toFixed(1)+'" r="10.2" fill="none" stroke="'+sc+'" stroke-width="3"/>'
         +'<line x1="'+(sel.x-13).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x-5).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
         +'<line x1="'+(sel.x+5).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x+13).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
@@ -4165,7 +4164,7 @@ var UI = (function(){
       +legSubs.map(function(sub){
          return '<span><i style="background:'+substColor(st,sub)+'"></i>'+esc(substLabel(st,sub))+'</span>';
        }).join("")
-      +'<span><i style="background:transparent;border:1.5px dashed #dc2626"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
+      +'<span><i style="background:transparent;border:1.5px dashed '+PAL.bad+'"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
       +(sug?'<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.suggested"))+'</span>':'')
       +'</div>';
     return svg+leg;
