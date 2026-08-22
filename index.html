@@ -251,7 +251,9 @@
   .center{text-align:center}
   .stat{display:flex;flex-direction:column;gap:2px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px}
   /* tiles and rhythm rows double as links: keep them looking like tiles */
-  a.stat,a.rrow{text-decoration:none;color:inherit;-webkit-tap-highlight-color:transparent}
+  a.stat,a.rrow,a.card{text-decoration:none;color:inherit;-webkit-tap-highlight-color:transparent}
+  a.card:hover{border-color:var(--brand)}
+  a.card:active{opacity:.75}
   a.stat:hover,a.rrow:hover{border-color:var(--brand);background:var(--card)}
   a.rrow:hover{background:var(--soft)}
   a.stat:active,a.rrow:active{opacity:.7}
@@ -5025,8 +5027,12 @@ var UI = (function(){
 
     // --- mini body map (link to injections) ---
     if(DOMAIN.visibleInjLog(st).length){
-      html+='<div class="card"><a href="#inject" style="text-decoration:none;color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</a>'
-        +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div></div>';
+      // the whole card is the link, map included — the hint alone was a small
+      // target next to a big obvious one. The map keeps pointer-events off so a
+      // tap on it falls through to the anchor instead of hitting the SVG.
+      html+='<a class="card" href="#inject" style="display:block;text-decoration:none;color:inherit">'
+        +'<span style="color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</span>'
+        +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div></a>';
     }
 
     app.innerHTML=html;
