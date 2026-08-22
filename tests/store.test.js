@@ -241,3 +241,45 @@ test("settings: the Mounjaro tab defaults to on and survives a round-trip", func
   var S2 = harness.loadStore(ls); S2.load();
   assert.strictEqual(S2.state.settings.showMounjaroTab, false);
 });
+
+function loadWith(obj) {
+  var ls = harness.fakeLocalStorage();
+  ls.setItem(KEY, JSON.stringify(obj));
+  var STORE = harness.loadStore(ls);
+  STORE.load();
+  return STORE;
+}
+
+test("peptide tones: legacy hexes backfill to identity slots, unknown ones do not", function () {
+  var STORE = loadWith({ inj: { peptides: [
+    { id: "peptide", name: "KLOW", color: "#f59e0b", unit: "j" },
+    { id: "mounjaro", name: "Tirzepatyd", color: "#0ea5a4", unit: "mg" },
+    { id: "p3", name: "BPC-157", color: "#38BDF8", unit: "mcg" },   // case-insensitive
+    { id: "p9", name: "Ręcznie", color: "#123456", unit: "mcg" } ] } });
+  var peps = Array.from(STORE.state.inj.peptides);
+  assert.strictEqual(peps[0].tone, "p1");
+  assert.strictEqual(peps[1].tone, "brand");
+  assert.strictEqual(peps[2].tone, "p2");
+  assert.strictEqual(peps[3].tone, undefined, "an unrecognised hex is left alone, not guessed");
+  // the stored hexes survive untouched, so an export stays readable and a
+  // rollback still paints
+  assert.strictEqual(peps[0].color, "#f59e0b");
+  assert.strictEqual(peps[3].color, "#123456");
+});
+
+test("peptide tones: a tone already set is never overwritten", function () {
+  var STORE = loadWith({ inj: { peptides: [
+    { id: "p1", name: "X", tone: "p7", color: "#f59e0b", unit: "j" } ] } });
+  assert.strictEqual(STORE.state.inj.peptides[0].tone, "p7");
+});
+
+test("peptide migration hands out a distinct tone per blend", function () {
+  var STORE = loadWith({ injLog: [
+    { id: "a", date: "2026-08-01", substance: "peptide", name: "KLOW", dose: 25, unit: "j" },
+    { id: "b", date: "2026-08-02", substance: "peptide", name: "BPC", dose: 250, unit: "mcg" },
+    { id: "c", date: "2026-08-03", substance: "peptide", dose: 1, unit: "j" } ] });
+  var tones = Array.from(STORE.state.inj.peptides).map(function (p) { return p.tone; });
+  assert.strictEqual(tones.length, 3);
+  assert.strictEqual(new Set(tones).size, 3, "two blends must never share an identity slot");
+  tones.forEach(function (t) { assert.match(t, /^p[1-8]$/); });
+});
