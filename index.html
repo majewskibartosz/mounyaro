@@ -47,8 +47,15 @@
     border-bottom:1px solid var(--line);
   }
   .head-inner{max-width:760px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
-  .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;white-space:nowrap}
-  #installBtn{padding:7px 10px;font-size:13px;white-space:nowrap;flex-shrink:0}
+  /* Flex items shrink by default, and the language switch was the one paying:
+     at 390px it was squeezed to 46px and EN fell off the edge. The controls hold
+     their size and the title truncates instead. */
+  .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:18px;white-space:nowrap;min-width:0;flex:0 1 auto}
+  .logo .dot{flex:0 0 auto}
+  .logo span:last-child{overflow:hidden;text-overflow:ellipsis}
+  #installBtn{padding:7px 10px;font-size:13px;white-space:nowrap;flex:0 0 auto}
+  .iconbtn{flex:0 0 auto}
+  .lang{flex:0 0 auto}
   @media(max-width:430px){ .head-inner{gap:7px} .logo{font-size:15px} .logo .dot{width:11px;height:11px} }
   .logo .dot{width:14px;height:14px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px var(--brand-t18)}
   .spacer{flex:1}
@@ -331,7 +338,7 @@
   .empty{padding:30px 10px;text-align:center;color:var(--muted)}
 
   footer.app{max-width:760px;margin:8px auto 0;padding:14px 16px 0;color:var(--muted);font-size:12px}
-  .hidden{display:none !important}
+  .hidden,[hidden]{display:none !important}
 </style>
 <script>
   /* Paints the right scheme before the app script runs. THEME.apply() mirrors the
@@ -954,6 +961,8 @@ var I18N = (function(){
     "set.title":{pl:"Ustawienia i dane",en:"Settings & data"},
     "set.sub":{pl:"Dane są zapisywane tylko w tej przeglądarce. Nikt inny ich nie widzi.",en:"Data is stored only in this browser. No one else can see it."},
     "set.language":{pl:"Język",en:"Language"},
+    "set.install":{pl:"Aplikacja na ekranie głównym",en:"App on your home screen"},
+    "set.installSub":{pl:"Nagłówek przestaje proponować instalację, gdy aplikacja raz uruchomi się jako zainstalowana. Gdybyś ją odinstalował, zainstaluj ją stąd.",en:"The header stops offering to install once the app has run as an installed app. If you uninstalled it, install it again from here."},
     "set.theme":{pl:"Motyw",en:"Theme"},
     "set.themeSub":{pl:"Przemalowuje całą aplikację — także kolory substancji, wykresów i mapy brzucha.",en:"Recolours the whole app — substances, charts and the abdomen map included."},
     "set.currency":{pl:"Domyślna waluta",en:"Default currency"},
@@ -5648,6 +5657,10 @@ var UI = (function(){
     +'</select></div>'
     +'<div class="field"><label>'+esc(I18N.t("set.currency"))+'</label>'+currencyInput("setCur",st.settings.currency)+'</div>'
     +'</div></div>'
+    +((deferredInstall||isIOSDevice())
+       ? '<div class="card"><h2>'+esc(I18N.t("set.install"))+'</h2><p class="sub">'+esc(I18N.t("set.installSub"))+'</p>'
+         +'<button class="btn" id="setInstall">'+icon("install")+esc(I18N.t("install.btn"))+'</button></div>'
+       : '')
     +themeCardHTML(st)
     +'<div class="card"><h2>'+esc(I18N.t("set.profile"))+'</h2><p class="sub">'+esc(I18N.t("set.profileHint"))+'</p>'
     +'<div class="grid g3">'
@@ -5761,6 +5774,7 @@ var UI = (function(){
         else toast(I18N.t("set.importErr"));
       });
     });
+    if($("#setInstall")) $("#setInstall").addEventListener("click",function(){ doInstall($("#installBtn")); });
     $all(".themecard").forEach(function(b){ b.addEventListener("click",function(){
       setTheme(b.getAttribute("data-theme"));
     });});
@@ -5890,6 +5904,18 @@ var UI = (function(){
   // Running as an installed app? Cover every installed display mode plus the
   // android-app:// referrer, and re-check at event time — some Android
   // browsers fire beforeinstallprompt even inside the installed window.
+  // Chrome keeps offering the install prompt in a normal tab even when the app is
+  // already installed, and there is no reliable way to ask. So remember: the first
+  // time the app is seen running as an installed app (or reports being installed),
+  // note it and stop offering. The installed app and the browser tab share this
+  // origin's storage, so seeing it once in the app settles it for the tab too.
+  var INSTALLED_KEY="mounyaro.installed";
+  function installedBefore(){
+    try{ return localStorage.getItem(INSTALLED_KEY)==="1"; }catch(e){ return false; }
+  }
+  function rememberInstalled(){
+    try{ localStorage.setItem(INSTALLED_KEY,"1"); }catch(e){}
+  }
   function isStandaloneNow(){
     try{
       if(navigator.standalone===true) return true;   // iOS home-screen app
@@ -5902,22 +5928,28 @@ var UI = (function(){
     }catch(e){}
     return false;
   }
+  function isIOSDevice(){ return /iphone|ipad|ipod/i.test(navigator.userAgent||""); }
+  function doInstall(btn){
+    if(deferredInstall){
+      deferredInstall.prompt();
+      deferredInstall.userChoice.then(function(){ deferredInstall=null; if(btn) btn.hidden=true; render(); });
+    } else alert(I18N.t("install.ios"));
+  }
   function setupInstall(){
     var btn=$("#installBtn"); if(!btn) return;
-    var ua=navigator.userAgent||"";
-    var isIOS=/iphone|ipad|ipod/i.test(ua);
-    if(isStandaloneNow()){ btn.hidden=true; }
-    else if(isIOS){ btn.hidden=false; }
+    var isIOS=isIOSDevice();
+    if(isStandaloneNow()){ rememberInstalled(); btn.hidden=true; }
+    else if(isIOS && !installedBefore()){ btn.hidden=false; }
     window.addEventListener("beforeinstallprompt",function(e){
       e.preventDefault();
-      if(isStandaloneNow()) return;                  // already installed & running as app
-      deferredInstall=e; btn.hidden=false;
+      deferredInstall=e;                             // kept: Settings can still offer it
+      if(isStandaloneNow() || installedBefore()) return;
+      btn.hidden=false;
     });
-    window.addEventListener("appinstalled",function(){ deferredInstall=null; btn.hidden=true; });
-    btn.addEventListener("click",function(){
-      if(deferredInstall){ deferredInstall.prompt(); deferredInstall.userChoice.then(function(){ deferredInstall=null; btn.hidden=true; }); }
-      else { alert(I18N.t("install.ios")); }
+    window.addEventListener("appinstalled",function(){
+      deferredInstall=null; rememberInstalled(); btn.hidden=true;
     });
+    btn.addEventListener("click",function(){ doInstall(btn); });
   }
   function init(){
     app=$("#app");
