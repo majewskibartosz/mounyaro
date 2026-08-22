@@ -538,3 +538,42 @@ test("reconstitution end to end: 10 mg vial, 2 ml water, 2.5 mg dose", function 
   assert.strictEqual(conc, 5);
   assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", conc), 50);
 });
+
+test("parseRoute: bare tab, sub-state, empty and unknown hashes", function () {
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#inject")), { tab: "inject", sub: null });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#inject/trt")), { tab: "inject", sub: "trt" });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("")), { tab: "pulpit", sub: null });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute(null)), { tab: "pulpit", sub: null });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#")), { tab: "pulpit", sub: null });
+  // an unknown tab is passed through verbatim — validating it is the router's job
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#bzdura")), { tab: "bzdura", sub: null });
+});
+
+test("parseRoute: legacy #jab alias still lands on injections", function () {
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#jab")), { tab: "inject", sub: null });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#jab/trt")), { tab: "inject", sub: "trt" });
+});
+
+test("parseRoute: peptide ids and stray slashes", function () {
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#inject/pep3")), { tab: "inject", sub: "pep3" });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#inject//trt")), { tab: "inject", sub: "trt" });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#/inject/trt")), { tab: "inject", sub: "trt" });
+  assert.deepStrictEqual(Object.assign({}, DOMAIN.parseRoute("#inject/trt/extra")), { tab: "inject", sub: "trt" });
+});
+
+test("buildRoute: with and without a sub-state", function () {
+  assert.strictEqual(DOMAIN.buildRoute("inject", "trt"), "#inject/trt");
+  assert.strictEqual(DOMAIN.buildRoute("inject"), "#inject");
+  assert.strictEqual(DOMAIN.buildRoute("inject", null), "#inject");
+  assert.strictEqual(DOMAIN.buildRoute("weight", ""), "#weight");
+  assert.strictEqual(DOMAIN.buildRoute(""), "#pulpit");
+});
+
+test("parseRoute(buildRoute(t,s)) round-trips", function () {
+  [["pulpit", null], ["weight", null], ["inject", "trt"], ["inject", "mounjaro"], ["inject", "pep12"]]
+    .forEach(function (pair) {
+      var r = DOMAIN.parseRoute(DOMAIN.buildRoute(pair[0], pair[1]));
+      assert.strictEqual(r.tab, pair[0]);
+      assert.strictEqual(r.sub, pair[1]);
+    });
+});

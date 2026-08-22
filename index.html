@@ -1704,6 +1704,22 @@ var DOMAIN = (function(){
              nextMs:lastMs+span };
   }
 
+  // Hash route -> {tab, sub}. The sub-state segment is what lets a dashboard
+  // tile point at one substance ("#inject/trt") instead of just the tab. Pure
+  // string work: this knows nothing about which tabs exist — the router keeps
+  // that list and falls back on its own.
+  function parseRoute(hash){
+    var raw=String(hash==null?"":hash).replace(/^#/,"");
+    var parts=raw.split("/").filter(function(p){ return p!==""; });
+    var tab=parts.length?decodeURIComponent(parts[0]):"pulpit";
+    if(tab==="jab") tab="inject";          // legacy alias kept for installed PWAs
+    return { tab:tab||"pulpit", sub:parts.length>1?decodeURIComponent(parts[1]):null };
+  }
+  function buildRoute(tab, sub){
+    var t=encodeURIComponent(tab||"pulpit");
+    return "#"+t+(sub?"/"+encodeURIComponent(sub):"");
+  }
+
   return {
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     GOLDEN_UNITS:GOLDEN_UNITS,
@@ -1719,6 +1735,7 @@ var DOMAIN = (function(){
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, weightWindowStats:weightWindowStats,
+    parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
   };
