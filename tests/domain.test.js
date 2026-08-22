@@ -501,9 +501,16 @@ test("unitsForDose: a U-100 syringe reads 100 units per ml", function () {
   assert.strictEqual(DOMAIN.unitsForDose(1, "mg", 8), 12.5);
 });
 
-test("unitsForDose: nothing to convert without mg or a concentration", function () {
-  assert.strictEqual(DOMAIN.unitsForDose(30, "j", 5), null);     // dose already in IU
-  assert.strictEqual(DOMAIN.unitsForDose(30, "IU", 5), null);
+test("unitsForDose: an IU vial reconstitutes like any other", function () {
+  // 5000 IU vial in 2 ml = 2500 IU/ml; 250 IU is 0.1 ml
+  assert.strictEqual(DOMAIN.unitsForDose(250, "IU", 2500), 10);
+  assert.strictEqual(DOMAIN.unitsForDose(30, "j", 300), 10);
+  assert.strictEqual(DOMAIN.vialUnitFor("IU"), "IU");
+  assert.strictEqual(DOMAIN.vialUnitFor("mcg"), "mg");   // mcg doses measure against a mg vial
+  assert.strictEqual(DOMAIN.vialUnitFor("mg"), "mg");
+});
+
+test("unitsForDose: nothing to compute without a dose or a concentration", function () {
   assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", null), null); // no vial yet
   assert.strictEqual(DOMAIN.unitsForDose(2.5, "mg", 0), null);
   assert.strictEqual(DOMAIN.unitsForDose(0, "mg", 5), null);

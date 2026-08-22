@@ -461,6 +461,7 @@ var I18N = (function(){
     "pep.draw":{pl:"Nabierz",en:"Draw"},
     "pep.drawAt":{pl:"przy",en:"at"},
     "pep.vialsPast":{pl:"Poprzednie fiolki",en:"Earlier vials"},
+    "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
     "pep.vialNone":{pl:"Podaj fiolkę i wodę, aby liczyć jednostki na insulinówce.",en:"Enter the vial and water to get units on an insulin syringe."},
     "pep.vialDel":{pl:"Usunąć ten wpis fiolki?",en:"Delete this vial entry?"},
     "inj.pepAdd":{pl:"Dodaj peptyd",en:"Add peptide"},
@@ -471,6 +472,7 @@ var I18N = (function(){
     "inj.pepDelete":{pl:"Usuń peptyd",en:"Delete peptide"},
     "inj.pepConfirmDel":{pl:"Usunąć ten peptyd? Zapisane wkłucia zostaną w historii.",en:"Delete this peptide? Its logged injections stay in the history."},
     "inj.pepEditTitle":{pl:"Peptyd",en:"Peptide"},
+    "inj.pepEdit":{pl:"Edytuj peptyd",en:"Edit peptide"},
     "inj.cycleOn":{pl:"Śledź cykl (on/off)",en:"Track a cycle (on/off)"},
     "inj.pepName":{pl:"Peptyd / blend",en:"Peptide / blend"},
     "inj.pepNamePh":{pl:"np. BPC-157 + TB-500 (KLOW)",en:"e.g. BPC-157 + TB-500 (KLOW)"},
@@ -997,7 +999,7 @@ var DOMAIN = (function(){
     if(!isFinite(mg) || !isFinite(ml) || mg<=0 || ml<=0) return null;
     return mg/ml;
   }
-  // A dose prescribed in IU has no mg equivalent, so there is nothing to convert.
+  // A dose prescribed in IU has no mg equivalent.
   function doseToMg(dose, unit){
     var d=Number(dose);
     if(!isFinite(d) || d<=0) return null;
@@ -1005,10 +1007,19 @@ var DOMAIN = (function(){
     if(unit==="mcg") return d/1000;
     return null;
   }
-  function unitsForDose(dose, unit, mgPerMl, unitsPerMl){
-    var mg=doseToMg(dose, unit);
-    if(mg==null || !mgPerMl || mgPerMl<=0) return null;
-    return mg/mgPerMl*(unitsPerMl||SYRINGE_UNITS_PER_ML);
+  // The vial is labelled in mg whenever the dose is a weight (mcg doses scale
+  // down to it); otherwise in the dose's own unit — an HCG vial says 5000 IU
+  // and reconstitutes exactly the same way.
+  function vialUnitFor(unit){ return (unit==="mg"||unit==="mcg") ? "mg" : (unit||"mg"); }
+  function doseInVialUnit(dose, unit){
+    var d=Number(dose);
+    if(!isFinite(d) || d<=0) return null;
+    return unit==="mcg" ? d/1000 : d;
+  }
+  function unitsForDose(dose, unit, concPerMl, unitsPerMl){
+    var d=doseInVialUnit(dose, unit);
+    if(d==null || !concPerMl || concPerMl<=0) return null;
+    return d/concPerMl*(unitsPerMl||SYRINGE_UNITS_PER_ML);
   }
   // The vial in use on a date: the newest one dissolved on or before it, so a
   // backdated shot is measured against the concentration of its own time.
@@ -1696,6 +1707,7 @@ var DOMAIN = (function(){
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     SYRINGE_UNITS_PER_ML:SYRINGE_UNITS_PER_ML, vialConc:vialConc, doseToMg:doseToMg,
     unitsForDose:unitsForDose, vialAsOf:vialAsOf,
+    vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
@@ -3490,6 +3502,10 @@ var UI = (function(){
       bits.push(esc(String(last.dose)+" "+(p.unit||"")));
       var u=pepUnits(st, p, last.dose);
       if(u!=null) bits.push('<b style="color:'+p.color+'">'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
+    } else {
+      // no shot yet: show the mix so the card is not blank
+      var c0=pepConcAsOf(st, p);
+      if(c0!=null) bits.push(esc(fmtConc(c0)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml"));
     }
     var ev=pepInterval(st,p);
     bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
@@ -3510,16 +3526,15 @@ var UI = (function(){
   // Vial + water in, concentration and units out. Only meaningful when the dose
   // itself is a weight — a dose already prescribed in IU has nothing to convert.
   function vialSectionHTML(st, p, unit){
-    // Always rendered so switching the dose unit can reveal it again without a
-    // re-render; hidden while the dose is prescribed in IU, where there is
-    // nothing to convert.
-    var show=(unit==="mg" || unit==="mcg");
+    // Every peptide reconstitutes — only the label on the vial changes: mg for a
+    // weight-based dose, the dose's own unit otherwise (an HCG vial says IU).
+    var vu=DOMAIN.vialUnitFor(unit);
     var cur=p?pepVialAsOf(st,p):null, past=pepVials(st,p);
     var mg=cur?cur.mg:"", ml=cur?cur.ml:"";
-    var html='<div id="pfVialBox"'+(show?'':' style="display:none"')+'>'
+    var html='<div id="pfVialBox">'
       +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>'
       +'<div class="grid g2">'
-        +'<div class="field"><label>'+esc(I18N.t("pep.vialMg"))+'</label>'
+        +'<div class="field"><label><span id="pfVialUnitLbl">'+esc(I18N.t("pep.vialMg").replace("mg",vu))+'</span></label>'
           +'<input type="number" inputmode="decimal" step="0.5" min="0" id="pfVialMg" value="'+esc(String(mg))+'" placeholder="10"></div>'
         +'<div class="field"><label>'+esc(I18N.t("pep.vialMl"))+'</label>'
           +'<input type="number" inputmode="decimal" step="0.1" min="0" id="pfVialMl" value="'+esc(String(ml))+'" placeholder="2"></div>'
@@ -3531,8 +3546,8 @@ var UI = (function(){
       html+='<div class="tiny muted" style="font-weight:700;margin:0 0 4px">'+esc(I18N.t("pep.vialsPast"))+'</div>';
       past.slice().sort(function(a,b){ return a.date<b.date?1:-1; }).forEach(function(v){
         html+='<div class="row" style="justify-content:space-between;gap:6px;font-size:12px;padding:3px 0">'
-          +'<span>'+esc(fmtDate(v.date,true))+' &middot; '+esc(String(v.mg))+' mg / '+esc(String(v.ml))+' ml'
-          +' <span class="muted">&middot; '+esc(fmtConc(DOMAIN.vialConc(v.mg,v.ml))+" mg/ml")+'</span></span>'
+          +'<span>'+esc(fmtDate(v.date,true))+' &middot; '+esc(String(v.mg)+" "+vu)+' / '+esc(String(v.ml))+' ml'
+          +' <span class="muted">&middot; '+esc(fmtConc(DOMAIN.vialConc(v.mg,v.ml))+" "+vu+"/ml")+'</span></span>'
           +'<button type="button" class="btn ghost sm pfVialDel" data-id="'+esc(v.id)+'">'+icon("trash")+'</button></div>';
       });
     }
@@ -3545,7 +3560,8 @@ var UI = (function(){
     var ml=(mlOv!=null)?mlOv:(p?(pepVialAsOf(st,p)||{}).ml:null);
     var conc=DOMAIN.vialConc(mg, ml);
     if(conc==null) return esc(I18N.t("pep.vialNone"));
-    var out='= <b>'+esc(fmtConc(conc)+" mg/ml")+'</b>';
+    var vu=DOMAIN.vialUnitFor(unit);
+    var out='= <b>'+esc(fmtConc(conc)+" "+vu+"/ml")+'</b>';
     var last=p?DOMAIN.lastDoseAsOf(st, p.id):null;
     var u=last&&last.dose!=null ? DOMAIN.unitsForDose(last.dose, unit, conc) : null;
     if(u!=null) out+=' &middot; '+esc(String(last.dose)+" "+unit)+' &rarr; <b>'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>';
@@ -3555,11 +3571,17 @@ var UI = (function(){
   function drawBoxHTML(st, p, dose, dISO){
     var conc=pepConcAsOf(st, p, dISO);
     var u=DOMAIN.unitsForDose(dose, p.unit, conc);
-    if(u==null) return "";
+    if(u==null){
+      // A dose is typed but no vial is on file — say so rather than leave a gap.
+      if(conc==null && Number(dose)>0)
+        return '<div class="note" style="margin:-2px 0 12px">'+esc(I18N.t("pep.setVial"))+'</div>';
+      return "";
+    }
     return '<div style="border:2px solid '+p.color+';border-radius:14px;padding:10px 12px;margin:-2px 0 12px">'
       +'<div style="font-size:20px;font-weight:800;color:'+p.color+'">'
         +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
-      +'<div class="tiny muted" style="margin-top:2px">'+esc(String(dose)+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" mg/ml")+'</div>'
+      +'<div class="tiny muted" style="margin-top:2px">'
+        +esc(String(dose)+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
       +'</div>';
   }
   function pepFormHTML(st){
@@ -3628,8 +3650,8 @@ var UI = (function(){
       if($(id)) $(id).addEventListener("input", pfConcRefresh);
     });
     if($("#pfUnit")) $("#pfUnit").addEventListener("change",function(){
-      var box=$("#pfVialBox"), u=this.value;
-      if(box) box.style.display=(u==="mg"||u==="mcg")?"":"none";
+      var lbl=$("#pfVialUnitLbl");
+      if(lbl) lbl.textContent=I18N.t("pep.vialMg").replace("mg", DOMAIN.vialUnitFor(this.value));
       pfConcRefresh();
     });
     $all(".pfVialDel").forEach(function(b){ b.addEventListener("click",function(){
@@ -3664,8 +3686,7 @@ var UI = (function(){
       }
       // A new vial entry only when the mix really differs — otherwise renaming
       // the peptide would pile up identical rows in its vial log.
-      var uNow=$("#pfUnit").value;
-      if((uNow==="mg"||uNow==="mcg") && $("#pfVialMg") && $("#pfVialMl")){
+      if($("#pfVialMg") && $("#pfVialMl")){
         var vmg=parseFloat($("#pfVialMg").value), vml=parseFloat($("#pfVialMl").value);
         if(DOMAIN.vialConc(vmg, vml)!=null){
           var vd=$("#pfVialDate").value||todayISO(), prev=pepVialAsOf(st, p, vd);
@@ -4310,7 +4331,7 @@ var UI = (function(){
           +(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
           +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')
           +(e.units!=null?'<br><span class="muted tiny">'+esc(fmtUnits(e.units)+" "+I18N.t("sch.units")
-             +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" mg/ml":""))+'</span>':'')+'</td>'
+             +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
             ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:null), substColor(st, e.substance),
