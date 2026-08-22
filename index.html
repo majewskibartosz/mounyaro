@@ -453,6 +453,16 @@ var I18N = (function(){
     "inj.pepEvery":{pl:"co",en:"every"},
     "inj.dayGen":{pl:"dnia",en:"days"},
     "inj.cycleShort":{pl:"cykl",en:"cycle"},
+    "pep.vial":{pl:"Fiolka i rozpuszczenie",en:"Vial and reconstitution"},
+    "pep.vialMg":{pl:"Peptyd w fiolce (mg)",en:"Peptide in vial (mg)"},
+    "pep.vialMl":{pl:"Woda bakteriostatyczna (ml)",en:"Bacteriostatic water (ml)"},
+    "pep.vialDate":{pl:"Data rozpuszczenia",en:"Mixed on"},
+    "pep.conc":{pl:"stężenie",en:"concentration"},
+    "pep.draw":{pl:"Nabierz",en:"Draw"},
+    "pep.drawAt":{pl:"przy",en:"at"},
+    "pep.vialsPast":{pl:"Poprzednie fiolki",en:"Earlier vials"},
+    "pep.vialNone":{pl:"Podaj fiolkę i wodę, aby liczyć jednostki na insulinówce.",en:"Enter the vial and water to get units on an insulin syringe."},
+    "pep.vialDel":{pl:"Usunąć ten wpis fiolki?",en:"Delete this vial entry?"},
     "inj.pepAdd":{pl:"Dodaj peptyd",en:"Add peptide"},
     "inj.pepNone":{pl:"Brak peptydów. Dodaj pierwszy, aby zacząć śledzić dawki.",en:"No peptides yet. Add one to start tracking doses."},
     "inj.pepNoShots":{pl:"brak wkłuć",en:"no shots yet"},
@@ -3476,7 +3486,11 @@ var UI = (function(){
     var cyc=(p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
     var last=DOMAIN.lastDoseAsOf(st, p.id);
     var bits=[];
-    if(last && last.dose!=null) bits.push(esc(String(last.dose)+" "+(p.unit||"")));
+    if(last && last.dose!=null){
+      bits.push(esc(String(last.dose)+" "+(p.unit||"")));
+      var u=pepUnits(st, p, last.dose);
+      if(u!=null) bits.push('<b style="color:'+p.color+'">'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
+    }
     var ev=pepInterval(st,p);
     bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
       +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
@@ -3493,6 +3507,61 @@ var UI = (function(){
       +'</div>';
   }
   var PEP_UNITS=["mcg","mg","j","IU"];
+  // Vial + water in, concentration and units out. Only meaningful when the dose
+  // itself is a weight — a dose already prescribed in IU has nothing to convert.
+  function vialSectionHTML(st, p, unit){
+    // Always rendered so switching the dose unit can reveal it again without a
+    // re-render; hidden while the dose is prescribed in IU, where there is
+    // nothing to convert.
+    var show=(unit==="mg" || unit==="mcg");
+    var cur=p?pepVialAsOf(st,p):null, past=pepVials(st,p);
+    var mg=cur?cur.mg:"", ml=cur?cur.ml:"";
+    var html='<div id="pfVialBox"'+(show?'':' style="display:none"')+'>'
+      +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>'
+      +'<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("pep.vialMg"))+'</label>'
+          +'<input type="number" inputmode="decimal" step="0.5" min="0" id="pfVialMg" value="'+esc(String(mg))+'" placeholder="10"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("pep.vialMl"))+'</label>'
+          +'<input type="number" inputmode="decimal" step="0.1" min="0" id="pfVialMl" value="'+esc(String(ml))+'" placeholder="2"></div>'
+      +'</div>'
+      +'<div class="field"><label>'+esc(I18N.t("pep.vialDate"))+'</label>'
+        +'<input type="date" id="pfVialDate" value="'+esc(todayISO())+'"></div>'
+      +'<div id="pfConc" class="note" style="margin:-2px 0 10px">'+vialPreviewHTML(st, p, unit)+'</div>';
+    if(past.length){
+      html+='<div class="tiny muted" style="font-weight:700;margin:0 0 4px">'+esc(I18N.t("pep.vialsPast"))+'</div>';
+      past.slice().sort(function(a,b){ return a.date<b.date?1:-1; }).forEach(function(v){
+        html+='<div class="row" style="justify-content:space-between;gap:6px;font-size:12px;padding:3px 0">'
+          +'<span>'+esc(fmtDate(v.date,true))+' &middot; '+esc(String(v.mg))+' mg / '+esc(String(v.ml))+' ml'
+          +' <span class="muted">&middot; '+esc(fmtConc(DOMAIN.vialConc(v.mg,v.ml))+" mg/ml")+'</span></span>'
+          +'<button type="button" class="btn ghost sm pfVialDel" data-id="'+esc(v.id)+'">'+icon("trash")+'</button></div>';
+      });
+    }
+    return html+'</div>';
+  }
+  // Live line under the vial fields: what the mix works out to, and what the
+  // last dose would be in syringe units.
+  function vialPreviewHTML(st, p, unit, mgOv, mlOv){
+    var mg=(mgOv!=null)?mgOv:(p?(pepVialAsOf(st,p)||{}).mg:null);
+    var ml=(mlOv!=null)?mlOv:(p?(pepVialAsOf(st,p)||{}).ml:null);
+    var conc=DOMAIN.vialConc(mg, ml);
+    if(conc==null) return esc(I18N.t("pep.vialNone"));
+    var out='= <b>'+esc(fmtConc(conc)+" mg/ml")+'</b>';
+    var last=p?DOMAIN.lastDoseAsOf(st, p.id):null;
+    var u=last&&last.dose!=null ? DOMAIN.unitsForDose(last.dose, unit, conc) : null;
+    if(u!=null) out+=' &middot; '+esc(String(last.dose)+" "+unit)+' &rarr; <b>'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>';
+    return out;
+  }
+  // The one number that matters at the needle: how many units to pull.
+  function drawBoxHTML(st, p, dose, dISO){
+    var conc=pepConcAsOf(st, p, dISO);
+    var u=DOMAIN.unitsForDose(dose, p.unit, conc);
+    if(u==null) return "";
+    return '<div style="border:2px solid '+p.color+';border-radius:14px;padding:10px 12px;margin:-2px 0 12px">'
+      +'<div style="font-size:20px;font-weight:800;color:'+p.color+'">'
+        +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
+      +'<div class="tiny muted" style="margin-top:2px">'+esc(String(dose)+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" mg/ml")+'</div>'
+      +'</div>';
+  }
   function pepFormHTML(st){
     var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
     if(!isNew && !p) return "";
@@ -3516,6 +3585,7 @@ var UI = (function(){
         +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label>'
           +'<input type="number" inputmode="decimal" id="pfEvery" min="0.5" step="0.5" value="'+every+'"></div>'
       +'</div>'
+      +vialSectionHTML(st, isNew?null:p, unit)
       +'<label class="toggle" style="margin:2px 0 8px"><input type="checkbox" id="pfCycleOn"'+(cycOn?" checked":"")+'>'
         +'<span class="switch"></span><span>'+esc(I18N.t("inj.cycleOn"))+'</span></label>'
       +'<div id="pfCycle" class="grid g2"'+(cycOn?"":' style="display:none"')+'>'
@@ -3548,6 +3618,27 @@ var UI = (function(){
       $all(".pfCol").forEach(function(x){ x.style.outline=""; x.style.outlineOffset=""; });
       b.style.outline="2px solid var(--ink)"; b.style.outlineOffset="2px";
     });});
+    function pfConcRefresh(){
+      var box=$("#pfConc"); if(!box) return;
+      var p=(pepEditId&&pepEditId!=="new")?peptideById(st,pepEditId):null;
+      box.innerHTML=vialPreviewHTML(st, p, $("#pfUnit").value,
+        parseFloat($("#pfVialMg").value), parseFloat($("#pfVialMl").value));
+    }
+    ["#pfVialMg","#pfVialMl"].forEach(function(id){
+      if($(id)) $(id).addEventListener("input", pfConcRefresh);
+    });
+    if($("#pfUnit")) $("#pfUnit").addEventListener("change",function(){
+      var box=$("#pfVialBox"), u=this.value;
+      if(box) box.style.display=(u==="mg"||u==="mcg")?"":"none";
+      pfConcRefresh();
+    });
+    $all(".pfVialDel").forEach(function(b){ b.addEventListener("click",function(){
+      var p=(pepEditId&&pepEditId!=="new")?peptideById(st,pepEditId):null; if(!p) return;
+      if(!confirm(I18N.t("pep.vialDel"))) return;
+      var id=b.getAttribute("data-id");
+      p.vials=pepVials(st,p).filter(function(v){ return v.id!==id; });
+      STORE.save(); viewInject();
+    });});
     if($("#pfCycleOn")) $("#pfCycleOn").addEventListener("change",function(){
       var box=$("#pfCycle"); if(box) box.style.display=this.checked?"":"none";
     });
@@ -3565,11 +3656,24 @@ var UI = (function(){
                    cycleStart:(cycOn&&cs)?cs:null };
       if(isNew){
         if(!st.inj.peptides) st.inj.peptides=[];
-        var np=Object.assign({ id:"pep_"+uid(), archived:false }, fields);
-        st.inj.peptides.push(np); pepSel=np.id;
+        var np=Object.assign({ id:"pep_"+uid(), archived:false, vials:[] }, fields);
+        st.inj.peptides.push(np); pepSel=np.id; p=np;
       } else {
         Object.assign(p, fields);
         setPepInterval(st, p, fields.intervalDays);
+      }
+      // A new vial entry only when the mix really differs — otherwise renaming
+      // the peptide would pile up identical rows in its vial log.
+      var uNow=$("#pfUnit").value;
+      if((uNow==="mg"||uNow==="mcg") && $("#pfVialMg") && $("#pfVialMl")){
+        var vmg=parseFloat($("#pfVialMg").value), vml=parseFloat($("#pfVialMl").value);
+        if(DOMAIN.vialConc(vmg, vml)!=null){
+          var vd=$("#pfVialDate").value||todayISO(), prev=pepVialAsOf(st, p, vd);
+          if(!prev || prev.mg!==vmg || prev.ml!==vml){
+            if(!p.vials) p.vials=[];
+            p.vials.push({ id:"v_"+uid(), date:vd, mg:vmg, ml:vml });
+          }
+        }
       }
       pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
@@ -3596,6 +3700,28 @@ var UI = (function(){
   }
   function setPepInterval(st, p, v){
     if(p && p.id==="mounjaro") st.calc.intervalDays=v; else p.intervalDays=v;
+  }
+  // ---- reconstitution: vials, concentration and units to draw ----
+  function pepVials(st, p){ return (p && p.vials) || []; }
+  function pepVialAsOf(st, p, dISO){ return DOMAIN.vialAsOf(pepVials(st,p), dISO || todayISO()); }
+  function pepConcAsOf(st, p, dISO){
+    var v=pepVialAsOf(st, p, dISO);
+    return v ? DOMAIN.vialConc(v.mg, v.ml) : null;
+  }
+  // Units to draw for a dose, measured against the vial open on that date.
+  function pepUnits(st, p, dose, dISO){
+    if(!p) return null;
+    return DOMAIN.unitsForDose(dose, p.unit, pepConcAsOf(st, p, dISO));
+  }
+  function fmtUnits(u){
+    if(u==null) return "";
+    var r=Math.round(u*10)/10, t=String(r);
+    return I18N.lang==="pl" ? t.replace(".",",") : t;
+  }
+  function fmtConc(c){
+    if(c==null) return "";
+    var r=Math.round(c*100)/100, t=String(r);
+    return I18N.lang==="pl" ? t.replace(".",",") : t;
   }
   function nextPepColor(st){
     var used={};
@@ -4129,6 +4255,8 @@ var UI = (function(){
     var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||(lastD?lastD.dose:""));
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
       +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
+    // how much to draw on a U-100 syringe, recomputed live as the dose is typed
+    if(pepCur) html+='<div id="pepDraw">'+drawBoxHTML(st, pepCur, doseVal)+'</div>';
     // when given: captured as "now" by default, editable to backfill (parity with BP)
     function tsToLocal(ts){ var d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
     var whenVal = injDraft.when || (editing ? (editing.ts ? tsToLocal(editing.ts) : (editing.date?editing.date+"T12:00":nowLocalDT())) : nowLocalDT());
@@ -4180,7 +4308,9 @@ var UI = (function(){
           +' <span class="nowrap">'+dowBadge(e.date)
           +(e.sandbag?' <span class="pill minipill sb" title="'+esc(I18N.t("inj.sandbag"))+'">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')+'</span>'
           +(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
-          +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
+          +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')
+          +(e.units!=null?'<br><span class="muted tiny">'+esc(fmtUnits(e.units)+" "+I18N.t("sch.units")
+             +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" mg/ml":""))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
             ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:null), substColor(st, e.substance),
@@ -4304,6 +4434,12 @@ var UI = (function(){
       hits.forEach(function(e){ e.every=bev; });
       STORE.save(); toast(I18N.t("inj.backfillDone")+" "+hits.length); viewInject();
     });
+    if($("#injDose") && $("#pepDraw")){
+      $("#injDose").addEventListener("input",function(){
+        var pd=peptideById(st, sub);
+        if(pd) $("#pepDraw").innerHTML=drawBoxHTML(st, pd, parseFloat(this.value), ($("#injDate")&&$("#injDate").value)||null);
+      });
+    }
     bindPeptides(st);
     // log / update
     if($("#injLog")) $("#injLog").addEventListener("click",function(){
@@ -4347,7 +4483,13 @@ var UI = (function(){
         // schedule change (e.g. every 2 days -> daily) reads as a dose change
         if(injSeg==="trt") entry.every=parseEvery(st.inj.trt.intervalDays,3);
         if(sb) entry.sandbag=true;
-        if(pepE) entry.every=parseEvery(pepE.intervalDays,1);
+        if(pepE){
+          entry.every=pepInterval(st, pepE);   // Tirzepatyd routes this through st.calc
+          // snapshot what was actually drawn, at the concentration of that day
+          var eConc=pepConcAsOf(st, pepE, dateStr);
+          var eU=DOMAIN.unitsForDose(dose, pepE.unit, eConc);
+          if(eU!=null){ entry.units=Math.round(eU*10)/10; entry.mgPerMl=Math.round(eConc*1000)/1000; }
+        }
         // The tracker position derives from jab.history, so logging (and
         // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
         // a day — one new dose — is stamped with the planned breakdown so
