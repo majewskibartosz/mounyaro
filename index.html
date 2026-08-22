@@ -54,7 +54,15 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin:0 0 16px}
   .card h2{margin:0 0 4px;font-size:17px}
   .card .sub{margin:0 0 14px;color:var(--muted);font-size:13px}
-  h1.page{font-size:22px;margin:4px 0 14px}
+  h1.page{font-size:22px;margin:0}
+  .pagehead{display:flex;align-items:center;gap:8px;margin:4px 0 14px}
+  .navbtn{
+    flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+    width:34px;height:34px;padding:0;border-radius:11px;cursor:pointer;
+    background:var(--soft);color:var(--ink);border:1px solid var(--line);
+  }
+  .navbtn svg{width:18px;height:18px}
+  .navbtn:disabled{opacity:.3;cursor:default}
 
   label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
   input,select,textarea{
@@ -367,6 +375,8 @@ var I18N = (function(){
 
     // ---- dashboard (Pulpit) ----
     "pulpit.title":{pl:"Pulpit",en:"Dashboard"},
+    "nav.back":{pl:"Wstecz",en:"Back"},
+    "nav.fwd":{pl:"Do przodu",en:"Forward"},
     "pulpit.rhythm":{pl:"Rytm substancji",en:"Substance rhythm"},
     "pulpit.todo":{pl:"brak",en:"not yet"},
     "pulpit.latest":{pl:"Ostatnie wartości",en:"Latest readings"},
@@ -2150,7 +2160,9 @@ var ICONS={
   arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
-  chevron:'<path d="m6 9 6 6 6-6"/>'
+  chevron:'<path d="m6 9 6 6 6-6"/>',
+  back:'<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+  fwd:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'
 };
 function icon(name, cls){
   var p=ICONS[name]; if(!p) return "";
@@ -2626,7 +2638,7 @@ var UI = (function(){
     var last = hist.length ? hist[hist.length-1] : null;
     var today = todayISO();
 
-    var html='<h1 class="page">'+esc(I18N.t("jab.title"))+'</h1>'
+    var html=pageHead("jab.title")
     + '<div class="card"><p class="sub">'+esc(I18N.t("jab.sub"))+'</p>'
     + '<div class="field" style="max-width:220px"><label>'+esc(I18N.t("jab.freq"))+'</label><input type="number" inputmode="numeric" id="jEvery" min="1" value="'+every+'"></div>';
 
@@ -2698,7 +2710,7 @@ var UI = (function(){
     var lastD = DOMAIN.lastDoseAsOf(st, "mounjaro");
     var last = lastD ? lastD.dose : null;
     var html=''
-    + '<h1 class="page">'+esc(I18N.t("weight.title"))+'</h1>';
+    + pageHead("weight.title");
 
     // chart card (on top); the range bar narrows to a day window and ‹ › page it
     var win=DOMAIN.chartWindow(st.weightLog, "date", weightRange.days, weightRange.offset, todayISO());
@@ -2910,7 +2922,7 @@ var UI = (function(){
     // doses in effect on a reading's date (shared pill renderer)
     function doseCell(e){ return dosePillsAsOf(st, String(e.ts).slice(0,10), e.doseMg); }
     var html=''
-    + '<h1 class="page">'+esc(I18N.t("bp.title"))+'</h1>';
+    + pageHead("bp.title");
 
     // chart card (on top); the range bar narrows to a day window and ‹ › page it
     var win=DOMAIN.chartWindow(log, "ts", bpRange.days, bpRange.offset, todayISO());
@@ -3177,7 +3189,7 @@ var UI = (function(){
       for(var ji=0;ji<(st.journal||[]).length;ji++){ if(st.journal[ji].id===journalEdit){ editing=st.journal[ji]; break; } }
       if(!editing) journalEdit=null;
     }
-    var html='<h1 class="page">'+esc(I18N.t("diary.title"))+'</h1>';
+    var html=pageHead("diary.title");
 
     // --- illness / infection episodes: the always-visible start/end control ---
     // One open episode at a time, so this card is either "start" or "end" — never both.
@@ -4239,7 +4251,7 @@ var UI = (function(){
     var sub = injSeg==="peptide" ? pepSel : injSeg;
     var color = sub ? substColor(st, sub) : SUBSTANCE_COLORS.peptide;
 
-    var html='<h1 class="page">'+esc(I18N.t("inj.title"))+'</h1>';
+    var html=pageHead("inj.title");
     html+='<div class="seg" data-seg>'
       +segs.map(function(k){
           return '<button type="button" data-k="'+k+'" class="'+(injSeg===k?"on":"")+'">'+esc(I18N.t("inj.seg."+k))+'</button>';
@@ -4602,9 +4614,25 @@ var UI = (function(){
       +'</span></div>'
       + progressBar(frac, color, "", "") + '</div>';
   }
+  // Every view opens with this: the title plus the two history arrows. In an
+  // installed PWA there is no browser chrome to go back with, so without them the
+  // only way out of a view is the tab bar.
+  function navBtnHTML(id, ic, key, on){
+    return '<button type="button" class="navbtn" id="'+id+'" title="'+esc(I18N.t(key))+'" aria-label="'+esc(I18N.t(key))+'"'
+      +(on?'':' disabled')+'>'+icon(ic)+'</button>';
+  }
+  // The enabled state is baked into the markup rather than applied afterwards:
+  // views re-render themselves straight into #app dozens of times, and anything a
+  // post-render pass had set would silently vanish on the next self-render.
+  function pageHead(titleKey){
+    return '<div class="pagehead">'
+      +navBtnHTML("navBack","back","nav.back",canBack())
+      +navBtnHTML("navFwd","fwd","nav.fwd",canFwd())
+      +'<h1 class="page">'+esc(I18N.t(titleKey))+'</h1></div>';
+  }
   function viewDash(){
     var st=s(), today=todayISO();
-    var html='<h1 class="page">'+esc(I18N.t("pulpit.title"))+'</h1>';
+    var html=pageHead("pulpit.title");
 
     // --- illness banner: only while an episode is running, so a healthy day
     // adds no clutter. The end button lives in the journal, hence the link. ---
@@ -4733,7 +4761,7 @@ var UI = (function(){
   var corrA=null, corrB=null;
   function viewCorrelate(){
     var st=s(), opts=seriesOptions(st);
-    var html='<h1 class="page">'+esc(I18N.t("corr.title"))+'</h1><div class="card"><p class="sub">'+esc(I18N.t("corr.sub"))+'</p>';
+    var html=pageHead("corr.title")+'<div class="card"><p class="sub">'+esc(I18N.t("corr.sub"))+'</p>';
     if(opts.length<1){ html+='<div class="empty">'+esc(I18N.t("corr.noSeries"))+'</div></div>'; app.innerHTML=html; return; }
     var ids=opts.map(function(o){return o.id;});
     if(ids.indexOf(corrA)<0) corrA=ids[0];
@@ -4762,7 +4790,7 @@ var UI = (function(){
     var st=s();
     var g=st.settings.goldenDose;
     var html=''
-    +'<h1 class="page">'+esc(I18N.t("opt.title"))+'</h1>'
+    +pageHead("opt.title")
     +'<div class="rellinks" style="margin-bottom:12px"><a class="btn ghost sm" href="#settings">'+icon("settings")+esc(I18N.t("rel.toSettings"))+'</a></div>'
     +'<div class="card"><p class="sub">'+esc(I18N.t("opt.sub"))+'</p>'
     +'<div class="field"><label>'+esc(I18N.t("opt.mode"))+'</label><select id="oMode">'
@@ -5289,7 +5317,7 @@ var UI = (function(){
   function viewSettings(){
     var st=s();
     var html=''
-    +'<h1 class="page">'+esc(I18N.t("set.title"))+'</h1>'
+    +pageHead("set.title")
     +'<div class="card"><p class="sub">'+esc(I18N.t("set.sub"))+'</p>'
     +'<div class="grid g2">'
     +'<div class="field"><label>'+esc(I18N.t("set.language"))+'</label><select id="setLang">'
@@ -5468,10 +5496,8 @@ var UI = (function(){
     applyRoute(tab, r.sub);
     $all("nav.tabs a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-tab")===tab); });
     routes[tab]();
-    bindNavArrows();
     window.scrollTo(0,0);
   }
-  function bindNavArrows(){}   // filled in with the header arrows
   function applyStatic(){
     $all("[data-i]").forEach(function(n){ n.textContent=I18N.t(n.getAttribute("data-i")); });
     $("#footer").textContent=I18N.t("footer.disclaimer");
@@ -5557,6 +5583,14 @@ var UI = (function(){
       });
     });
     window.addEventListener("hashchange",render);
+    // Delegated: the arrows are rebuilt by every self-render of a view, so there
+    // is nothing stable to attach a listener to.
+    app.addEventListener("click",function(ev){
+      var b=ev.target.closest?ev.target.closest(".navbtn"):null;
+      if(!b || b.disabled) return;
+      if(b.id==="navBack") history.back();
+      else if(b.id==="navFwd") history.forward();
+    });
     // When the tab becomes visible/focused again, re-read the linked file: a
     // cloud sync (MEGA/Dropbox) may have pulled in a newer copy while we were
     // away, and the File System Access handle is otherwise only read at startup.
