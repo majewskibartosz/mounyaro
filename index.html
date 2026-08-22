@@ -1512,6 +1512,59 @@ var DOMAIN = (function(){
     return out.sort(function(a,b){ return a.from<b.from?-1:a.from>b.from?1:0; });
   }
 
+  // ---- chart date windows & window stats ----
+  // A contiguous day window over a log, anchored at today: offset 0 is the
+  // newest window, each step back covers the previous `days` days. Entry dates
+  // come from String(e[dateKey]).slice(0,10), so both "date" fields and full
+  // ISO timestamps work. days===null means the whole history (no window).
+  function addDaysISO(iso, n){
+    var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n);
+    var m=d.getMonth()+1, day=d.getDate();
+    return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(day<10?"0":"")+day;
+  }
+  function chartWindow(entries, dateKey, days, offset, todayISOstr){
+    entries=entries||[];
+    if(days==null){
+      return { from:null, to:null, offset:0, entries:entries.slice(), atNewest:true, atOldest:true };
+    }
+    var oldest=null;
+    entries.forEach(function(e){
+      var d=String(e[dateKey]).slice(0,10);
+      if(oldest===null || d<oldest) oldest=d;
+    });
+    var maxOffset = oldest===null ? 0 : Math.max(0, Math.floor(illnessDaySpan(oldest, todayISOstr)/days));
+    offset=Math.max(0, Math.min(offset||0, maxOffset));
+    var to=addDaysISO(todayISOstr, -offset*days), from=addDaysISO(to, -(days-1));
+    var kept=entries.filter(function(e){
+      var d=String(e[dateKey]).slice(0,10);
+      return d>=from && d<=to;
+    });
+    return { from:from, to:to, offset:offset, entries:kept, atNewest:offset===0, atOldest:offset>=maxOffset };
+  }
+  function minMaxAvg(vals){
+    if(!vals.length) return null;
+    var min=vals[0], max=vals[0], sum=0;
+    vals.forEach(function(v){ if(v<min)min=v; if(v>max)max=v; sum+=v; });
+    return { avg:sum/vals.length, min:min, max:max };
+  }
+  function bpWindowStats(entries){
+    var rows=(entries||[]).filter(function(e){ return e.sys!=null && e.dia!=null; });
+    if(!rows.length) return null;
+    var pulse=minMaxAvg(rows.filter(function(e){ return e.pulse!=null; }).map(function(e){ return e.pulse; }));
+    return { n:rows.length,
+             sys:minMaxAvg(rows.map(function(e){ return e.sys; })),
+             dia:minMaxAvg(rows.map(function(e){ return e.dia; })),
+             pulse:pulse };
+  }
+  function weightWindowStats(entries){
+    var rows=(entries||[]).filter(function(e){ return e.weightKg!=null; })
+      .slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+    if(!rows.length) return null;
+    var mm=minMaxAvg(rows.map(function(e){ return e.weightKg; }));
+    return { n:rows.length, avg:mm.avg, min:mm.min, max:mm.max,
+             change:rows[rows.length-1].weightKg-rows[0].weightKg };
+  }
+
   // Peptide cycle progress. cfg:{cycleDays,cycleStart}. Returns null if no start.
   function cycleProgress(cfg, todayISOstr){
     if(!cfg || !cfg.cycleStart || !cfg.cycleDays) return null;
@@ -1542,6 +1595,7 @@ var DOMAIN = (function(){
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
+    chartWindow:chartWindow, bpWindowStats:bpWindowStats, weightWindowStats:weightWindowStats,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
   };

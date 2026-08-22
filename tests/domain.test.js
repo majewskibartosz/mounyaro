@@ -255,3 +255,98 @@ test("illnessSpans: an end before the start collapses to a single day", function
   assert.strictEqual(out[0].from, "2026-08-10");
   assert.strictEqual(out[0].to, "2026-08-10");
 });
+
+// ---- chart windows & window stats ----
+
+function wEntry(date, kg) { return { date: date, weightKg: kg }; }
+
+test("chartWindow: offset 0 covers the last N days ending today", function () {
+  var log = [wEntry("2026-08-07", 90), wEntry("2026-08-01", 91), wEntry("2026-07-31", 92)];
+  var w = DOMAIN.chartWindow(log, "date", 7, 0, "2026-08-07");
+  assert.strictEqual(w.from, "2026-08-01");
+  assert.strictEqual(w.to, "2026-08-07");
+  assert.deepStrictEqual(Array.from(w.entries).map(function (e) { return e.date; }),
+    ["2026-08-07", "2026-08-01"]);   // order preserved, out-of-window dropped
+  assert.strictEqual(w.atNewest, true);
+});
+
+test("chartWindow: paging shifts by whole windows and keeps boundary entries once", function () {
+  var log = [wEntry("2026-08-07", 90), wEntry("2026-07-31", 92)];
+  var w1 = DOMAIN.chartWindow(log, "date", 7, 1, "2026-08-07");
+  assert.strictEqual(w1.from, "2026-07-25");
+  assert.strictEqual(w1.to, "2026-07-31");
+  assert.deepStrictEqual(Array.from(w1.entries).map(function (e) { return e.date; }), ["2026-07-31"]);
+  var w0 = DOMAIN.chartWindow(log, "date", 7, 0, "2026-08-07");
+  assert.deepStrictEqual(Array.from(w0.entries).map(function (e) { return e.date; }), ["2026-08-07"]);
+});
+
+test("chartWindow: offset clamps to the oldest entry and reports the ends", function () {
+  var log = [wEntry("2026-08-07", 90), wEntry("2026-07-28", 92)];   // 10 days back
+  var w = DOMAIN.chartWindow(log, "date", 7, 5, "2026-08-07");
+  assert.strictEqual(w.offset, 1);
+  assert.strictEqual(w.atOldest, true);
+  assert.strictEqual(w.atNewest, false);
+  var w0 = DOMAIN.chartWindow(log, "date", 7, 0, "2026-08-07");
+  assert.strictEqual(w0.atNewest, true);
+  assert.strictEqual(w0.atOldest, false);
+});
+
+test("chartWindow: days null returns everything; empty log never throws", function () {
+  var log = [wEntry("2026-08-07", 90), wEntry("2026-01-01", 99)];
+  var w = DOMAIN.chartWindow(log, "date", null, 3, "2026-08-07");
+  assert.strictEqual(w.from, null);
+  assert.strictEqual(Array.from(w.entries).length, 2);
+  assert.strictEqual(w.atNewest, true);
+  assert.strictEqual(w.atOldest, true);
+  var e = DOMAIN.chartWindow([], "date", 7, 0, "2026-08-07");
+  assert.strictEqual(e.offset, 0);
+  assert.deepStrictEqual(Array.from(e.entries), []);
+});
+
+test("chartWindow: an empty mid-history window still carries its bounds", function () {
+  var log = [wEntry("2026-08-07", 90), wEntry("2026-07-18", 92)];   // 20 days back
+  var w = DOMAIN.chartWindow(log, "date", 7, 1, "2026-08-07");
+  assert.deepStrictEqual(Array.from(w.entries), []);
+  assert.strictEqual(w.from, "2026-07-25");
+  assert.strictEqual(w.to, "2026-07-31");
+  assert.strictEqual(w.atOldest, false);
+});
+
+test("chartWindow: full ISO timestamps filter by their date part", function () {
+  var log = [{ ts: "2026-08-05T22:30:00.000Z", sys: 120, dia: 80 },
+             { ts: "2026-07-01T08:00:00.000Z", sys: 118, dia: 78 }];
+  var w = DOMAIN.chartWindow(log, "ts", 7, 0, "2026-08-07");
+  assert.deepStrictEqual(Array.from(w.entries).map(function (e) { return e.ts; }),
+    ["2026-08-05T22:30:00.000Z"]);
+});
+
+test("chartWindow: noon anchor keeps day arithmetic exact across DST", function () {
+  var w = DOMAIN.chartWindow([wEntry("2026-03-25", 90)], "date", 7, 0, "2026-03-31");
+  assert.strictEqual(w.from, "2026-03-25");   // spans the EU spring-forward weekend
+  assert.strictEqual(Array.from(w.entries).length, 1);
+});
+
+test("bpWindowStats: averages and extremes; pulse only over the readings that have one", function () {
+  var s = DOMAIN.bpWindowStats([
+    { sys: 120, dia: 80, pulse: 70 },
+    { sys: 130, dia: 90, pulse: null },
+    { sys: 110, dia: 70, pulse: 80 },
+  ]);
+  assert.strictEqual(s.n, 3);
+  assert.strictEqual(s.sys.avg, 120); assert.strictEqual(s.sys.min, 110); assert.strictEqual(s.sys.max, 130);
+  assert.strictEqual(s.dia.avg, 80);
+  assert.strictEqual(s.pulse.avg, 75); assert.strictEqual(s.pulse.min, 70); assert.strictEqual(s.pulse.max, 80);
+  assert.strictEqual(DOMAIN.bpWindowStats([{ sys: 120, dia: 80, pulse: null }]).pulse, null);
+  assert.strictEqual(DOMAIN.bpWindowStats([]), null);
+});
+
+test("weightWindowStats: change runs oldest to newest regardless of input order", function () {
+  var s = DOMAIN.weightWindowStats([wEntry("2026-08-07", 90), wEntry("2026-08-01", 93)]);
+  assert.strictEqual(s.n, 2);
+  assert.strictEqual(s.change, -3);
+  assert.strictEqual(s.min, 90); assert.strictEqual(s.max, 93); assert.strictEqual(s.avg, 91.5);
+  var up = DOMAIN.weightWindowStats([wEntry("2026-08-01", 90), wEntry("2026-08-07", 93)]);
+  assert.strictEqual(up.change, 3);
+  assert.strictEqual(DOMAIN.weightWindowStats([wEntry("2026-08-07", 90)]).change, 0);
+  assert.strictEqual(DOMAIN.weightWindowStats([]), null);
+});
