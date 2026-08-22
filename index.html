@@ -3659,7 +3659,7 @@ var UI = (function(){
       var id=b.getAttribute("data-id");
       pepSel=(pepSel===id)?null:id;
       injEdit=null; injSel=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
-      viewInject();
+      syncInjectRoute(); viewInject();
     });});
     if($("#pepAdd")) $("#pepAdd").addEventListener("click",function(){
       pepEditId="new"; pepDraft={}; viewInject();
@@ -4388,7 +4388,7 @@ var UI = (function(){
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
       injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; pepSel=null; pepEditId=null;
-      injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject();
+      injDraft={dose:"",name:"",when:"",sandbag:null}; syncInjectRoute(); viewInject();
     });});
     bindPager("injPg", function(){return injPage;}, function(v){injPage=v;}, viewInject);
     // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
@@ -5416,16 +5416,62 @@ var UI = (function(){
   /* ---- router & static text ---- */
   var routes={ pulpit:viewDash, inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, correlate:viewCorrelate, optimizer:viewOpt, settings:viewSettings };
   function currentTab(){
-    var h=(location.hash||"#pulpit").replace("#","");
-    if(h==="jab") h="inject";          // legacy hash / PWA shortcut -> injections view
-    return routes[h]?h:"pulpit";
+    var t=DOMAIN.parseRoute(location.hash).tab;
+    return routes[t]?t:"pulpit";
   }
+  // The sub-state segment of the address names ONE substance, so a dashboard row
+  // can open the injections view with that substance already picked. Called from
+  // the router only: views re-run themselves on every keystroke-driven change, and
+  // re-seeding from the address there would wipe a half-typed form.
+  function applyRoute(tab, sub){
+    if(tab!=="inject" || !sub) return;
+    var st=s(), seg=null, pep=null;
+    if(sub==="trt") seg="trt";
+    else if(sub==="peptide") seg="peptide";
+    else if(sub==="mounjaro" && mjTabOn(st)) seg="mounjaro";
+    else if(peptideById(st, sub)){ seg="peptide"; pep=sub; }   // covers Tirzepatyd when the tab is off
+    else return;
+    if(seg===injSeg && pep===pepSel) return;                   // already there
+    injSeg=seg; pepSel=pep;
+    injSel=null; injEdit=null; injPage=0; pepEditId=null;
+    injDraft={dose:"",name:"",when:"",sandbag:null};
+  }
+  // Substance picked inside the view -> address, without a new history entry, so
+  // "back" from a dashboard row returns to the dashboard instead of stepping
+  // through every substance the user glanced at.
+  function injectSub(st){
+    if(injSeg!=="peptide") return injSeg;
+    if(!pepSel) return "peptide";
+    return (pepSel==="mounjaro" && mjTabOn(st)) ? "peptide" : pepSel;   // "mounjaro" would reopen the tab
+  }
+  function syncInjectRoute(){
+    var h=DOMAIN.buildRoute("inject", injectSub(s()));
+    if(location.hash===h) return;
+    try{ history.replaceState(null,"",h); }catch(e){ return; }   // file:// forbids it; the address just stays put
+    if(navIdx>=0) navStack[navIdx]=h;
+  }
+  // The browser's own stack stays the single source of truth (the arrows call
+  // history.back/forward, so a system gesture can never drift out of sync); this
+  // mirror exists only because there is no way to ask whether either end is live.
+  var navStack=[], navIdx=-1;
+  function trackNav(h){
+    if(navIdx>=0 && navStack[navIdx]===h) return;                               // re-render, not a move
+    if(navIdx>0 && navStack[navIdx-1]===h){ navIdx--; return; }                 // back
+    if(navIdx<navStack.length-1 && navStack[navIdx+1]===h){ navIdx++; return; } // forward
+    navStack=navStack.slice(0,navIdx+1); navStack.push(h); navIdx=navStack.length-1;
+  }
+  function canBack(){ return navIdx>0; }
+  function canFwd(){ return navIdx<navStack.length-1; }
   function render(){
-    var tab=currentTab();
+    var r=DOMAIN.parseRoute(location.hash), tab=routes[r.tab]?r.tab:"pulpit";
+    trackNav(location.hash||"#pulpit");
+    applyRoute(tab, r.sub);
     $all("nav.tabs a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-tab")===tab); });
     routes[tab]();
+    bindNavArrows();
     window.scrollTo(0,0);
   }
+  function bindNavArrows(){}   // filled in with the header arrows
   function applyStatic(){
     $all("[data-i]").forEach(function(n){ n.textContent=I18N.t(n.getAttribute("data-i")); });
     $("#footer").textContent=I18N.t("footer.disclaimer");
