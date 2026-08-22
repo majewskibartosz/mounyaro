@@ -424,3 +424,61 @@ test("doseCountdown: 3.5 days stays 84 elapsed hours across a DST change", funct
   assert.strictEqual(cd.nextMs - before, 84 * H);
   assert.strictEqual(DOMAIN.doseCountdown(before, 3.5, before + 84 * H).remainingMs, 0);
 });
+
+// ---- peptide cycles ----
+
+test("cycleProgress: the start date is day 1", function () {
+  var r = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 56 }, "2026-08-01");
+  assert.strictEqual(r.dayN, 1);
+  assert.strictEqual(r.total, 56);
+  assert.strictEqual(r.done, false);
+  assert.ok(r.frac > 0 && r.frac < 0.05);
+});
+
+test("cycleProgress: past the end it clamps and reports done", function () {
+  var r = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 10 }, "2026-08-20");
+  assert.strictEqual(r.dayN, 10);
+  assert.strictEqual(r.frac, 1);
+  assert.strictEqual(r.done, true);
+});
+
+test("cycleProgress: no cycle without both a start and a length", function () {
+  assert.strictEqual(DOMAIN.cycleProgress(null, "2026-08-01"), null);
+  assert.strictEqual(DOMAIN.cycleProgress({ cycleDays: 56, cycleStart: null }, "2026-08-01"), null);
+  assert.strictEqual(DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: null }, "2026-08-01"), null);
+});
+
+test("cycleProgress: a whole peptide record is a valid config", function () {
+  var pep = { id: "pep1", name: "TB-500", color: "#fb7185", unit: "mg",
+              intervalDays: 7, cycleDays: 56, cycleStart: "2026-08-01", archived: false };
+  var r = DOMAIN.cycleProgress(pep, "2026-08-11");
+  assert.strictEqual(r.dayN, 11);
+  assert.strictEqual(r.total, 56);
+});
+
+test("seriesFor: a peptide id reads only that peptide's shots", function () {
+  var log = [
+    { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg" },
+    { id: "b", date: "2026-08-02", substance: "pep2", dose: 2, unit: "mg" },
+    { id: "c", date: "2026-08-03", substance: "pep1", dose: 300, unit: "mcg" }
+  ];
+  var st = { settings: {}, injLog: log };
+  var out = Array.from(DOMAIN.seriesFor(st, "inj:pep1"));
+  assert.deepStrictEqual(out.map(function (p) { return p.value; }), [250, 300]);
+  assert.strictEqual(Array.from(DOMAIN.seriesFor(st, "inj:pep2")).length, 1);
+});
+
+test("lastDoseAsOf and doseStreakAsOf work per peptide id", function () {
+  var log = [
+    { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg", every: 1 },
+    { id: "b", date: "2026-08-02", substance: "pep1", dose: 250, unit: "mcg", every: 1 },
+    { id: "c", date: "2026-08-03", substance: "pep2", dose: 2, unit: "mg", every: 7 }
+  ];
+  var st = { settings: {}, injLog: log };
+  var ld = DOMAIN.lastDoseAsOf(st, "pep1", "2026-08-05");
+  assert.strictEqual(ld.dose, 250);
+  assert.strictEqual(ld.unit, "mcg");
+  assert.strictEqual(ld.every, 1);
+  assert.strictEqual(DOMAIN.lastDoseAsOf(st, "pep2", "2026-08-05").dose, 2);
+  assert.strictEqual(DOMAIN.doseStreakAsOf(st, "pep1", "2026-08-05").sinceISO, "2026-08-01");
+});

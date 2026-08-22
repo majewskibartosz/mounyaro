@@ -180,6 +180,28 @@
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
   .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  /* peptide cards: one row per blend, colour rail carries its identity */
+  .peplist{display:flex;flex-direction:column;gap:9px}
+  .pep{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
+       border-radius:14px;overflow:hidden}
+  .pep.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
+  .pepHead{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;
+           color:var(--ink);text-align:left;font:inherit;padding:11px 12px;cursor:pointer}
+  .pepHead:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+  .pepgrow{flex:1;min-width:0}
+  .pepname{display:block;font-weight:700;font-size:14.5px;line-height:1.25;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pepsub{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+  .pepdue{flex:0 0 auto;text-align:right;white-space:nowrap;line-height:1.2}
+  .pepbig{display:block;font-weight:800;font-size:15px;color:var(--c);font-variant-numeric:tabular-nums}
+  .pep.late .pepbig{color:var(--bad)}
+  .pepwhen{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .pepbar{height:3px;background:var(--soft)}
+  .pepbar>span{display:block;height:100%;background:var(--c)}
+  .pfcols{display:grid;grid-template-columns:repeat(8,1fr);gap:7px}
+  .pfCol{appearance:none;border:0;border-radius:9px;height:30px;cursor:pointer}
+  .pfCol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
   /* progress bar (TRT cadence / peptide cycle) */
   .pbar{height:14px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden;margin:6px 0}
   .pbar>span{display:block;height:100%;border-radius:999px;transition:width .3s}
@@ -428,6 +450,18 @@ var I18N = (function(){
     "inj.confirmDel":{pl:"Usunąć ten zastrzyk?",en:"Delete this injection?"},
     "inj.mgUnit":{pl:"mg",en:"mg"},
     "inj.unitsUnit":{pl:"j",en:"u"},
+    "inj.pepEvery":{pl:"co",en:"every"},
+    "inj.dayGen":{pl:"dnia",en:"days"},
+    "inj.cycleShort":{pl:"cykl",en:"cycle"},
+    "inj.pepAdd":{pl:"Dodaj peptyd",en:"Add peptide"},
+    "inj.pepNone":{pl:"Brak peptydów. Dodaj pierwszy, aby zacząć śledzić dawki.",en:"No peptides yet. Add one to start tracking doses."},
+    "inj.pepNoShots":{pl:"brak wkłuć",en:"no shots yet"},
+    "inj.pepColor":{pl:"Kolor",en:"Colour"},
+    "inj.pepUnit":{pl:"Jednostka",en:"Unit"},
+    "inj.pepDelete":{pl:"Usuń peptyd",en:"Delete peptide"},
+    "inj.pepConfirmDel":{pl:"Usunąć ten peptyd? Zapisane wkłucia zostaną w historii.",en:"Delete this peptide? Its logged injections stay in the history."},
+    "inj.pepEditTitle":{pl:"Peptyd",en:"Peptide"},
+    "inj.cycleOn":{pl:"Śledź cykl (on/off)",en:"Track a cycle (on/off)"},
     "inj.pepName":{pl:"Peptyd / blend",en:"Peptide / blend"},
     "inj.pepNamePh":{pl:"np. BPC-157 + TB-500 (KLOW)",en:"e.g. BPC-157 + TB-500 (KLOW)"},
     "inj.when":{pl:"Czas podania",en:"Time given"},
@@ -3353,6 +3387,148 @@ var UI = (function(){
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
   var SUBSTANCE_COLORS={ mounjaro:"#0ea5a4", trt:"#6366f1", peptide:"#f59e0b" };
+  // Identity colours offered to peptides — all legible on both themes and clear
+  // of Mounjaro's teal and TRT's indigo, so a dot on the belly map is unambiguous.
+  var PEP_COLORS=["#f59e0b","#38bdf8","#a78bfa","#fb7185","#34d399","#facc15","#f472b6","#22d3ee"];
+  function peptideList(st, withArchived){
+    return ((st.inj&&st.inj.peptides)||[]).filter(function(p){ return p && (withArchived || !p.archived); });
+  }
+  // Archived peptides resolve too: their old injections still need a name and colour.
+  function peptideById(st, id){
+    var hit=null;
+    ((st.inj&&st.inj.peptides)||[]).forEach(function(p){ if(p && p.id===id) hit=p; });
+    return hit;
+  }
+  function substColor(st, sub){
+    if(SUBSTANCE_COLORS[sub] && sub!=="peptide") return SUBSTANCE_COLORS[sub];
+    var p=peptideById(st, sub);
+    return p ? p.color : (SUBSTANCE_COLORS[sub] || "#94a3b8");
+  }
+  // Never fall through to I18N.t for a peptide id — it returns the key itself.
+  function substLabel(st, sub){
+    if(sub==="mounjaro" || sub==="trt") return I18N.t("inj.seg."+sub);
+    var p=peptideById(st, sub);
+    return p ? p.name : (sub==="peptide" ? I18N.t("inj.seg.peptide") : String(sub||""));
+  }
+  // One card per peptide: colour rail, name, "dose · interval · cycle", and the
+  // countdown on the right. The selected card is the one the form below acts on.
+  function pepCardHTML(st, p){
+    var cd=DOMAIN.doseCountdown(lastInjTs(st,p.id), parseEvery(p.intervalDays,1), Date.now());
+    var cyc=(p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
+    var last=DOMAIN.lastDoseAsOf(st, p.id);
+    var bits=[];
+    if(last && last.dose!=null) bits.push(esc(String(last.dose)+" "+(p.unit||"")));
+    var ev=parseEvery(p.intervalDays,1);
+    bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
+      +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
+    if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
+    var on=(pepSel===p.id);
+    return '<div class="pep'+(on?" on":"")+(cd&&cd.overdue?" late":"")+'" style="--c:'+p.color+'">'
+      +'<button type="button" class="pepHead" data-id="'+esc(p.id)+'">'
+        +'<span class="pepgrow"><span class="pepname">'+esc(p.name)+'</span>'
+        +'<span class="pepsub">'+bits.join(" &middot; ")+'</span></span>'
+        +'<span class="pepdue"><span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span>'
+        +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>'
+      +'</button>'
+      +'<div class="pepbar"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
+      +'</div>';
+  }
+  var PEP_UNITS=["mcg","mg","j","IU"];
+  function pepFormHTML(st){
+    var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
+    if(!isNew && !p) return "";
+    var name=isNew?"":(p.name||""), col=pepDraft.color||(isNew?nextPepColor(st):p.color);
+    var unit=pepDraft.unit||(isNew?"mcg":(p.unit||"j"));
+    var every=isNew?1:parseEvery(p.intervalDays,1);
+    var cycOn=isNew?false:!!(p.cycleDays && p.cycleStart);
+    var sw=PEP_COLORS.map(function(c){
+      return '<button type="button" class="pfCol" data-c="'+c+'" style="background:'+c
+        +';'+(c===col?"outline:2px solid var(--ink);outline-offset:2px":"")+'" aria-label="'+c+'"></button>';
+    }).join("");
+    return '<div class="card" style="border-color:'+col+'59">'
+      +'<h2 style="margin:0 0 10px">'+esc(I18N.t("inj.pepEditTitle"))+'</h2>'
+      +'<div class="field"><label>'+esc(I18N.t("inj.pepName"))+'</label>'
+        +'<input type="text" id="pfName" maxlength="60" value="'+esc(name)+'" placeholder="'+esc(I18N.t("inj.pepNamePh"))+'"></div>'
+      +'<div class="field"><label>'+esc(I18N.t("inj.pepColor"))+'</label><div class="pfcols">'+sw+'</div></div>'
+      +'<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("inj.pepUnit"))+'</label><select id="pfUnit">'
+          +PEP_UNITS.map(function(u){ return '<option value="'+u+'"'+(u===unit?" selected":"")+'>'+u+'</option>'; }).join("")
+        +'</select></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label>'
+          +'<input type="number" inputmode="decimal" id="pfEvery" min="0.5" step="0.5" value="'+every+'"></div>'
+      +'</div>'
+      +'<label class="toggle" style="margin:2px 0 8px"><input type="checkbox" id="pfCycleOn"'+(cycOn?" checked":"")+'>'
+        +'<span class="switch"></span><span>'+esc(I18N.t("inj.cycleOn"))+'</span></label>'
+      +'<div id="pfCycle" class="grid g2"'+(cycOn?"":' style="display:none"')+'>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.cycleLen"))+'</label>'
+          +'<input type="number" inputmode="numeric" id="pfCycleLen" min="1" value="'+((!isNew&&p.cycleDays)||56)+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.cycleStart"))+'</label>'
+          +'<input type="date" id="pfCycleStart" value="'+esc((!isNew&&p.cycleStart)||"")+'"></div>'
+      +'</div>'
+      +'<div class="row" style="margin-top:6px"><button class="btn" id="pfSave">'+esc(I18N.t("common.save"))+'</button>'
+      +'<button class="btn ghost" id="pfCancel">'+esc(I18N.t("common.cancel"))+'</button>'
+      +(isNew?'':'<button class="btn danger" id="pfDel">'+icon("trash")+esc(I18N.t("inj.pepDelete"))+'</button>')
+      +'</div></div>';
+  }
+  function bindPeptides(st){
+    // tapping a card selects it (and collapses it again on a second tap)
+    $all(".pepHead").forEach(function(b){ b.addEventListener("click",function(){
+      var id=b.getAttribute("data-id");
+      pepSel=(pepSel===id)?null:id;
+      injEdit=null; injSel=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
+      viewInject();
+    });});
+    if($("#pepAdd")) $("#pepAdd").addEventListener("click",function(){
+      pepEditId="new"; pepDraft={}; viewInject();
+    });
+    if($("#pepEdit")) $("#pepEdit").addEventListener("click",function(){
+      pepEditId=pepSel; pepDraft={}; viewInject();
+    });
+    $all(".pfCol").forEach(function(b){ b.addEventListener("click",function(){
+      pepDraft.color=b.getAttribute("data-c");
+      $all(".pfCol").forEach(function(x){ x.style.outline=""; x.style.outlineOffset=""; });
+      b.style.outline="2px solid var(--ink)"; b.style.outlineOffset="2px";
+    });});
+    if($("#pfCycleOn")) $("#pfCycleOn").addEventListener("change",function(){
+      var box=$("#pfCycle"); if(box) box.style.display=this.checked?"":"none";
+    });
+    if($("#pfCancel")) $("#pfCancel").addEventListener("click",function(){ pepEditId=null; pepDraft={}; viewInject(); });
+    if($("#pfSave")) $("#pfSave").addEventListener("click",function(){
+      var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
+      var name=String($("#pfName").value||"").trim().slice(0,60);
+      var cycOn=$("#pfCycleOn").checked, cs=$("#pfCycleStart").value||null;
+      var fields={ name:name || I18N.t("inj.pepEditTitle"),
+                   color:pepDraft.color || (isNew?nextPepColor(st):p.color),
+                   unit:$("#pfUnit").value||"mcg",
+                   intervalDays:parseEvery($("#pfEvery").value,1),
+                   // a cycle without a start date is no cycle at all (cycleProgress agrees)
+                   cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
+                   cycleStart:(cycOn&&cs)?cs:null };
+      if(isNew){
+        if(!st.inj.peptides) st.inj.peptides=[];
+        var np=Object.assign({ id:"pep_"+uid(), archived:false }, fields);
+        st.inj.peptides.push(np); pepSel=np.id;
+      } else { Object.assign(p, fields); }
+      pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); viewInject();
+    });
+    if($("#pfDel")) $("#pfDel").addEventListener("click",function(){
+      var p=peptideById(st, pepEditId); if(!p) return;
+      var n=(st.injLog||[]).filter(function(e){ return e.substance===p.id; }).length;
+      if(!confirm(I18N.t("inj.pepConfirmDel"))) return;
+      // shots stay in the history, so the record is archived rather than dropped —
+      // otherwise those rows would lose their name and colour
+      if(n) p.archived=true;
+      else st.inj.peptides=st.inj.peptides.filter(function(x){ return x.id!==p.id; });
+      if(pepSel===p.id) pepSel=null;
+      pepEditId=null; pepDraft={}; STORE.save(); viewInject();
+    });
+  }
+  function nextPepColor(st){
+    var used={};
+    peptideList(st, true).forEach(function(p){ used[p.color]=true; });
+    for(var i=0;i<PEP_COLORS.length;i++){ if(!used[PEP_COLORS[i]]) return PEP_COLORS[i]; }
+    return PEP_COLORS[peptideList(st,true).length % PEP_COLORS.length];
+  }
 
   // Compact substance-coloured dose pills (MJ/TRT) in effect on a given date,
   // shared by the BP and weight histories. Each pill ends with the therapy
@@ -3411,7 +3587,7 @@ var UI = (function(){
   function nowDosePill(st, sub, todayISOstr){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
-    return dosePill("", doseTxt(ld.dose, ld.unit, ld.every), SUBSTANCE_COLORS[sub]||"#94a3b8", w, doseWeekAsOf(st,sub,todayISOstr));
+    return dosePill("", doseTxt(ld.dose, ld.unit, ld.every), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
   }
   // week on the current dose, only when the setting is on
   function doseWeekAsOf(st, sub, dISO){
@@ -3490,9 +3666,9 @@ var UI = (function(){
       +'<title>'+esc(I18N.t("inj.navel"))+' · 5 cm</title></g>';
     // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge
     recent.forEach(function(r){
-      var p=cmToSvg(r.pos), c=SUBSTANCE_COLORS[r.substance]||"#94a3b8";
+      var p=cmToSvg(r.pos), c=substColor(st, r.substance);
       var op=Math.max(0.35, 1-(r.ageDays/14)*0.65);
-      var tip=(r.ts?fmtDateTime(r.ts):r.date)+" · "+I18N.t("inj.seg."+r.substance)
+      var tip=(r.ts?fmtDateTime(r.ts):r.date)+" · "+substLabel(st, r.substance)
         +(r.dose!=null?" · "+r.dose+" "+(r.unit||""):"")
         +(r.sandbag?" · "+I18N.t("inj.sandbag"):"");
       svg+='<g opacity="'+op.toFixed(2)+'">'
@@ -3519,10 +3695,14 @@ var UI = (function(){
         +'</g>';
     }
     svg+='</svg>';
+    // one swatch per substance actually on the map, so the row cannot grow
+    // unbounded as peptides are added
+    var legSubs=[], legSeen={};
+    recent.forEach(function(r){ if(!legSeen[r.substance]){ legSeen[r.substance]=true; legSubs.push(r.substance); } });
     var leg='<div class="maplegend">'
-      +'<span><i style="background:'+SUBSTANCE_COLORS.mounjaro+'"></i>Mounjaro</span>'
-      +'<span><i style="background:'+SUBSTANCE_COLORS.trt+'"></i>TRT</span>'
-      +'<span><i style="background:'+SUBSTANCE_COLORS.peptide+'"></i>'+esc(I18N.t("inj.seg.peptide"))+'</span>'
+      +legSubs.map(function(sub){
+         return '<span><i style="background:'+substColor(st,sub)+'"></i>'+esc(substLabel(st,sub))+'</span>';
+       }).join("")
       +'<span><i style="background:transparent;border:1.5px dashed #dc2626"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
       +(sug?'<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.suggested"))+'</span>':'')
       +'</div>';
@@ -3587,7 +3767,10 @@ var UI = (function(){
     return I18N.t("inj.nextIn")+" "+fmtCountdown(cd);
   }
 
-  var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
+  var injSeg="mounjaro", injSel=null, injEdit=null;
+  var pepSel=null;      // peptide the form/history act on (null = only the card list)
+  var pepEditId=null;   // null | peptide id | "new" — the peptide config form
+  var pepDraft={};      // colour/unit picks that must survive a re-render  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
   var injPage=0;  // history page (5 rows each)
   var injDraft={dose:"",name:"",when:"",sandbag:null}; // preserves typed dose/blend/time/flag across the site-pick re-render (sandbag null = untouched)
   /* ---- Mounjaro pen tracker: clicks + insulin-syringe golden dose ---- */
@@ -3777,10 +3960,18 @@ var UI = (function(){
         injSeg="mounjaro";
       } else {
         for(var ei=0;ei<st.injLog.length;ei++){ if(st.injLog[ei].id===injEdit){ editing=st.injLog[ei]; break; } }
-        if(editing) injSeg=editing.substance; else injEdit=null;
+        if(editing){
+          // a peptide id is not a segment: keep the switch valid and open that card
+          if(peptideById(st, editing.substance)){ injSeg="peptide"; pepSel=editing.substance; }
+          else injSeg=editing.substance;
+        } else injEdit=null;
       }
     }
-    var color=SUBSTANCE_COLORS[injSeg];
+    // Everything below (form, history, save) acts on ONE substance. For peptides
+    // that is the selected card, so `sub` is null until one is picked.
+    if(injSeg==="peptide" && pepSel && !peptideById(st, pepSel)) pepSel=null;
+    var sub = injSeg==="peptide" ? pepSel : injSeg;
+    var color = sub ? substColor(st, sub) : SUBSTANCE_COLORS.peptide;
 
     var html='<h1 class="page">'+esc(I18N.t("inj.title"))+'</h1>';
     html+='<div class="seg" data-seg>'
@@ -3822,27 +4013,33 @@ var UI = (function(){
         +'</div>'
         +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
     } else {
-      var cfg=st.inj.peptide, cp=DOMAIN.cycleProgress(cfg, today);
-      if(cp){
-        html+=progressBar(cp.frac, color, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total, (cp.total-cp.dayN)+" "+I18N.t("inj.daysShort"));
-      } else { html+='<div class="note">'+esc(I18N.t("inj.cycleNone"))+'</div>'; }
-      html+='<div class="grid g2">'
-        +'<div class="field"><label>'+esc(I18N.t("inj.cycleLen"))+'</label><input type="number" inputmode="numeric" id="pepLen" min="1" value="'+(cfg.cycleDays||56)+'"></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.cycleStart"))+'</label><input type="date" id="pepStart" value="'+(cfg.cycleStart||"")+'"></div>'
-        +'</div>';
+      // one card per peptide; tapping one selects it for the form below
+      var peps=peptideList(st);
+      if(peps.length){
+        html+='<div class="peplist">'+peps.map(function(pp){ return pepCardHTML(st, pp); }).join("")+'</div>';
+      } else if(!pepEditId){
+        html+='<div class="empty">'+esc(I18N.t("inj.pepNone"))+'</div>';
+      }
+      if(!pepEditId){
+        html+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="pepAdd" style="width:100%">+ '
+          +esc(I18N.t("inj.pepAdd"))+'</button></div>';
+      }
     }
 
-    // ---- dose (+ peptide blend) + body map + log/update ----
+    html+='</div>';                    // close the rhythm card
+    if(pepEditId) html+=pepFormHTML(st);
+    // The logging form and history act on one substance. With the peptide
+    // settings open, or no peptide picked yet, the card list is the whole screen.
+    var showForm = !pepEditId && !!sub;
+    if(showForm){
+    html+='<div class="card">';
+    // ---- dose + body map + log/update ----
     if(editing) html+='<div class="note" style="margin-bottom:10px">'+esc(I18N.t("inj.editing"))+'</div>';
-    if(injSeg==="peptide"){
-      var pepName=editing?(editing.name||""):(injDraft.name||st.inj.peptide.name||"");
-      html+='<div class="field"><label>'+esc(I18N.t("inj.pepName"))+'</label>'
-        +'<input type="text" id="injName" maxlength="60" value="'+esc(pepName)+'" placeholder="'+esc(I18N.t("inj.pepNamePh"))+'"></div>';
-    }
-    var unit=(injSeg==="peptide")?I18N.t("inj.unitsUnit"):I18N.t("inj.mgUnit");
-    var dosePh=(injSeg==="mounjaro"&&st.calc.strengthMg!=null)?st.calc.strengthMg:(injSeg==="peptide"?"10":"");
+    var pepCur=peptideById(st, sub);
+    var unit=pepCur?pepCur.unit:(sub==="peptide"?I18N.t("inj.unitsUnit"):I18N.t("inj.mgUnit"));
+    var dosePh=(sub==="mounjaro"&&st.calc.strengthMg!=null)?st.calc.strengthMg:(pepCur?"":"");
     // default the dose to the previous shot of this substance for one-tap logging
-    var lastD=DOMAIN.lastDoseAsOf(st, injSeg);
+    var lastD=DOMAIN.lastDoseAsOf(st, sub);
     var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||(lastD?lastD.dose:""));
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
       +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
@@ -3868,6 +4065,7 @@ var UI = (function(){
     }
     html+='<div class="row" style="margin-top:10px"><button class="btn" id="injLog">'+esc(editing?I18N.t("inj.update"):I18N.t("inj.logBtn"))+'</button>';
     if(editing) html+='<button class="btn ghost" id="injCancel">'+esc(I18N.t("inj.cancel"))+'</button>';
+    if(pepCur) html+='<button class="btn ghost" id="pepEdit">'+esc(I18N.t("inj.pepEdit"))+'</button>';
     html+='</div>';
     // twin-tab link: from injections, jump to the daily symptom diary
     html+='<div class="rellinks" style="margin-top:12px"><a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div>';
@@ -3878,7 +4076,7 @@ var UI = (function(){
 
     // ---- history for this substance (editable) ----
     // Mounjaro: union of injLog entries and legacy jab.history dates (which predate injLog).
-    var hlist=DOMAIN.visibleInjLog(st).filter(function(e){return e.substance===injSeg;}).slice();
+    var hlist=DOMAIN.visibleInjLog(st).filter(function(e){return e.substance===sub;}).slice();
     if(injSeg==="mounjaro"){
       var haveDate={}; hlist.forEach(function(e){ haveDate[e.date]=true; });
       (st.jab.history||[]).forEach(function(d){
@@ -3899,7 +4097,7 @@ var UI = (function(){
           +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
-            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:null), SUBSTANCE_COLORS[e.substance]||"#94a3b8",
+            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:null), substColor(st, e.substance),
                 DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             : "—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
@@ -3908,6 +4106,7 @@ var UI = (function(){
       html+='</tbody></table></div>'+pagerHTML("injPg", injPage, hlist.length)+'</div>';
     }
 
+    }   // end showForm
     app.innerHTML=html;
 
     function captureDraft(){
@@ -3918,7 +4117,8 @@ var UI = (function(){
     }
     // segment switch
     $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
-      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject();
+      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; pepSel=null; pepEditId=null;
+      injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject();
     });});
     bindPager("injPg", function(){return injPage;}, function(v){injPage=v;}, viewInject);
     // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
@@ -4018,10 +4218,9 @@ var UI = (function(){
       hits.forEach(function(e){ e.every=bev; });
       STORE.save(); toast(I18N.t("inj.backfillDone")+" "+hits.length); viewInject();
     });
-    if($("#pepLen")) $("#pepLen").addEventListener("change",function(){ st.inj.peptide.cycleDays=Math.max(1,parseInt(this.value,10)||56); STORE.save(); viewInject(); });
-    if($("#pepStart")) $("#pepStart").addEventListener("change",function(){ st.inj.peptide.cycleStart=this.value||null; STORE.save(); viewInject(); });
+    bindPeptides(st);
     // log / update
-    $("#injLog").addEventListener("click",function(){
+    if($("#injLog")) $("#injLog").addEventListener("click",function(){
       // spot: a user-picked point wins; otherwise an edited entry keeps its
       // stored spot untouched; a brand-new entry takes the suggested clear spot
       var pos=null, site=null;
@@ -4038,7 +4237,6 @@ var UI = (function(){
       // sandbag flag: only when the checkbox is rendered (TRT + setting on);
       // null leaves an edited entry's stored flag untouched
       var sb=$("#injSandbag")?$("#injSandbag").checked:null;
-      if(injSeg==="peptide") st.inj.peptide.name=name||"";   // remember last blend
       var mjDate;
       if(editing && editing.jabOnly){
         // materialise the legacy date into a real injLog entry (keep its original day)
@@ -4049,21 +4247,21 @@ var UI = (function(){
       } else if(editing){
         editing.dose=dose; editing.ts=ts; editing.date=dateStr;
         if(injSel){ editing.site=site; editing.pos=pos; }  // spot only changes when re-picked
-        if(injSeg==="peptide") editing.name=name||"";
         if(sb!==null){ if(sb) editing.sandbag=true; else delete editing.sandbag; }
         // interval backfill: re-saving a pre-stamping TRT entry adopts the
         // current interval; an already-stamped entry keeps its historical one
         if(injSeg==="trt" && editing.every==null) editing.every=parseEvery(st.inj.trt.intervalDays,3);
         if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
-        var unitCode=(injSeg==="peptide")?"j":"mg";
-        var entry={ id:uid(), ts:ts, date:dateStr, substance:injSeg, dose:dose, unit:unitCode, site:site };
+        var pepE=peptideById(st, sub);
+        var unitCode=pepE?(pepE.unit||"j"):"mg";
+        var entry={ id:uid(), ts:ts, date:dateStr, substance:sub, dose:dose, unit:unitCode, site:site };
         if(pos) entry.pos=pos;
         // TRT dosage = mg per shot + interval; snapshot the interval so a
         // schedule change (e.g. every 2 days -> daily) reads as a dose change
         if(injSeg==="trt") entry.every=parseEvery(st.inj.trt.intervalDays,3);
         if(sb) entry.sandbag=true;
-        if(injSeg==="peptide" && name) entry.name=name;
+        if(pepE) entry.every=parseEvery(pepE.intervalDays,1);
         // The tracker position derives from jab.history, so logging (and
         // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
         // a day — one new dose — is stamped with the planned breakdown so
@@ -4142,9 +4340,21 @@ var UI = (function(){
     if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today)); }
     else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today)); }
     // Peptide cycle
-    var cp=DOMAIN.cycleProgress(st.inj.peptide, today);
-    if(cp){ html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, cp.frac, I18N.t("inj.cycleDay")+" "+cp.dayN+"/"+cp.total, nowDosePill(st,"peptide",today)); }
-    else { html+=rhythmRow(I18N.t("inj.seg.peptide"), SUBSTANCE_COLORS.peptide, 0, I18N.t("inj.cycleNone"), nowDosePill(st,"peptide",today)); }
+    // Peptides: only those actually being injected, soonest first, capped at three
+    // — one row per peptide would push Mounjaro and TRT off the fold.
+    var pepRows=[];
+    peptideList(st).forEach(function(pp){
+      var cd=DOMAIN.doseCountdown(lastInjTs(st,pp.id), parseEvery(pp.intervalDays,1), Date.now());
+      if(cd) pepRows.push({ p:pp, cd:cd });
+    });
+    pepRows.sort(function(a,b){ return a.cd.remainingMs-b.cd.remainingMs; });
+    pepRows.slice(0,3).forEach(function(x){
+      html+=rhythmRow(x.p.name, substColor(st,x.p.id), x.cd.overdue?1:x.cd.frac,
+                      countdownText(x.cd), nowDosePill(st,x.p.id,today));
+    });
+    if(pepRows.length>3){
+      html+='<div class="muted tiny" style="margin:-4px 0 6px">+'+(pepRows.length-3)+'</div>';
+    }
     html+='</div>';
 
     // --- latest readings: BP, weight + delta, BMI --- (each dated: values come from different days)
@@ -4208,9 +4418,9 @@ var UI = (function(){
     (st.metrics||[]).filter(function(m){return !m.archived;}).forEach(function(m){
       opts.push({ id:"metric:"+m.id, label:m.name });
     });
-    ["mounjaro","trt","peptide"].forEach(function(k){
+    ["mounjaro","trt"].concat(peptideList(st,true).map(function(p){ return p.id; })).forEach(function(k){
       if(DOMAIN.visibleInjLog(st).some(function(e){return e.substance===k && e.dose!=null;}))
-        opts.push({ id:"inj:"+k, label:I18N.t("inj.seg."+k)+" "+I18N.t("corr.injDose") });
+        opts.push({ id:"inj:"+k, label:substLabel(st,k)+" "+I18N.t("corr.injDose") });
     });
     if((st.bp&&st.bp.log&&st.bp.log.length)){
       opts.push({ id:"vital:sys", label:I18N.t("corr.vital.sys") });
