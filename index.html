@@ -1589,14 +1589,21 @@ var DOMAIN = (function(){
     return { dayN:Math.min(dayN,total), total:total, frac:Math.max(0,Math.min(1,dayN/total)), done:done };
   }
 
-  // TRT interval progress: how the bar fills from one shot to the next.
-  function intervalProgress(lastDate, intervalDays, todayISOstr){
-    if(!lastDate) return null;
-    var every=Math.max(1, intervalDays||3);
-    var elapsed=Math.round((new Date(todayISOstr+"T12:00:00")-new Date(lastDate+"T12:00:00"))/86400000);
-    var remaining=every-elapsed;
-    return { remaining:remaining, every:every, elapsed:elapsed,
-             frac:Math.max(0,Math.min(1, elapsed/every)) };
+  // Dosing countdown from one shot to the next. The interval may be fractional
+  // (3.5 = every 84 h), so this works on millisecond timestamps rather than on
+  // dates: 3.5 days always means 84 elapsed hours, DST week included. days/hours
+  // split the remaining (or overdue) span the way a countdown reads it — floored,
+  // so "1 day 8 h" holds until the hour actually turns over.
+  function doseCountdown(lastMs, everyDays, nowMs){
+    if(lastMs==null || !everyDays) return null;
+    var every=Math.max(0.5, everyDays), span=every*86400000;
+    var elapsed=nowMs-lastMs, remainingMs=span-elapsed, abs=Math.abs(remainingMs);
+    return { remainingMs:remainingMs, everyDays:every, elapsed:elapsed,
+             frac:Math.max(0,Math.min(1, elapsed/span)),
+             overdue:remainingMs<0,
+             days:Math.floor(abs/86400000),
+             hours:Math.floor((abs%86400000)/3600000),
+             nextMs:lastMs+span };
   }
 
   return {
@@ -1607,7 +1614,7 @@ var DOMAIN = (function(){
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
     healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
-    seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, intervalProgress:intervalProgress,
+    seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, doseCountdown:doseCountdown,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, weightWindowStats:weightWindowStats,

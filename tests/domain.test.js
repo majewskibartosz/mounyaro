@@ -350,3 +350,77 @@ test("weightWindowStats: change runs oldest to newest regardless of input order"
   assert.strictEqual(DOMAIN.weightWindowStats([wEntry("2026-08-07", 90)]).change, 0);
   assert.strictEqual(DOMAIN.weightWindowStats([]), null);
 });
+
+// ---- fractional dosing intervals ----
+
+var SAT_8AM = Date.parse("2026-08-01T08:00:00.000Z");   // reference shot
+var H = 3600000, D = 86400000;
+
+test("doseCountdown: 3.5 days lands 84 h later, not on the next whole day", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM);
+  assert.strictEqual(cd.nextMs, SAT_8AM + 84 * H);
+  assert.strictEqual(new Date(cd.nextMs).toISOString(), "2026-08-04T20:00:00.000Z");  // Tue 20:00
+  assert.strictEqual(cd.everyDays, 3.5);
+  assert.strictEqual(cd.days, 3);
+  assert.strictEqual(cd.hours, 12);
+  assert.strictEqual(cd.overdue, false);
+  assert.strictEqual(cd.frac, 0);
+});
+
+test("doseCountdown: exactly due reads zero remaining, full ring, not overdue", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 84 * H);
+  assert.strictEqual(cd.remainingMs, 0);
+  assert.strictEqual(cd.frac, 1);
+  assert.strictEqual(cd.overdue, false);
+  assert.strictEqual(cd.days, 0);
+  assert.strictEqual(cd.hours, 0);
+});
+
+test("doseCountdown: sub-day precision survives — 12 h before due", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 72 * H);
+  assert.strictEqual(cd.days, 0);
+  assert.strictEqual(cd.hours, 12);
+  assert.strictEqual(cd.overdue, false);
+});
+
+test("doseCountdown: overdue splits into days and hours and clamps the ring", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 114 * H);   // 30 h past due
+  assert.strictEqual(cd.overdue, true);
+  assert.strictEqual(cd.days, 1);
+  assert.strictEqual(cd.hours, 6);
+  assert.strictEqual(cd.frac, 1);
+  assert.strictEqual(cd.remainingMs, -30 * H);
+});
+
+test("doseCountdown: hours floor so the label holds until the hour turns", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 84 * H - (7 * H + 59 * 60000));
+  assert.strictEqual(cd.days, 0);
+  assert.strictEqual(cd.hours, 7);
+});
+
+test("doseCountdown: whole-day intervals still behave as before", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 7, SAT_8AM + 5 * D);
+  assert.strictEqual(cd.days, 2);
+  assert.strictEqual(cd.hours, 0);
+  assert.strictEqual(cd.frac, 5 / 7);
+  assert.strictEqual(cd.nextMs, SAT_8AM + 7 * D);
+});
+
+test("doseCountdown: no last shot, or no interval, gives null", function () {
+  assert.strictEqual(DOMAIN.doseCountdown(null, 3.5, SAT_8AM), null);
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 0, SAT_8AM), null);
+});
+
+test("doseCountdown: intervals below half a day are floored to 0.5", function () {
+  var cd = DOMAIN.doseCountdown(SAT_8AM, 0.1, SAT_8AM);
+  assert.strictEqual(cd.everyDays, 0.5);
+  assert.strictEqual(cd.nextMs, SAT_8AM + 12 * H);
+});
+
+test("doseCountdown: 3.5 days stays 84 elapsed hours across a DST change", function () {
+  // 2026-03-27 12:00 UTC, three days before the EU spring-forward weekend
+  var before = Date.parse("2026-03-27T12:00:00.000Z");
+  var cd = DOMAIN.doseCountdown(before, 3.5, before);
+  assert.strictEqual(cd.nextMs - before, 84 * H);
+  assert.strictEqual(DOMAIN.doseCountdown(before, 3.5, before + 84 * H).remainingMs, 0);
+});
