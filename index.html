@@ -2147,6 +2147,141 @@ function nowLocalDT(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezo
 function toLocalDT(ts){ var d=new Date(ts); if(isNaN(d.getTime())) return nowLocalDT(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 // Shared line-icon set (Lucide-style) so buttons, links and nav stay consistent.
+/* =========================================================================
+   THEME — colour presets. A preset is an IDE-style palette (background, text,
+   line, plus a ramp of accents); buildTokens() maps that palette onto the app's
+   semantic roles the same way for every preset, so adding a theme means listing
+   colours, not rules.
+
+   Two consumers, one source: applyTheme() writes every token as a CSS custom
+   property (for the stylesheet) AND publishes the live map as PAL (for the JS).
+   PAL values are always 6-digit hex strings, because ~20 render sites build
+   translucent fills by concatenating a 2-digit alpha onto them (col+"22").
+   ========================================================================= */
+var PAL=null;
+var THEME=(function(){
+  function a(hex, aa){ return hex+aa; }   // 8-digit hex alpha
+
+  // ---- presets -----------------------------------------------------------
+  // Mounyaro Light/Dark reproduce the look the app shipped with before presets
+  // existed. The five IDE palettes come from the themes' own definitions.
+  var LIST=[
+    { id:"mounyaroLight", name:"Mounyaro Light", dark:false,
+      bg:"#f3f5f7", card:"#ffffff", soft:"#f6f8fa", input:"#ffffff",
+      ink:"#0f172a", muted:"#64748b", line:"#e2e8f0",
+      brand:"#0ea5a4", brandDk:"#0b827f", accent:"#6366f1",
+      good:"#16a34a", warn:"#f59e0b", bad:"#dc2626", info:"#0284c7",
+      warnbg:"#fff7ed", warnline:"#fed7aa", warnink:"#9a3412",
+      dangerBg:"#fee2e2", switchOff:"#cbd5e1", pillBg:"#94a3b8", sbInk:"#d97706",
+      shadow:"0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.05)",
+      sev:["#f59e0b","#f97316","#dc2626"],
+      state:["#dc2626","#f97316","#fbbf24","#84cc16","#16a34a"],
+      bmi:["#0284c7","#16a34a","#f59e0b","#f97316","#dc2626","#991b1b"],
+      ring:["#16a34a","#f59e0b","#dc2626"],
+      dose:["#0ea5a4","#f59e0b","#dc2626"],
+      series:{ weight:"#0ea5a4", waist:"#6366f1", sys:"#dc2626", dia:"#0284c7", pulse:"#94a3b8" },
+      chartGrid:"#e2e8f0", chartAxis:"#94a3b8",
+      ident:["#0ea5a4","#6366f1","#f59e0b","#38bdf8","#a78bfa","#fb7185","#34d399","#facc15","#f472b6","#22d3ee"] },
+
+    { id:"mounyaroDark", name:"Mounyaro Dark", dark:true,
+      bg:"#0b1220", card:"#16202e", soft:"#1c2838", input:"#1c2838",
+      ink:"#e8eef5", muted:"#94a3b8", line:"#2b3a4d",
+      brand:"#14b8b6", brandDk:"#5eead4", accent:"#818cf8",
+      good:"#22c55e", warn:"#f59e0b", bad:"#ef4444", info:"#38bdf8",
+      warnbg:"#3a2a14", warnline:"#7c5418", warnink:"#fbbf24",
+      pillBg:"#94a3b8", sbInk:"#fbbf24",
+      shadow:"0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3)",
+      sev:["#f59e0b","#f97316","#dc2626"], sevBand:["#fbbf24","#fb923c","#f87171"],
+      state:["#dc2626","#f97316","#fbbf24","#84cc16","#16a34a"],
+      bmi:["#0284c7","#16a34a","#f59e0b","#f97316","#dc2626","#991b1b"],
+      ring:["#16a34a","#f59e0b","#dc2626"],
+      dose:["#0ea5a4","#f59e0b","#dc2626"],
+      series:{ weight:"#0ea5a4", waist:"#818cf8", sys:"#dc2626", dia:"#0284c7", pulse:"#94a3b8" },
+      chartAxis:"#94a3b8",
+      ident:["#0ea5a4","#6366f1","#f59e0b","#38bdf8","#a78bfa","#fb7185","#34d399","#facc15","#f472b6","#22d3ee"] }
+  ];
+
+  var BY={}; LIST.forEach(function(t){ BY[t.id]=t; });
+  var LEGACY={ light:"mounyaroLight", dark:"mounyaroDark" };   // pre-preset settings.theme
+
+  // ---- palette -> tokens -------------------------------------------------
+  function pick(v, fb){ return v==null?fb:v; }
+  function buildTokens(p){
+    var d=!!p.dark, id=p.ident;
+    var sev=p.sev, band=pick(p.sevBand, sev);
+    var t={
+      id:p.id, name:p.name, dark:d,
+      bg:p.bg, card:p.card, soft:pick(p.soft,p.card), input:pick(p.input,p.soft),
+      headbg:a(p.bg,"eb"),
+      ink:p.ink, muted:p.muted, line:p.line,
+      brand:p.brand, brandDk:pick(p.brandDk,p.brand), accent:pick(p.accent,id[1]),
+      good:p.good, warn:p.warn, bad:p.bad, info:p.info,
+      // accents that also carry small text need their own legible variant
+      badInk:pick(p.badInk,p.bad), goodInk:pick(p.goodInk,p.good), warnInk2:pick(p.warnInk2,p.warn),
+      warnbg:pick(p.warnbg, a(p.warn,"1f")), warnline:pick(p.warnline, a(p.warn,"59")),
+      warnink:pick(p.warnink, d?p.warn:p.bad),
+      shadow:pick(p.shadow, d?"0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3)"
+                             :"0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.05)"),
+      dangerBg:pick(p.dangerBg, a(p.bad,"26")),
+      switchOff:pick(p.switchOff, d?p.line:"#cbd5e1"),
+      // the toast inverts the page so it reads on every preset
+      toastBg:pick(p.toastBg,p.ink), toastInk:pick(p.toastInk,p.bg),
+      pillBg:pick(p.pillBg,p.muted), sbInk:pick(p.sbInk,p.warn), sbBg:pick(p.sbBg,p.warn),
+      halo:pick(p.halo,p.card),
+      onBrand:pick(p.onBrand,"#ffffff"),
+      sev:sev, sevBand:band, sevOp:d?0.13:0.09, sevStroke:d?0.7:0.55,
+      state:p.state, bmi:p.bmi, ring:p.ring, dose:p.dose,
+      series:{ weight:pick(p.series.weight,p.brand), waist:p.series.waist,
+               sys:p.series.sys, dia:p.series.dia, pulse:p.series.pulse },
+      chartGrid:pick(p.chartGrid,p.line), chartAxis:pick(p.chartAxis,p.muted),
+      subst:{ mounjaro:id[0], trt:id[1], peptide:id[2] },
+      pep:id.slice(2),
+      fallback:p.muted
+    };
+    return t;
+  }
+
+  // ---- tokens -> CSS custom properties -----------------------------------
+  // Names mirror the token keys; nested groups flatten (series.sys -> --series-sys).
+  function cssVars(t){
+    var v={
+      "--bg":t.bg, "--card":t.card, "--soft":t.soft, "--input":t.input, "--headbg":t.headbg,
+      "--ink":t.ink, "--muted":t.muted, "--line":t.line,
+      "--brand":t.brand, "--brand-dk":t.brandDk, "--accent":t.accent,
+      "--good":t.goodInk, "--warn":t.warnInk2, "--bad":t.badInk, "--info":t.info,
+      "--warnbg":t.warnbg, "--warnline":t.warnline, "--warnink":t.warnink,
+      "--shadow":t.shadow,
+      "--danger-bg":t.dangerBg, "--switch-off":t.switchOff,
+      "--pill-bg":a(t.pillBg,"22"), "--sb-bg":a(t.sbBg,"2b"), "--sb-ink":t.sbInk,
+      "--on-brand":t.onBrand, "--halo":t.halo,
+      "--brand-t10":a(t.brand,"1a"), "--brand-t14":a(t.brand,"24"),
+      "--brand-t18":a(t.brand,"2e"), "--brand-t35":a(t.brand,"59"),
+      "--chart-grid":t.chartGrid, "--chart-axis":t.chartAxis,
+      "--subst-mounjaro":t.subst.mounjaro, "--subst-trt":t.subst.trt, "--subst-peptide":t.subst.peptide
+    };
+    ["weight","waist","sys","dia","pulse"].forEach(function(k){ v["--series-"+k]=t.series[k]; });
+    t.sev.forEach(function(c,i){ v["--sev-"+(i+1)]=c; });
+    t.state.forEach(function(c,i){ v["--state-"+(i+1)]=c; });
+    t.bmi.forEach(function(c,i){ v["--bmi-"+(i+1)]=c; });
+    t.pep.forEach(function(c,i){ v["--pep-"+(i+1)]=c; });
+    return v;
+  }
+
+  function resolve(idOrLegacy){
+    var id=LEGACY[idOrLegacy]||idOrLegacy;
+    return BY[id]||BY.mounyaroLight;
+  }
+  function apply(idOrLegacy){
+    var t=buildTokens(resolve(idOrLegacy));
+    var st=document.documentElement.style, v=cssVars(t), k;
+    for(k in v){ if(v.hasOwnProperty(k)) st.setProperty(k, v[k]); }
+    document.documentElement.setAttribute("data-theme", t.dark?"dark":"light");
+    PAL=t;
+    return t;
+  }
+  return { list:LIST, apply:apply, resolve:resolve, tokens:buildTokens, legacy:LEGACY };
+})();
+
 var ICONS={
   pulpit:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   inject:'<path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/>',
@@ -5513,10 +5648,10 @@ var UI = (function(){
     b.classList.add("hidden");
   }
   function applyTheme(){
-    var dark = STORE.state.settings.theme==="dark";
-    document.documentElement.setAttribute("data-theme", dark?"dark":"light");
-    var btn=$("#themeBtn"); if(btn) btn.textContent = dark?"☀️":"🌙";
-    var meta=document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute("content", dark?"#0b1220":"#0ea5a4");
+    var t=THEME.apply(STORE.state.settings.theme);
+    var btn=$("#themeBtn"); if(btn) btn.textContent = t.dark?"☀️":"🌙";
+    var meta=document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.setAttribute("content", t.dark?t.bg:t.brand);
   }
 
   // PWA install: capture the deferred prompt (Android/Chromium) and surface a
