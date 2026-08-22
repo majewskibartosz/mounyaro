@@ -418,6 +418,9 @@ var I18N = (function(){
     "inj.due":{pl:"termin dziś",en:"due today"},
     "inj.overdue":{pl:"po terminie",en:"overdue"},
     "inj.daysShort":{pl:"dni",en:"days"},
+    "inj.dayOne":{pl:"dzień",en:"day"},
+    "inj.hoursShort":{pl:"godz.",en:"h"},
+    "inj.dueNow":{pl:"termin teraz",en:"due now"},
     "inj.cycleLen":{pl:"Długość cyklu (dni)",en:"Cycle length (days)"},
     "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
     "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
@@ -3312,7 +3315,7 @@ var UI = (function(){
   // dose text with the injection interval when the entry carries one:
   // "25 mg/2d" = 25 mg per shot, every 2 days (language-neutral notation)
   function doseTxt(dose, unit, every){
-    return dose+" "+unit+(every!=null?"/"+every+"d":"");
+    return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"");
   }
   function dosePill(label, txt, color, week, doseWeek){
     return '<span class="pill dosepill" style="background:'+color+'22;color:'+color+'">'+(label?label+' ':'')+esc(txt)
@@ -3487,6 +3490,44 @@ var UI = (function(){
     var d=null;
     DOMAIN.visibleInjLog(st).forEach(function(e){ if(e.substance===substance && (!d || e.date>d)) d=e.date; });
     return d;
+  }
+  // Millisecond timestamp of the last shot, so a fractional interval can be
+  // counted from the actual injection time. Entries without a ts (and legacy
+  // jab.history dates) fall back to noon, the convention used everywhere else.
+  // A jab.history date is only considered when injLog has nothing that day —
+  // otherwise its noon would beat a real 08:00 shot and skew the countdown.
+  function lastInjTs(st, substance){
+    var best=null, seen={};
+    function consider(t){ if(!isNaN(t) && (best===null || t>best)) best=t; }
+    DOMAIN.visibleInjLog(st).forEach(function(e){
+      if(e.substance!==substance) return;
+      seen[e.date]=true;
+      consider(Date.parse(e.ts || (e.date+"T12:00:00")));
+    });
+    if(substance==="mounjaro" && st.jab && st.jab.history){
+      st.jab.history.forEach(function(d){ if(!seen[d]) consider(Date.parse(d+"T12:00:00")); });
+    }
+    return best;
+  }
+  // "1 dzień 8 godz." / "8 godz." — the hours half is kept whenever it is the
+  // only thing left, so a half-day interval never renders as a bare "0".
+  function fmtCountdown(cd){
+    var out=[];
+    if(cd.days>0) out.push(cd.days+" "+I18N.t(cd.days===1?"inj.dayOne":"inj.daysShort"));
+    if(cd.hours>0 || !out.length) out.push(cd.hours+" "+I18N.t("inj.hoursShort"));
+    return out.join(" ");
+  }
+  // Ring headline: days while a day or more is left, otherwise hours. The unit
+  // suffix keeps "8" from reading as 8 days.
+  function countdownBig(cd){
+    var sign=cd.overdue?"-":"";
+    return cd.days>0 ? sign+cd.days+"d" : sign+cd.hours+"h";
+  }
+  // Full caption: "następny za 1 dzień 8 godz." / "1 dzień 8 godz. po terminie"
+  function countdownText(cd){
+    if(cd.overdue) return fmtCountdown(cd)+" "+I18N.t("inj.overdue");
+    if(cd.remainingMs<3600000) return I18N.t("inj.dueNow");
+    return I18N.t("inj.nextIn")+" "+fmtCountdown(cd);
   }
 
   var injSeg="mounjaro", injSel=null, injEdit=null;  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
@@ -3695,25 +3736,19 @@ var UI = (function(){
 
     // ---- rhythm widget per substance ----
     if(injSeg==="mounjaro"){
-      var hist=(st.jab.history||[]).slice().sort(), last=hist.length?hist[hist.length-1]:null;
-      var every=Math.max(1, st.calc.intervalDays||7);
-      if(last){
-        var elapsed=daysBetweenISO(last,today), remaining=every-elapsed, frac=Math.max(0,Math.min(1,elapsed/every));
-        var big, sub;
-        if(remaining>0){ big=String(remaining); sub=I18N.t("jab.daysLeft"); }
-        else if(remaining===0){ big="0"; sub=I18N.t("jab.dueToday"); frac=1; }
-        else { big=String(remaining); sub=Math.abs(remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"); frac=1; }
-        html+=ringSVG(frac, big, sub);
+      var every=parseEvery(st.calc.intervalDays,7);
+      var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), every, Date.now());
+      if(mjCd){
+        html+=ringSVG(mjCd.overdue?1:mjCd.frac, countdownBig(mjCd), countdownText(mjCd));
       } else {
         html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
       }
       html+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
     } else if(injSeg==="trt"){
-      var iv=Math.max(1, st.inj.trt.intervalDays||3), lt=lastInjDate(st,"trt");
-      var ip=DOMAIN.intervalProgress(lt, iv, today);
+      var iv=parseEvery(st.inj.trt.intervalDays,3), lt=lastInjDate(st,"trt");
+      var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), iv, Date.now());
       if(ip){
-        var rl=ip.remaining>0?(I18N.t("inj.nextIn")+" "+ip.remaining+" "+I18N.t("inj.daysShort")):(ip.remaining===0?I18N.t("inj.due"):Math.abs(ip.remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
-        html+=progressBar(ip.frac, color, lt, rl);
+        html+=progressBar(ip.overdue?1:ip.frac, color, lt, countdownText(ip));
       } else { html+='<div class="empty">'+esc(I18N.t("inj.empty"))+'</div>'; }
       html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+iv+'"></div>';
       // retro-stamp a date range with its real interval: pre-stamping entries
@@ -4041,16 +4076,13 @@ var UI = (function(){
     // --- rhythm widgets ---
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.rhythm"))+'</h2>';
     // Mounjaro
-    var hist=(st.jab.history||[]).slice().sort(), last=hist.length?hist[hist.length-1]:null, every=Math.max(1,st.calc.intervalDays||7);
-    if(last){
-      var el=daysBetweenISO(last,today), rem=every-el, frac=Math.max(0,Math.min(1,el/every));
-      var r=rem>0?(I18N.t("inj.nextIn")+" "+rem+" "+I18N.t("inj.daysShort")):(rem===0?I18N.t("inj.due"):Math.abs(rem)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
-      html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, rem<=0?1:frac, r, nowDosePill(st,"mounjaro",today));
+    var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), parseEvery(st.calc.intervalDays,7), Date.now());
+    if(mjCd){
+      html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today));
     } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today)); }
     // TRT
-    var ltrt=lastInjDate(st,"trt"), ip=DOMAIN.intervalProgress(ltrt, st.inj.trt.intervalDays, today);
-    if(ip){ var rt=ip.remaining>0?(I18N.t("inj.nextIn")+" "+ip.remaining+" "+I18N.t("inj.daysShort")):(ip.remaining===0?I18N.t("inj.due"):Math.abs(ip.remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
-      html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.frac, rt, nowDosePill(st,"trt",today)); }
+    var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now());
+    if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today)); }
     else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today)); }
     // Peptide cycle
     var cp=DOMAIN.cycleProgress(st.inj.peptide, today);
