@@ -2408,7 +2408,7 @@ var UI = (function(){
     return m<0.5 ? lerpRGB(GREEN_RGB,AMBER_RGB,m/0.5)
                  : lerpRGB(AMBER_RGB,RED_RGB,(m-0.5)/0.5);
   }
-  function ringSVG(frac, big, sub){
+  function ringSVG(frac, big, sub, foot){
     frac=Math.max(0,Math.min(1,frac));
     // Hot colour tracks frac directly so the cap is a live progress readout:
     // it shifts a little every day (green -> amber -> red), never flat-green.
@@ -2435,6 +2435,7 @@ var UI = (function(){
       +'<text x="100" y="98" text-anchor="middle" font-size="46" font-weight="800" fill="'+hotCss+'" '
         +'style="transition:fill .8s ease">'+esc(big)+'</text>'
       +'<text x="100" y="126" text-anchor="middle" font-size="12" fill="var(--muted)">'+esc(sub)+'</text>'
+      +(foot?'<text x="100" y="145" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)" opacity="0.8">'+esc(foot)+'</text>':'')
       +'</svg>';
   }
   function viewJab(){
@@ -3520,13 +3521,23 @@ var UI = (function(){
   // Ring headline: days while a day or more is left, otherwise hours. The unit
   // suffix keeps "8" from reading as 8 days.
   function countdownBig(cd){
+    if(cd.days===0 && cd.hours===0) return "0h";
     var sign=cd.overdue?"-":"";
     return cd.days>0 ? sign+cd.days+"d" : sign+cd.hours+"h";
   }
+  // Exact moment of the next shot, e.g. "czw. 18:45". Beyond a week the weekday
+  // alone no longer pins the day, so the date joins it.
+  function fmtNextShot(ms){
+    if(ms==null || isNaN(ms)) return "";
+    var loc=I18N.lang==="en"?"en-GB":"pl-PL", d=new Date(ms), out="";
+    try{ out=d.toLocaleDateString(loc,{weekday:"short"}); }catch(e){ out=""; }
+    if(Math.abs(ms-Date.now())>7*86400000) out=d.getDate()+"."+(d.getMonth()+1)+",";
+    return (out?out+" ":"")+fmtTime(ms);
+  }
   // Full caption: "następny za 1 dzień 8 godz." / "1 dzień 8 godz. po terminie"
   function countdownText(cd){
+    if(Math.abs(cd.remainingMs)<3600000) return I18N.t("inj.dueNow");
     if(cd.overdue) return fmtCountdown(cd)+" "+I18N.t("inj.overdue");
-    if(cd.remainingMs<3600000) return I18N.t("inj.dueNow");
     return I18N.t("inj.nextIn")+" "+fmtCountdown(cd);
   }
 
@@ -3739,7 +3750,7 @@ var UI = (function(){
       var every=parseEvery(st.calc.intervalDays,7);
       var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), every, Date.now());
       if(mjCd){
-        html+=ringSVG(mjCd.overdue?1:mjCd.frac, countdownBig(mjCd), countdownText(mjCd));
+        html+=ringSVG(mjCd.overdue?1:mjCd.frac, countdownBig(mjCd), countdownText(mjCd), fmtNextShot(mjCd.nextMs));
       } else {
         html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
       }
