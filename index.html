@@ -217,8 +217,9 @@
   .pepbig{display:block;font-weight:800;font-size:15px;color:var(--c);font-variant-numeric:tabular-nums}
   .pep.late .pepbig{color:var(--bad)}
   .pepwhen{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-  .pepbar{height:3px;background:var(--soft)}
-  .pepbar>span{display:block;height:100%;background:var(--c)}
+  .wbar.flush{height:12px;border:0;border-radius:0;margin:0}
+  .wbar.flush>span{border-radius:0}
+  .pep .wbar>span{background:var(--c)}
   /* theme picker: each tile previews its own preset, not the active one */
   .themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}
   .themecard{display:block;width:100%;text-align:left;cursor:pointer;padding:9px;
@@ -236,8 +237,24 @@
   .pfCol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
   /* progress bar (TRT cadence / peptide cycle) */
-  .pbar{height:14px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden;margin:6px 0}
-  .pbar>span{display:block;height:100%;border-radius:999px;transition:width .3s}
+  /* One progress bar for every substance. The fill is a solid colour masked into
+     a wave: the colour stays an ordinary CSS property and one static mask is
+     shared by every bar — no per-bar SVG, and because the mask is sized in px the
+     wave keeps its period at any width instead of stretching with the container.
+     Where mask is unsupported the fill renders solid, i.e. exactly as before. */
+  :root{--wave:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='12' viewBox='0 0 26 12'%3E%3Cpath d='M0 6q3.25-3.6 6.5 0t6.5 0t6.5 0t6.5 0' fill='none' stroke='%23000' stroke-width='4.2' stroke-linecap='round'/%3E%3C/svg%3E")}
+  .wbar{height:18px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden;margin:6px 0}
+  .wbar>span{display:block;height:100%;border-radius:999px;transition:width .3s;
+    -webkit-mask:var(--wave) repeat-x left center/26px 100%;
+            mask:var(--wave) repeat-x left center/26px 100%;
+    animation:wbarflow 3.2s linear infinite}
+  /* a full bar has nothing left to run down */
+  .wbar>span.late{animation:none}
+  @keyframes wbarflow{
+    from{-webkit-mask-position:0 center; mask-position:0 center}
+    to  {-webkit-mask-position:-26px center; mask-position:-26px center}
+  }
+  @media(prefers-reduced-motion:reduce){ .wbar>span{animation:none} }
   .pbwrap .pblabels{display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:2px}
   /* body map */
   .bodymap{max-width:280px;margin:6px auto 2px;display:block}
@@ -3857,7 +3874,7 @@ var UI = (function(){
         +'<span class="pepdue"><span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span>'
         +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>'
       +'</button>'
-      +'<div class="pepbar"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
+      +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
   }
   var PEP_UNITS=["mcg","mg","j","IU"];
@@ -4299,7 +4316,7 @@ var UI = (function(){
   }
   function progressBar(frac, color, leftLabel, rightLabel){
     frac=Math.max(0,Math.min(1,frac||0));
-    return '<div class="pbwrap"><div class="pbar"><span style="width:'+(frac*100).toFixed(1)+'%;background:'+color+'"></span></div>'
+    return '<div class="pbwrap"><div class="wbar"><span class="'+(frac>=1?"late":"")+'" style="width:'+(frac*100).toFixed(1)+'%;background:'+color+'"></span></div>'
       +'<div class="pblabels"><span>'+esc(leftLabel||"")+'</span><span>'+esc(rightLabel||"")+'</span></div></div>';
   }
   function lastInjDate(st, substance){
