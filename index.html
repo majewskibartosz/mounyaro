@@ -593,6 +593,8 @@ var I18N = (function(){
     "common.dayLetter":{pl:"d",en:"d"},
     "set.mjTab":{pl:"Zakładka Mounjaro",en:"Mounjaro tab"},
     "set.mjTabSub":{pl:"Kalkulator kliknięć, licznik penów i plan dawek. Wyłączenie tylko je ukrywa — dane i historia zostają, a wkłucia widzisz dalej na karcie Tirzepatyd.",en:"Clicks calculator, pen tracker and dose plan. Switching it off only hides them — the data stays, and the shots remain on the Tirzepatyd card."},
+    "set.doseBackfill":{pl:"Uzupełnianie dawkowania w historii",en:"Backfill dosing in history"},
+    "set.doseBackfillSub":{pl:"Narzędzie do jednorazowej naprawy starych wpisów TRT bez zapisanego „co ile dni”. Włącz, gdy go potrzebujesz — pojawi się w Zastrzykach pod TRT.",en:"A one-off repair tool for old TRT entries with no “every how many days” saved. Switch it on when you need it — it appears under TRT in Injections."},
     "set.doseWeeks":{pl:"Tydzień na obecnej dawce w pigułkach (d)",en:"Week on the current dose in pills (d)"},
     "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji. Przy TRT zmiana częstotliwości zastrzyków (co ile dni) liczy się jak zmiana dawki i zeruje licznik d.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating. For TRT a change of injection frequency (every how many days) counts as a dose change and resets the d counter."},
     "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
@@ -1786,7 +1788,7 @@ var STORE = (function(){
   function defaults(){
     return {
       schemaVersion:1,
-      settings:{ lang:"pl", theme:"light", lastDark:"mounyaroDark", currency:"PLN", showDoseWeeks:true, showMounjaroTab:true, goldenDose:{enabled:false, extraClicks:8},
+      settings:{ lang:"pl", theme:"light", lastDark:"mounyaroDark", currency:"PLN", showDoseWeeks:true, showMounjaroTab:true, showDoseBackfill:false, goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" },
@@ -4579,16 +4581,20 @@ var UI = (function(){
       // retro-stamp a date range with its real interval: pre-stamping entries
       // show a bare dose, and the d counter can only reset where the data says
       // the schedule changed. Overwrites, so a wrong stamp can be re-applied.
-      // Auto-expanded while any dosed TRT entry still lacks an interval.
-      var bfPending=(st.injLog||[]).some(function(e){ return e && e.substance==="trt" && e.dose!=null && e.every==null; });
-      html+='<details class="note" style="margin-top:10px"'+(bfPending?' open':'')+'><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
-        +'<p class="sub">'+esc(I18N.t("inj.backfillSub"))+'</p>'
-        +'<div class="grid g3">'
-        +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.backfillTo"))+'</label><input type="date" id="bfTo"></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="bfEvery" min="0.5" step="0.5" value="'+iv+'"></div>'
-        +'</div>'
-        +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
+      // Off unless switched on in settings: it is a one-off repair of old entries,
+      // and it was taking up half the screen on every visit to this form. Still
+      // auto-expands, once shown, while a dosed TRT entry lacks an interval.
+      if(st.settings.showDoseBackfill){
+        var bfPending=(st.injLog||[]).some(function(e){ return e && e.substance==="trt" && e.dose!=null && e.every==null; });
+        html+='<details class="note" style="margin-top:10px"'+(bfPending?' open':'')+'><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
+          +'<p class="sub">'+esc(I18N.t("inj.backfillSub"))+'</p>'
+          +'<div class="grid g3">'
+          +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
+          +'<div class="field"><label>'+esc(I18N.t("inj.backfillTo"))+'</label><input type="date" id="bfTo"></div>'
+          +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="bfEvery" min="0.5" step="0.5" value="'+iv+'"></div>'
+          +'</div>'
+          +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
+      }
     } else {
       // one card per peptide; tapping one selects it for the form below
       var peps=peptideList(st);
@@ -5657,6 +5663,8 @@ var UI = (function(){
     +'<label class="toggle"><input type="checkbox" id="setMjTab"'+(st.settings.showMounjaroTab!==false?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.mjTab"))+'</span></label>'
     +'<p class="tiny muted" style="margin:-4px 0 12px">'+esc(I18N.t("set.mjTabSub"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setDoseWeeks"'+(st.settings.showDoseWeeks?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.doseWeeks"))+'</span></label>'
+    +'<p class="tiny muted" style="margin:12px 0 4px">'+esc(I18N.t("set.doseBackfillSub"))+'</p>'
+    +'<label class="toggle"><input type="checkbox" id="setDoseBf"'+(st.settings.showDoseBackfill?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.doseBackfill"))+'</span></label>'
     +'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.sandbagging"))+'</h2><p class="sub">'+esc(I18N.t("set.sandbaggingSub"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setSandbag"'+(st.settings.sandbagging?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.sandbagging"))+'</span></label>'
@@ -5690,6 +5698,7 @@ var UI = (function(){
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
     $("#setMjTab").addEventListener("change",function(){ st.settings.showMounjaroTab=this.checked; STORE.save(); render(); });
     $("#setDoseWeeks").addEventListener("change",function(){ st.settings.showDoseWeeks=this.checked; STORE.save(); });
+    $("#setDoseBf").addEventListener("change",function(){ st.settings.showDoseBackfill=this.checked; STORE.save(); });
     // repaint immediately: flipping this hides/reveals sandbagged injections everywhere
     $("#setSandbag").addEventListener("change",function(){ st.settings.sandbagging=this.checked; STORE.save(); render(); });
     // Pen-costs card: Home (settings.penCosts) vs Destination (settings.travel.penCosts + currency)
