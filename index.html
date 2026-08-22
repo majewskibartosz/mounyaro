@@ -220,6 +220,9 @@
   .wbar.flush{height:12px;border:0;border-radius:0;margin:0}
   .wbar.flush>span{border-radius:0}
   .pep .wbar>span{background:var(--c)}
+  /* past due: full, alarm-coloured and still, so it reads differently from
+     "nearly there" without reading the caption */
+  .pep.late .wbar>span{background:var(--bad);animation:none}
   /* theme picker: each tile previews its own preset, not the active one */
   .themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}
   .themecard{display:block;width:100%;text-align:left;cursor:pointer;padding:9px;
@@ -4316,7 +4319,8 @@ var UI = (function(){
   }
   function progressBar(frac, color, leftLabel, rightLabel){
     frac=Math.max(0,Math.min(1,frac||0));
-    return '<div class="pbwrap"><div class="wbar"><span class="'+(frac>=1?"late":"")+'" style="width:'+(frac*100).toFixed(1)+'%;background:'+color+'"></span></div>'
+    var done=frac>=1;
+    return '<div class="pbwrap"><div class="wbar"><span class="'+(done?"late":"")+'" style="width:'+(frac*100).toFixed(1)+'%;background:'+(done?PAL.bad:color)+'"></span></div>'
       +'<div class="pblabels"><span>'+esc(leftLabel||"")+'</span><span>'+esc(rightLabel||"")+'</span></div></div>';
   }
   function lastInjDate(st, substance){
