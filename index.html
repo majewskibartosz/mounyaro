@@ -5689,8 +5689,10 @@ var UI = (function(){
     +'</div>'
     +'<div style="margin-top:14px"><button class="btn danger" id="setClear">'+esc(I18N.t("set.clear"))+'</button></div>'
     +'</div>'
-    +'<div class="card"><h2>'+esc(I18N.t("set.tools"))+'</h2>'
-      +(mjTabOn(st)?'<a class="btn ghost" href="#optimizer">'+icon("calc")+esc(I18N.t("opt.title"))+icon("arrow")+'</a>':'')+'</div>'
+    // the only tool here is the Mounjaro clicks calculator, so with that tab off
+    // the card was rendering as a bare heading with nothing under it
+    +(mjTabOn(st)?'<div class="card"><h2>'+esc(I18N.t("set.tools"))+'</h2>'
+      +'<a class="btn ghost" href="#optimizer">'+icon("calc")+esc(I18N.t("opt.title"))+icon("arrow")+'</a></div>':'')
     +'<div class="card"><h2>'+esc(I18N.t("set.privacy"))+'</h2><p class="small muted">'+esc(I18N.t("set.privacyTxt"))+'</p></div>';
     app.innerHTML=html;
 
