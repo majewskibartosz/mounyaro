@@ -4357,10 +4357,16 @@ var UI = (function(){
   }
 
   /* ============ DASHBOARD (Pulpit) ============ */
-  function rhythmRow(label, color, frac, right, pill){
-    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:nowrap;font-size:14px;font-weight:700">'
+  // Two stacked columns: what it is on the left, when it is due on the right.
+  // The exact moment sits under the countdown, so a half-day cadence tells you
+  // straight away whether the next shot is a morning or an evening one.
+  function rhythmRow(label, color, frac, right, pill, foot){
+    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:nowrap;font-size:14px;font-weight:700">'
       +'<span style="min-width:0;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap"><span class="nowrap">'+esc(label)+'</span>'+(pill||'')+'</span>'
-      +'<span class="muted tiny" style="flex:0 0 auto;white-space:nowrap">'+esc(right||"")+'</span></div>'
+      +'<span style="flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.3">'
+        +'<span class="muted tiny" style="white-space:nowrap">'+esc(right||"")+'</span>'
+        +(foot?'<span class="muted" style="font-size:10.5px;white-space:nowrap;opacity:.8;font-variant-numeric:tabular-nums">'+esc(foot)+'</span>':'')
+      +'</span></div>'
       + progressBar(frac, color, "", "") + '</div>';
   }
   function viewDash(){
@@ -4386,12 +4392,12 @@ var UI = (function(){
     if(mjTabOn(st)){
       var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), parseEvery(st.calc.intervalDays,7), Date.now());
       if(mjCd){
-        html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today));
+        html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today), fmtNextShot(mjCd.nextMs));
       } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today)); }
     }
     // TRT
     var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now());
-    if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today)); }
+    if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today), fmtNextShot(ip.nextMs)); }
     else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today)); }
     // Peptide cycle
     // Peptides: only those actually being injected, soonest first, capped at three
@@ -4405,7 +4411,7 @@ var UI = (function(){
     pepRows.sort(function(a,b){ return a.cd.remainingMs-b.cd.remainingMs; });
     pepRows.slice(0,3).forEach(function(x){
       html+=rhythmRow(x.p.name, substColor(st,x.p.id), x.cd.overdue?1:x.cd.frac,
-                      countdownText(x.cd), nowDosePill(st,x.p.id,today));
+                      countdownText(x.cd), nowDosePill(st,x.p.id,today), fmtNextShot(x.cd.nextMs));
     });
     if(pepRows.length>3){
       html+='<div class="muted tiny" style="margin:-4px 0 6px">+'+(pepRows.length-3)+'</div>';
