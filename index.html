@@ -5806,24 +5806,45 @@ var UI = (function(){
   function syncInjectRoute(){
     var h=DOMAIN.buildRoute("inject", injectSub(s()));
     if(location.hash===h) return;
-    try{ history.replaceState(null,"",h); }catch(e){ return; }   // file:// forbids it; the address just stays put
-    if(navIdx>=0) navStack[navIdx]=h;
+    // keep this entry's position stamp — replacing it with null would make the
+    // entry look brand new on the way back
+    try{ history.replaceState(history.state,"",h); }catch(e){ return; }   // file:// forbids it; the address just stays put
   }
-  // The browser's own stack stays the single source of truth (the arrows call
-  // history.back/forward, so a system gesture can never drift out of sync); this
-  // mirror exists only because there is no way to ask whether either end is live.
-  var navStack=[], navIdx=-1;
-  function trackNav(h){
-    if(navIdx>=0 && navStack[navIdx]===h) return;                               // re-render, not a move
-    if(navIdx>0 && navStack[navIdx-1]===h){ navIdx--; return; }                 // back
-    if(navIdx<navStack.length-1 && navStack[navIdx+1]===h){ navIdx++; return; } // forward
-    navStack=navStack.slice(0,navIdx+1); navStack.push(h); navIdx=navStack.length-1;
+  // The arrows call history.back/forward, so the browser's own stack does the
+  // navigating; this only answers "is either end live", which the browser will
+  // not tell us.
+  //
+  // Direction cannot be inferred from the hash: opening a view you were on
+  // before looks exactly like pressing Back, so a mirrored stack decrements
+  // where the browser actually pushed, and from that point on the two disagree
+  // for good. Instead each history entry carries its own position — the browser
+  // stores that per entry and keeps it across reloads — and the furthest
+  // position reached lives in sessionStorage, which survives a reload in the
+  // same tab.
+  var NAV_MAX_KEY="mounyaro.navmax";
+  var navPos=0, navMax=0, navSeen=false;
+  function navMaxStored(){
+    try{ var v=parseInt(sessionStorage.getItem(NAV_MAX_KEY),10); return v>0?v:0; }catch(e){ return 0; }
   }
-  function canBack(){ return navIdx>0; }
-  function canFwd(){ return navIdx<navStack.length-1; }
+  function trackNav(){
+    var hs=history.state, pos=(hs && typeof hs.mjNav==="number") ? hs.mjNav : null;
+    if(pos===null){
+      // unstamped: the browser just pushed this entry, which also dropped
+      // whatever used to sit ahead of it
+      pos = navSeen ? navPos+1 : 0;
+      navMax = pos;
+      try{ history.replaceState({mjNav:pos},""); }catch(e){}
+    } else if(!navSeen){
+      navMax = Math.max(navMaxStored(), pos);   // first paint of a reloaded document
+    }
+    navPos=pos; navSeen=true;
+    try{ sessionStorage.setItem(NAV_MAX_KEY, String(navMax)); }catch(e){}
+  }
+  function canBack(){ return navPos>0; }
+  function canFwd(){ return navPos<navMax; }
   function render(){
     var r=DOMAIN.parseRoute(location.hash), tab=routes[r.tab]?r.tab:"pulpit";
-    trackNav(location.hash||"#pulpit");
+    trackNav();
     applyRoute(tab, r.sub);
     $all("nav.tabs a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-tab")===tab); });
     routes[tab]();
