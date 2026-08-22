@@ -545,6 +545,8 @@ var I18N = (function(){
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
     "common.dayLetter":{pl:"d",en:"d"},
+    "set.mjTab":{pl:"Zakładka Mounjaro",en:"Mounjaro tab"},
+    "set.mjTabSub":{pl:"Kalkulator kliknięć, licznik penów i plan dawek. Wyłączenie tylko je ukrywa — dane i historia zostają, a wkłucia widzisz dalej na karcie Tirzepatyd.",en:"Clicks calculator, pen tracker and dose plan. Switching it off only hides them — the data stays, and the shots remain on the Tirzepatyd card."},
     "set.doseWeeks":{pl:"Tydzień na obecnej dawce w pigułkach (d)",en:"Week on the current dose in pills (d)"},
     "set.doseWeeksSub":{pl:"Np. „TRT 25 mg t5 · d3” = 5. tydzień kuracji, 3. tydzień na dawce 25 mg. Przydatne przy titracji. Przy TRT zmiana częstotliwości zastrzyków (co ile dni) liczy się jak zmiana dawki i zeruje licznik d.",en:"E.g. “TRT 25 mg w5 · d3” = therapy week 5, third week on 25 mg. Useful while titrating. For TRT a change of injection frequency (every how many days) counts as a dose change and resets the d counter."},
     "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
@@ -1669,7 +1671,7 @@ var STORE = (function(){
   function defaults(){
     return {
       schemaVersion:1,
-      settings:{ lang:"pl", theme:"light", currency:"PLN", showDoseWeeks:true, goldenDose:{enabled:false, extraClicks:8},
+      settings:{ lang:"pl", theme:"light", currency:"PLN", showDoseWeeks:true, showMounjaroTab:true, goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" },
@@ -1710,7 +1712,7 @@ var STORE = (function(){
       var raw = localStorage.getItem(KEY);
       if(raw){
         var parsed = JSON.parse(raw);
-        state = migratePeptides(merge(defaults(), parsed));
+        state = hydrate(parsed);
       }
     }catch(e){ /* corrupt -> keep defaults */ }
   }
@@ -1757,6 +1759,26 @@ var STORE = (function(){
     st.inj.peptides=list;
     return st;
   }
+  // Mounjaro gets a card in the peptide list under its substance name, so its
+  // history and abdomen spots show up there. The record deliberately reuses the
+  // id "mounjaro": the card and the Mounjaro tab then read the very same injLog
+  // rows — no copies, no re-stamping, and the clicks calculator keeps working.
+  function ensureTirzepatide(st){
+    if(!st || !st.inj) return st;
+    if(!st.inj.peptides) st.inj.peptides=[];
+    var have=false;
+    st.inj.peptides.forEach(function(p){ if(p && p.id==="mounjaro") have=true; });
+    if(have) return st;
+    var used = (st.injLog||[]).some(function(e){ return e && e.substance==="mounjaro"; })
+      || !!((st.jab&&st.jab.history||[]).length)
+      || !!(st.penTracker && st.penTracker.enabled);
+    if(!used) return st;   // never used Mounjaro: no empty card
+    st.inj.peptides.push({ id:"mounjaro", name:"Tirzepatyd", color:"#0ea5a4", unit:"mg",
+                           intervalDays:(st.calc&&st.calc.intervalDays)||7,
+                           cycleDays:null, cycleStart:null, archived:false });
+    return st;
+  }
+  function hydrate(parsed){ return ensureTirzepatide(migratePeptides(merge(defaults(), parsed))); }
   function merge(base, over){
     if(typeof over!=="object"||over===null) return base;
     var out = Array.isArray(base)? base.slice():Object.assign({},base);
@@ -1810,7 +1832,7 @@ var STORE = (function(){
       try{
         var parsed = JSON.parse(r.result);
         if(typeof parsed!=="object"||!parsed) throw new Error("bad");
-        state = migratePeptides(merge(defaults(), parsed));
+        state = hydrate(parsed);
         save();
         cb(true);
       }catch(e){ cb(false); }
@@ -1861,7 +1883,7 @@ var STORE = (function(){
   }
   function adoptParsed(parsed){
     if(typeof parsed!=="object"||!parsed) return false;
-    state = migratePeptides(merge(defaults(), parsed));
+    state = hydrate(parsed);
     if(!memoryOnly){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
     return true;
   }
@@ -3406,19 +3428,19 @@ var UI = (function(){
   }
   // Never fall through to I18N.t for a peptide id — it returns the key itself.
   function substLabel(st, sub){
-    if(sub==="mounjaro" || sub==="trt") return I18N.t("inj.seg."+sub);
     var p=peptideById(st, sub);
+    if(!p && (sub==="mounjaro" || sub==="trt")) return I18N.t("inj.seg."+sub);
     return p ? p.name : (sub==="peptide" ? I18N.t("inj.seg.peptide") : String(sub||""));
   }
   // One card per peptide: colour rail, name, "dose · interval · cycle", and the
   // countdown on the right. The selected card is the one the form below acts on.
   function pepCardHTML(st, p){
-    var cd=DOMAIN.doseCountdown(lastInjTs(st,p.id), parseEvery(p.intervalDays,1), Date.now());
+    var cd=DOMAIN.doseCountdown(lastInjTs(st,p.id), pepInterval(st,p), Date.now());
     var cyc=(p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
     var last=DOMAIN.lastDoseAsOf(st, p.id);
     var bits=[];
     if(last && last.dose!=null) bits.push(esc(String(last.dose)+" "+(p.unit||"")));
-    var ev=parseEvery(p.intervalDays,1);
+    var ev=pepInterval(st,p);
     bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
       +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
@@ -3439,7 +3461,7 @@ var UI = (function(){
     if(!isNew && !p) return "";
     var name=isNew?"":(p.name||""), col=pepDraft.color||(isNew?nextPepColor(st):p.color);
     var unit=pepDraft.unit||(isNew?"mcg":(p.unit||"j"));
-    var every=isNew?1:parseEvery(p.intervalDays,1);
+    var every=isNew?1:pepInterval(st,p);
     var cycOn=isNew?false:!!(p.cycleDays && p.cycleStart);
     var sw=PEP_COLORS.map(function(c){
       return '<button type="button" class="pfCol" data-c="'+c+'" style="background:'+c
@@ -3500,7 +3522,7 @@ var UI = (function(){
       var fields={ name:name || I18N.t("inj.pepEditTitle"),
                    color:pepDraft.color || (isNew?nextPepColor(st):p.color),
                    unit:$("#pfUnit").value||"mcg",
-                   intervalDays:parseEvery($("#pfEvery").value,1),
+                   intervalDays:parseEvery($("#pfEvery").value,1),   // routed below for Tirzepatyd
                    // a cycle without a start date is no cycle at all (cycleProgress agrees)
                    cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
                    cycleStart:(cycOn&&cs)?cs:null };
@@ -3508,7 +3530,10 @@ var UI = (function(){
         if(!st.inj.peptides) st.inj.peptides=[];
         var np=Object.assign({ id:"pep_"+uid(), archived:false }, fields);
         st.inj.peptides.push(np); pepSel=np.id;
-      } else { Object.assign(p, fields); }
+      } else {
+        Object.assign(p, fields);
+        setPepInterval(st, p, fields.intervalDays);
+      }
       pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
     if($("#pfDel")) $("#pfDel").addEventListener("click",function(){
@@ -3522,6 +3547,18 @@ var UI = (function(){
       if(pepSel===p.id) pepSel=null;
       pepEditId=null; pepDraft={}; STORE.save(); viewInject();
     });
+  }
+  // Tirzepatyd shares st.calc.intervalDays with the optimizer, so the card and
+  // the calculator can never disagree about how often the shot is due.
+  // The Mounjaro tab can be switched off in settings: its data and maths stay
+  // untouched, only the entry points disappear (the shots live on as Tirzepatyd).
+  function mjTabOn(st){ return st.settings.showMounjaroTab!==false; }
+  function pepInterval(st, p){
+    if(p && p.id==="mounjaro") return parseEvery(st.calc.intervalDays,7);
+    return parseEvery(p?p.intervalDays:1, 1);
+  }
+  function setPepInterval(st, p, v){
+    if(p && p.id==="mounjaro") st.calc.intervalDays=v; else p.intervalDays=v;
   }
   function nextPepColor(st){
     var used={};
@@ -3952,7 +3989,8 @@ var UI = (function(){
 
   function viewInject(){
     var st=s(), today=todayISO();
-    if(["mounjaro","trt","peptide"].indexOf(injSeg)<0) injSeg="mounjaro";
+    var segs = mjTabOn(st) ? ["mounjaro","trt","peptide"] : ["trt","peptide"];
+    if(segs.indexOf(injSeg)<0) injSeg=segs[0];
     var editing=null;
     if(injEdit){
       if(injEdit.indexOf("jab:")===0){   // legacy Mounjaro date with no injLog entry yet
@@ -3975,7 +4013,7 @@ var UI = (function(){
 
     var html='<h1 class="page">'+esc(I18N.t("inj.title"))+'</h1>';
     html+='<div class="seg" data-seg>'
-      +['mounjaro','trt','peptide'].map(function(k){
+      +segs.map(function(k){
           return '<button type="button" data-k="'+k+'" class="'+(injSeg===k?"on":"")+'">'+esc(I18N.t("inj.seg."+k))+'</button>';
         }).join("")
       +'</div>';
@@ -4077,7 +4115,7 @@ var UI = (function(){
     // ---- history for this substance (editable) ----
     // Mounjaro: union of injLog entries and legacy jab.history dates (which predate injLog).
     var hlist=DOMAIN.visibleInjLog(st).filter(function(e){return e.substance===sub;}).slice();
-    if(injSeg==="mounjaro"){
+    if(sub==="mounjaro"){
       var haveDate={}; hlist.forEach(function(e){ haveDate[e.date]=true; });
       (st.jab.history||[]).forEach(function(d){
         if(!haveDate[d]) hlist.push({ id:"jab:"+d, date:d, substance:"mounjaro", dose:null, unit:"mg", site:null, jabOnly:true });
@@ -4267,7 +4305,7 @@ var UI = (function(){
         // a day — one new dose — is stamped with the planned breakdown so
         // history shows what came from where; a second entry the same day is
         // the extra needle of the same mixed dose.
-        if(injSeg==="mounjaro" && st.penTracker.enabled
+        if(sub==="mounjaro" && st.penTracker.enabled
            && st.jab.history.indexOf(dateStr)===-1
            && !st.injLog.some(function(e){return e.substance==="mounjaro"&&e.date===dateStr;})
            && (!st.penTracker.anchor || dateStr>=st.penTracker.anchor)){
@@ -4275,7 +4313,7 @@ var UI = (function(){
           if(pd) entry.penDraw=pd;
         }
         st.injLog.push(entry);
-        if(injSeg==="mounjaro") mjDate=dateStr;
+        if(sub==="mounjaro") mjDate=dateStr;
       }
       // Mounjaro: keep the weekly ring's source of truth (jab.history) in sync with the chosen day
       if(mjDate && st.jab.history.indexOf(mjDate)===-1){ st.jab.history.push(mjDate); st.jab.history.sort(); }
@@ -4331,10 +4369,13 @@ var UI = (function(){
     // --- rhythm widgets ---
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.rhythm"))+'</h2>';
     // Mounjaro
-    var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), parseEvery(st.calc.intervalDays,7), Date.now());
-    if(mjCd){
-      html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today));
-    } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today)); }
+    // With the tab switched off the same shot still appears, as a Tirzepatyd row below.
+    if(mjTabOn(st)){
+      var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), parseEvery(st.calc.intervalDays,7), Date.now());
+      if(mjCd){
+        html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today));
+      } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today)); }
+    }
     // TRT
     var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now());
     if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today)); }
@@ -4344,7 +4385,8 @@ var UI = (function(){
     // — one row per peptide would push Mounjaro and TRT off the fold.
     var pepRows=[];
     peptideList(st).forEach(function(pp){
-      var cd=DOMAIN.doseCountdown(lastInjTs(st,pp.id), parseEvery(pp.intervalDays,1), Date.now());
+      if(pp.id==="mounjaro" && mjTabOn(st)) return;   // already shown as the Mounjaro row
+      var cd=DOMAIN.doseCountdown(lastInjTs(st,pp.id), pepInterval(st,pp), Date.now());
       if(cd) pepRows.push({ p:pp, cd:cd });
     });
     pepRows.sort(function(a,b){ return a.cd.remainingMs-b.cd.remainingMs; });
@@ -5021,6 +5063,8 @@ var UI = (function(){
     +'</div>'
     +'<div id="pcBody"></div></div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.doseWeeks"))+'</h2><p class="sub">'+esc(I18N.t("set.doseWeeksSub"))+'</p>'
+    +'<label class="toggle"><input type="checkbox" id="setMjTab"'+(st.settings.showMounjaroTab!==false?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.mjTab"))+'</span></label>'
+    +'<p class="tiny muted" style="margin:-4px 0 12px">'+esc(I18N.t("set.mjTabSub"))+'</p>'
     +'<label class="toggle"><input type="checkbox" id="setDoseWeeks"'+(st.settings.showDoseWeeks?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("set.doseWeeks"))+'</span></label>'
     +'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.sandbagging"))+'</h2><p class="sub">'+esc(I18N.t("set.sandbaggingSub"))+'</p>'
@@ -5041,7 +5085,7 @@ var UI = (function(){
     +'<div style="margin-top:14px"><button class="btn danger" id="setClear">'+esc(I18N.t("set.clear"))+'</button></div>'
     +'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.tools"))+'</h2>'
-      +'<a class="btn ghost" href="#optimizer">'+icon("calc")+esc(I18N.t("opt.title"))+icon("arrow")+'</a></div>'
+      +(mjTabOn(st)?'<a class="btn ghost" href="#optimizer">'+icon("calc")+esc(I18N.t("opt.title"))+icon("arrow")+'</a>':'')+'</div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.privacy"))+'</h2><p class="small muted">'+esc(I18N.t("set.privacyTxt"))+'</p></div>';
     app.innerHTML=html;
 
@@ -5053,6 +5097,7 @@ var UI = (function(){
     $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
+    $("#setMjTab").addEventListener("change",function(){ st.settings.showMounjaroTab=this.checked; STORE.save(); render(); });
     $("#setDoseWeeks").addEventListener("change",function(){ st.settings.showDoseWeeks=this.checked; STORE.save(); });
     // repaint immediately: flipping this hides/reveals sandbagged injections everywhere
     $("#setSandbag").addEventListener("change",function(){ st.settings.sandbagging=this.checked; STORE.save(); render(); });

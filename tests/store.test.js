@@ -169,3 +169,75 @@ test("migration: runs once — a second load does not duplicate peptides", funct
   assert.strictEqual(Array.from(STORE2.state.inj.peptides).length, 1);
   assert.strictEqual(STORE2.state.inj.peptides[0].name, "KLOW");
 });
+
+// ---- Mounjaro as the Tirzepatyd peptide card ----
+
+function mjRow(id, date) {
+  return { id: id, ts: date + "T08:00:00.000Z", date: date, substance: "mounjaro",
+           dose: 5, unit: "mg", pos: { x: 3, y: -2 }, site: "belly_ur" };
+}
+
+test("tirzepatyd: Mounjaro history gains a card without touching a single row", function () {
+  var old = { schemaVersion: 1, calc: { intervalDays: 3.5 },
+              jab: { history: ["2026-08-18", "2026-08-21"] },
+              injLog: [mjRow("a", "2026-08-18"), mjRow("b", "2026-08-21")] };
+  var STORE = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(old) }));
+  STORE.load();
+  var peps = Array.from(STORE.state.inj.peptides);
+  assert.strictEqual(peps.length, 1);
+  assert.strictEqual(peps[0].id, "mounjaro");          // same id => same rows, no copies
+  assert.strictEqual(peps[0].name, "Tirzepatyd");
+  assert.strictEqual(peps[0].color, "#0ea5a4");
+  assert.strictEqual(peps[0].unit, "mg");
+  // the injections themselves are untouched — spots included
+  var log = Array.from(STORE.state.injLog);
+  assert.strictEqual(log.length, 2);
+  log.forEach(function (e) { assert.strictEqual(e.substance, "mounjaro"); });
+  assert.deepStrictEqual(Object.assign({}, log[0].pos), { x: 3, y: -2 });
+});
+
+test("tirzepatyd: a card also appears for legacy jab.history with no injLog rows", function () {
+  var old = { schemaVersion: 1, jab: { history: ["2026-07-01"] }, injLog: [] };
+  var STORE = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(old) }));
+  STORE.load();
+  assert.strictEqual(Array.from(STORE.state.inj.peptides)[0].id, "mounjaro");
+});
+
+test("tirzepatyd: no card for a backup that never used Mounjaro", function () {
+  var old = { schemaVersion: 1, injLog: [{ id: "t", date: "2026-08-01", substance: "trt", dose: 25, unit: "mg" }] };
+  var STORE = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(old) }));
+  STORE.load();
+  assert.deepStrictEqual(Array.from(STORE.state.inj.peptides), []);
+});
+
+test("tirzepatyd: the card is added once and never duplicated", function () {
+  var ls = harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify({
+    schemaVersion: 1, jab: { history: [] }, injLog: [mjRow("a", "2026-08-18")] }) });
+  var S1 = harness.loadStore(ls); S1.load();
+  S1.state.inj.peptides[0].name = "Tirzepatyd (mój)";   // a rename must survive
+  S1.save();
+  var S2 = harness.loadStore(ls); S2.load();
+  var peps = Array.from(S2.state.inj.peptides);
+  assert.strictEqual(peps.length, 1);
+  assert.strictEqual(peps[0].name, "Tirzepatyd (mój)");
+});
+
+test("tirzepatyd: the card sits alongside peptides the user already had", function () {
+  var old = { schemaVersion: 2,
+    inj: { peptides: [{ id: "pep1", name: "BPC-157", color: "#38bdf8", unit: "mcg",
+                        intervalDays: 1, cycleDays: null, cycleStart: null, archived: false }] },
+    injLog: [mjRow("a", "2026-08-18")] };
+  var STORE = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(old) }));
+  STORE.load();
+  var ids = Array.from(STORE.state.inj.peptides).map(function (p) { return p.id; });
+  assert.deepStrictEqual(ids, ["pep1", "mounjaro"]);
+});
+
+test("settings: the Mounjaro tab defaults to on and survives a round-trip", function () {
+  var ls = harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify({ schemaVersion: 1, injLog: [] }) });
+  var S1 = harness.loadStore(ls); S1.load();
+  assert.strictEqual(S1.state.settings.showMounjaroTab, true);
+  S1.state.settings.showMounjaroTab = false; S1.save();
+  var S2 = harness.loadStore(ls); S2.load();
+  assert.strictEqual(S2.state.settings.showMounjaroTab, false);
+});
