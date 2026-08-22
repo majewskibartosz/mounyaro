@@ -2269,7 +2269,7 @@ var THEME=(function(){
       chartGrid:pick(p.chartGrid,p.line), chartAxis:pick(p.chartAxis,p.muted),
       subst:{ mounjaro:id[0], trt:id[1], peptide:id[2] },
       pep:id.slice(2),
-      fallback:p.muted
+      fallback:pick(p.chartAxis, p.muted)
     };
     ["bg","card","soft","input","ink","muted","line","brand","brandDk","accent",
      "good","warn","bad","info","halo","toastBg","toastInk"].forEach(function(k){ hx(t[k], p.id+"."+k); });
@@ -2352,14 +2352,15 @@ function icon(name, cls){
   var p=ICONS[name]; if(!p) return "";
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'+(cls?' class="'+cls+'"':'')+'>'+p+'</svg>';
 }
+function hex2rgb(h){ h=h.replace("#",""); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
 function addDaysISO(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function daysBetweenISO(aISO,bISO){ return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000); }
 // color scale for dose 0..15mg -> teal(low) to indigo/red(high)
 function doseColor(mg){
-  if(mg==null) return "#94a3b8";
+  if(mg==null) return PAL.fallback;
   var t = Math.max(0, Math.min(1, mg/15));
   // interpolate teal -> amber -> red
-  var stops=[[14,165,164],[245,158,11],[220,38,38]];
+  var stops=PAL.dose.map(hex2rgb);
   var seg = t*(stops.length-1), i=Math.floor(seg), f=seg-i;
   if(i>=stops.length-1){ i=stops.length-2; f=1; }
   var a=stops[i], b=stops[i+1];
@@ -2377,14 +2378,12 @@ var CHART = (function(){
   // ongoing episodes clamped to its right edge. Days are noon-anchored here as
   // everywhere else, so a band grows half a day at each end to cover the whole
   // day; the pixel clamp is what actually clips it to the plot box.
-  var ILL_BAND_L=["#f59e0b","#f97316","#dc2626"];
-  var ILL_BAND_D=["#fbbf24","#fb923c","#f87171"];
   var HALF_DAY=43200000;
-  function illBands(spans, X, x0, x1, yTop, height, dark, flat){
+  function illBands(spans, X, x0, x1, yTop, height, flat){
     if(!spans || !spans.length || flat) return "";   // flat = one reading, no time axis
-    var pal=dark?ILL_BAND_D:ILL_BAND_L, out="";
+    var pal=PAL.sevBand, out="";
     spans.forEach(function(sp){
-      var sev=sp.severity||2, col=pal[sev-1], op=(dark?0.13:0.09)+sev*0.03;
+      var sev=sp.severity||2, col=pal[sev-1], op=PAL.sevOp+sev*0.03;
       var a=X(new Date(sp.from+"T12:00:00").getTime()-HALF_DAY);
       var b=X(new Date(sp.to+"T12:00:00").getTime()+HALF_DAY);
       a=Math.max(x0, Math.min(x1, a)); b=Math.max(x0, Math.min(x1, b));
@@ -2395,9 +2394,9 @@ var CHART = (function(){
         +'<rect x="'+a.toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+(b-a).toFixed(1)
         +'" height="'+height.toFixed(1)+'" fill="'+col+'" fill-opacity="'+op.toFixed(3)+'"/>'
         +'<line x1="'+a.toFixed(1)+'" y1="'+yTop.toFixed(1)+'" x2="'+a.toFixed(1)+'" y2="'+(yTop+height).toFixed(1)
-        +'" stroke="'+col+'" stroke-width="1" stroke-opacity="'+(dark?0.7:0.55)+'"/>'
+        +'" stroke="'+col+'" stroke-width="1" stroke-opacity="'+PAL.sevStroke+'"/>'
         +(sp.ongoing?'':'<line x1="'+b.toFixed(1)+'" y1="'+yTop.toFixed(1)+'" x2="'+b.toFixed(1)+'" y2="'+(yTop+height).toFixed(1)
-          +'" stroke="'+col+'" stroke-width="1" stroke-opacity="'+(dark?0.7:0.55)+'" stroke-dasharray="3 2"/>')
+          +'" stroke="'+col+'" stroke-width="1" stroke-opacity="'+PAL.sevStroke+'" stroke-dasharray="3 2"/>')
         +'</g>';
     });
     return out;
@@ -2430,9 +2429,8 @@ var CHART = (function(){
     if((showWeight && data.length===0) || (!showWeight && !hasWaist)){
       return '<div class="empty">'+esc(I18N.t("weight.empty"))+'</div>';
     }
-    // waist series colour: brightened in the dark theme for contrast
-    var dark=document.documentElement.getAttribute("data-theme")==="dark";
-    var WC=dark?"#818cf8":"#6366f1", HALO=dark?"#16202e":"#ffffff";
+    // the halo is the card behind the dot, so a marker never smears into a line
+    var WC=PAL.series.waist, HALO=PAL.halo;
     var W=320, H=200, mL=showWeight?38:14, mR=hasWaist?38:14, mT=14, mB=26;
     var iw=W-mL-mR, ih=H-mT-mB;
     var xsrc = showWeight ? data : waistPts;
@@ -2485,14 +2483,14 @@ var CHART = (function(){
     function WofY(y){ return minW + (wBot-y)/(wBot-wTop)*(maxW-minW); }
 
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="weight chart">';
-    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, dark, maxX===minX);
+    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, maxX===minX);
     // gridlines + y ticks
     var rows=4;
     for(var r=0;r<=rows;r++){
       var val = minY + (maxY-minY)*r/rows;
       var y = mT + ih*(1-r/rows);
-      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
-      if(showWeight) svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+val.toFixed(1)+'</text>';
+      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="'+PAL.chartGrid+'" stroke-width="1"/>';
+      if(showWeight) svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="end">'+val.toFixed(1)+'</text>';
       if(hasWaist){
         svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+WC+'" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
       }
@@ -2500,13 +2498,13 @@ var CHART = (function(){
     // x labels: day-anchored ticks inside an explicit window, else first/mid/last
     if(opts.minX!=null && maxX>minX){
       dayTicks(minX,maxX).forEach(function(t){
-        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(t)+'</text>';
+        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(t)+'</text>';
       });
     } else {
       var idxs = xsrc.length<=3 ? xsrc.map(function(_,i){return i;}) : [0, Math.floor((xsrc.length-1)/2), xsrc.length-1];
       idxs.forEach(function(i){
         var x=X(xs[i]);
-        svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>';
+        svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(xs[i])+'</text>';
       });
     }
     // waist: dashed line + points on the right-hand scale. The indigo is
@@ -2537,13 +2535,13 @@ var CHART = (function(){
       function Xd(e){ return X(new Date(e.date+"T12:00:00").getTime()); }
       if(data.length>1){
         var pts = data.map(function(e){ return Xd(e).toFixed(1)+","+Y(e.weightKg).toFixed(1); }).join(" ");
-        svg+='<polyline points="'+pts+'" fill="none" stroke="#0ea5a4" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        svg+='<polyline points="'+pts+'" fill="none" stroke="'+PAL.series.weight+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
       }
       data.forEach(function(e){
         var x=Xd(e).toFixed(1), y=Y(e.weightKg).toFixed(1);
         var c=doseColor(e.doseMg);
         var tip = e.date+" · "+e.weightKg+" kg"+(e.waistCm!=null?" · "+e.waistCm+" cm":"")+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
-        svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+c+'" stroke="#fff" stroke-width="1.5">'
+        svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+c+'" stroke="'+HALO+'" stroke-width="1.5">'
            +'<title>'+esc(tip)+'</title></circle>';
       });
     }
@@ -2568,22 +2566,21 @@ var CHART = (function(){
     var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
     function X(t){ return maxX===minX ? mL+iw/2 : mL+(t-minX)/(maxX-minX)*iw; }
     function Y(v){ return mT+(1-(v-minY)/(maxY-minY))*ih; }
-    var dark=document.documentElement.getAttribute("data-theme")==="dark";
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="blood pressure chart">';
-    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, dark, maxX===minX);
+    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, maxX===minX);
     var rows=4;
     for(var r=0;r<=rows;r++){
       var val=minY+(maxY-minY)*r/rows, y=Y(val);
-      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>';
-      svg+='<text x="'+(mL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+Math.round(val)+'</text>';
+      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="'+PAL.chartGrid+'" stroke-width="1"/>';
+      svg+='<text x="'+(mL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="end">'+Math.round(val)+'</text>';
     }
     if(opts.minX!=null && maxX>minX){
       dayTicks(minX,maxX).forEach(function(t){
-        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(t)+'</text>';
+        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(t)+'</text>';
       });
     } else {
       var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0,Math.floor((data.length-1)/2),data.length-1];
-      idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
+      idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
     }
     function line(key,color,dash){
       var pts=data.filter(function(e){return e[key]!=null;});
@@ -2592,16 +2589,16 @@ var CHART = (function(){
         svg+='<polyline points="'+p+'" fill="none" stroke="'+color+'" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"'+(dash?' stroke-dasharray="4 3"':'')+'/>';
       }
     }
-    line("pulse","#94a3b8",true);
-    line("dia","#0284c7",false);
-    line("sys","#dc2626",false);
+    line("pulse",PAL.series.pulse,true);
+    line("dia",PAL.series.dia,false);
+    line("sys",PAL.series.sys,false);
     data.forEach(function(e,i){
       var x=X(xs[i]).toFixed(1);
       var tip=fmtDateTime(e.ts)+" · "+e.sys+"/"+e.dia+(e.pulse!=null?" · "+e.pulse+" bpm":"")+(e.fasting?" · "+I18N.t("bp.fastingTag"):"")+(e.doseMg!=null?" · "+e.doseMg+" mg":"")+(e.note?" · "+e.note:"");
       svg+='<g><title>'+esc(tip)+'</title>';
-      svg+='<circle cx="'+x+'" cy="'+Y(e.sys).toFixed(1)+'" r="3.6" fill="#dc2626" stroke="#fff" stroke-width="1.2"/>';
-      svg+='<circle cx="'+x+'" cy="'+Y(e.dia).toFixed(1)+'" r="3.6" fill="#0284c7" stroke="#fff" stroke-width="1.2"/>';
-      if(e.pulse!=null) svg+='<circle cx="'+x+'" cy="'+Y(e.pulse).toFixed(1)+'" r="3" fill="#94a3b8" stroke="#fff" stroke-width="1.2"/>';
+      svg+='<circle cx="'+x+'" cy="'+Y(e.sys).toFixed(1)+'" r="3.6" fill="'+PAL.series.sys+'" stroke="'+PAL.halo+'" stroke-width="1.2"/>';
+      svg+='<circle cx="'+x+'" cy="'+Y(e.dia).toFixed(1)+'" r="3.6" fill="'+PAL.series.dia+'" stroke="'+PAL.halo+'" stroke-width="1.2"/>';
+      if(e.pulse!=null) svg+='<circle cx="'+x+'" cy="'+Y(e.pulse).toFixed(1)+'" r="3" fill="'+PAL.series.pulse+'" stroke="'+PAL.halo+'" stroke-width="1.2"/>';
       svg+='</g>';
     });
     svg+='</svg>';
@@ -2625,20 +2622,20 @@ var CHART = (function(){
     var Ya=yScale(a), Yb=yScale(b);
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="correlation chart">';
     var rows=4;
-    for(var r=0;r<=rows;r++){ var y=mT+ih*r/rows; svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="#e2e8f0" stroke-width="1"/>'; }
+    for(var r=0;r<=rows;r++){ var y=mT+ih*r/rows; svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="'+PAL.chartGrid+'" stroke-width="1"/>'; }
     function dlabel(tm){ var d=new Date(tm); return d.getDate()+"."+(d.getMonth()+1); }
-    [minX, (minX+maxX)/2, maxX].forEach(function(tm){ var x=X(tm); svg+='<text x="'+x.toFixed(1)+'" y="'+(H-26)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+dlabel(tm)+'</text>'; });
+    [minX, (minX+maxX)/2, maxX].forEach(function(tm){ var x=X(tm); svg+='<text x="'+x.toFixed(1)+'" y="'+(H-26)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(tm)+'</text>'; });
     function plot(arr, Y, col){
       if(!arr.length||!Y) return;
       if(arr.length>1){ var pts=arr.map(function(p){return X(t(p.date)).toFixed(1)+","+Y(p.value).toFixed(1);}).join(" ");
         svg+='<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>'; }
-      arr.forEach(function(p){ svg+='<circle cx="'+X(t(p.date)).toFixed(1)+'" cy="'+Y(p.value).toFixed(1)+'" r="3.4" fill="'+col+'" stroke="#fff" stroke-width="1.2"><title>'+esc(p.date+" · "+p.value)+'</title></circle>'; });
+      arr.forEach(function(p){ svg+='<circle cx="'+X(t(p.date)).toFixed(1)+'" cy="'+Y(p.value).toFixed(1)+'" r="3.4" fill="'+col+'" stroke="'+PAL.halo+'" stroke-width="1.2"><title>'+esc(p.date+" · "+p.value)+'</title></circle>'; });
     }
     plot(a, Ya, colA); plot(b, Yb, colB);
     // legend
     svg+='<g font-size="10" font-weight="700">'
-      +'<circle cx="'+(mL)+'" cy="'+(H-10)+'" r="4" fill="'+colA+'"/><text x="'+(mL+8)+'" y="'+(H-6.5)+'" fill="#64748b">'+esc(labA)+'</text>'
-      +'<circle cx="'+(mL+ (iw/2))+'" cy="'+(H-10)+'" r="4" fill="'+colB+'"/><text x="'+(mL+(iw/2)+8)+'" y="'+(H-6.5)+'" fill="#64748b">'+esc(labB)+'</text>'
+      +'<circle cx="'+(mL)+'" cy="'+(H-10)+'" r="4" fill="'+colA+'"/><text x="'+(mL+8)+'" y="'+(H-6.5)+'" fill="'+PAL.muted+'">'+esc(labA)+'</text>'
+      +'<circle cx="'+(mL+ (iw/2))+'" cy="'+(H-10)+'" r="4" fill="'+colB+'"/><text x="'+(mL+(iw/2)+8)+'" y="'+(H-6.5)+'" fill="'+PAL.muted+'">'+esc(labB)+'</text>'
       +'</g>';
     svg+='</svg>';
     return svg;
@@ -2775,11 +2772,14 @@ var UI = (function(){
 
   /* ============ JAB (next-shot countdown ring) ============ */
   // Urgency palette: green (just injected) -> amber -> red (shot due).
-  var RING_GREEN="#16a34a", RING_AMBER="#f59e0b", RING_RED="#dc2626";
-  function hex2rgb(h){ h=h.replace("#",""); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
   function lerpRGB(a,b,t){ return [Math.round(a[0]+(b[0]-a[0])*t),Math.round(a[1]+(b[1]-a[1])*t),Math.round(a[2]+(b[2]-a[2])*t)]; }
   function rgbCss(c){ return "rgb("+c[0]+","+c[1]+","+c[2]+")"; }
-  var GREEN_RGB=hex2rgb(RING_GREEN), AMBER_RGB=hex2rgb(RING_AMBER), RED_RGB=hex2rgb(RING_RED);
+  // Cached because ringSVG colours ~40 arc segments per render; applyTheme()
+  // refreshes them, so a preset switch is not one reload behind.
+  var GREEN_RGB, AMBER_RGB, RED_RGB;
+  function rebuildDerived(){
+    GREEN_RGB=hex2rgb(PAL.ring[0]); AMBER_RGB=hex2rgb(PAL.ring[1]); RED_RGB=hex2rgb(PAL.ring[2]);
+  }
   // Continuous green -> amber -> red. Input 0 = green, 0.5 = amber, 1 = red.
   function urgencyColor(m){
     m=Math.max(0,Math.min(1,m));
@@ -2909,8 +2909,8 @@ var UI = (function(){
     }
     html+='<div class="card">'+rangeHeader("weight.chartTitle","wRg",weightRange,win)
         + (anyWaist ? '<div class="row" style="gap:6px;margin:0 0 8px">'
-            + serChip("w", weightShow.w, I18N.t("common.weight"), "#0ea5a4")
-            + serChip("g", weightShow.g, I18N.t("weight.waist"), "#6366f1")
+            + serChip("w", weightShow.w, I18N.t("common.weight"), PAL.series.weight)
+            + serChip("g", weightShow.g, I18N.t("weight.waist"), PAL.series.waist)
             + '</div>' : '')
         + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g, illness:illSpansFor(chartLog,"date",win),
             minX:win.from?noonMs(win.from)-43200000:null, maxX:win.to?noonMs(win.to)+43200000:null})+'</div>';
@@ -2923,7 +2923,7 @@ var UI = (function(){
       html+='<div class="legend">'
           + (illSpansFor(chartLog,"date",win).length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
           + (weightShow.w?'<span>'+esc(I18N.t("weight.legendDose"))+'</span>':'')
-          + (weightShow.g&&waistLog.length?'<span style="color:#6366f1">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
+          + (weightShow.g&&waistLog.length?'<span style="color:'+PAL.series.waist+'">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
           + '</div>'
           + '<div class="stats" style="margin-top:12px">'
           + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
@@ -2981,7 +2981,7 @@ var UI = (function(){
         html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+(e.ts?'<span class="muted tiny"> '+esc(fmtTime(e.ts))+'</span>':'')+'</span>'+injDayMarkersBlock(st, e.date, e.ts)
             + (e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:25%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
-            + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:#6366f1">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
+            + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:'+PAL.series.waist+'">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
             + '<td style="width:24%">'+dosePillsAsOf(st, e.date, e.doseMg)+'</td>'
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
@@ -3122,9 +3122,9 @@ var UI = (function(){
       // colour key matching the chart lines: red=systolic, blue=diastolic, grey=pulse
       html+='<div class="legend">'
           + (illSpansFor(chartLog,"ts",win).length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
-          + '<span><i style="background:#dc2626;border-radius:50%"></i>'+esc(I18N.t("bp.legSys"))+'</span>'
-          + '<span><i style="background:#0284c7;border-radius:50%"></i>'+esc(I18N.t("bp.legDia"))+'</span>'
-          + '<span><i style="background:#94a3b8;border-radius:50%"></i>'+esc(I18N.t("bp.legPulse"))+'</span>'
+          + '<span><i style="background:'+PAL.series.sys+';border-radius:50%"></i>'+esc(I18N.t("bp.legSys"))+'</span>'
+          + '<span><i style="background:'+PAL.series.dia+';border-radius:50%"></i>'+esc(I18N.t("bp.legDia"))+'</span>'
+          + '<span><i style="background:'+PAL.series.pulse+';border-radius:50%"></i>'+esc(I18N.t("bp.legPulse"))+'</span>'
           + '</div>'
           + '<div class="stats" style="margin-top:12px">'
           + '<div class="stat"><span class="k">'+esc(I18N.t("bp.latest"))+'</span><span class="v">'+L.sys+'/'+L.dia+'</span></div>'
@@ -4247,7 +4247,7 @@ var UI = (function(){
   }
   function trkPill(txt, gold){
     return '<span class="pill" style="font-size:14px;font-weight:700;padding:6px 10px;background:'
-      +(gold?'#f59e0b22;color:#d97706':'#0ea5a422;color:#0ea5a4')+'">'+txt+'</span>';
+      +(gold?PAL.warn+PAL.tintA+';color:'+PAL.sbInk:PAL.brand+PAL.tintA+';color:'+PAL.brand)+'">'+txt+'</span>';
   }
   function mgLbl(s){ return fmtNum(s, (s%1)?1:0)+' mg'; }
   // Effective strength / dose given mid-plan prescription changes. Mirrors the
@@ -4307,7 +4307,7 @@ var UI = (function(){
     var sfx = mixed ? ' ('+mgLbl(sh.penS)+')' : '';
     var p=[];
     if(sh.clicks) p.push('<b>'+sh.clicks+'</b> '+esc(I18N.t("trk.clicksPen"))+sfx);
-    if(sh.syringeUnits) p.push('💉 <b style="color:#d97706">'+sh.syringeUnits+'</b> '+esc(I18N.t("trk.syr"))+sfx);
+    if(sh.syringeUnits) p.push('💉 <b style="color:'+PAL.sbInk+'">'+sh.syringeUnits+'</b> '+esc(I18N.t("trk.syr"))+sfx);
     if(sh.newPenClicks) p.push('<b>'+sh.newPenClicks+'</b> '+esc(I18N.t("trk.newPen"))+' ('+esc(I18N.t("trk.pen"))+' '+(sh.penNoNew+off)+(mixed?' · '+mgLbl(sh.newPenS):'')+')');
     return p.join(" + ");
   }
@@ -4335,8 +4335,8 @@ var UI = (function(){
   function penBarHTML(penClicks, goldenLeft){
     var C=DOMAIN.CLICKS_PER_PEN, G=DOMAIN.GOLDEN_UNITS;
     return '<div style="display:flex;gap:3px;height:14px;margin:12px 0 6px">'
-      +'<div style="flex:'+C+';background:var(--soft);border:1px solid var(--line);border-radius:7px;overflow:hidden"><div style="height:100%;width:'+(penClicks/C*100)+'%;background:#0ea5a4"></div></div>'
-      +'<div style="flex:'+G+';background:var(--soft);border:1px solid var(--line);border-radius:7px;overflow:hidden"><div style="height:100%;width:'+(goldenLeft/G*100)+'%;background:#f59e0b"></div></div>'
+      +'<div style="flex:'+C+';background:var(--soft);border:1px solid var(--line);border-radius:7px;overflow:hidden"><div style="height:100%;width:'+(penClicks/C*100)+'%;background:'+PAL.brand+'"></div></div>'
+      +'<div style="flex:'+G+';background:var(--soft);border:1px solid var(--line);border-radius:7px;overflow:hidden"><div style="height:100%;width:'+(goldenLeft/G*100)+'%;background:'+PAL.warn+'"></div></div>'
       +'</div>';
   }
   function penTrackerHTML(st){
@@ -4364,7 +4364,7 @@ var UI = (function(){
       var dPend=(pt.doseChanges||[]).filter(function(e){return e.fromShot===done;});
       if(dPend.length){
         var dpv=dPend[dPend.length-1].dose;
-        html+='<p class="tiny" style="margin:-4px 0 10px;color:#d97706">'+esc(I18N.t("trk.dosePending").replace("{new}",fmtNum(dpv,(dpv%1)?2:0)))+'</p>';
+        html+='<p class="tiny" style="margin:-4px 0 10px;color:'+PAL.sbInk+'">'+esc(I18N.t("trk.dosePending").replace("{new}",fmtNum(dpv,(dpv%1)?2:0)))+'</p>';
       }
       if(!cur){
         html+='<div class="note">'+esc(I18N.t("trk.badDose"))+'</div>';
@@ -4380,14 +4380,14 @@ var UI = (function(){
           pen0=prev.sh.penLeftAfter; gold0=prev.sh.goldenLeftAfter;
           if(pen0===0 && gold0===0){ pen0=DOMAIN.CLICKS_PER_PEN; gold0=DOMAIN.GOLDEN_UNITS; }
         }
-        html+='<div style="border:2px solid #0ea5a4;border-radius:14px;padding:12px">'
-          +'<div class="tiny" style="text-transform:uppercase;letter-spacing:.6px;color:#0ea5a4;font-weight:700">'
+        html+='<div style="border:2px solid '+PAL.brand+';border-radius:14px;padding:12px">'
+          +'<div class="tiny" style="text-transform:uppercase;letter-spacing:.6px;color:'+PAL.brand+';font-weight:700">'
             +esc(I18N.t("trk.now").replace("{n}",done+1))+' · '+esc(I18N.t("trk.pen"))+' '+(sh.penNo+off)+' ('+esc(mgLbl(sh.penS))+')</div>'
           +'<div class="row" style="gap:6px;margin-top:8px">'+trkParts(sh,off)+'</div>'
           +'<div class="tiny muted" style="margin-top:6px">= '+fmtNum(sh.mg,2)+' mg</div>'
         +'</div>';
         html+=penBarHTML(pen0, gold0);
-        html+='<div class="tiny muted" style="margin:0 0 4px">'+esc(I18N.t("trk.beforeDose").replace("{n}",done+1))+': <b style="color:var(--ink)">'+pen0+' '+esc(I18N.t("common.clicks"))+'</b> + <b style="color:#d97706">'+esc(I18N.t("trk.golden"))+' '+gold0+' '+esc(I18N.t("sch.units"))+'</b></div>';
+        html+='<div class="tiny muted" style="margin:0 0 4px">'+esc(I18N.t("trk.beforeDose").replace("{n}",done+1))+': <b style="color:var(--ink)">'+pen0+' '+esc(I18N.t("common.clicks"))+'</b> + <b style="color:'+PAL.sbInk+'">'+esc(I18N.t("trk.golden"))+' '+gold0+' '+esc(I18N.t("sch.units"))+'</b></div>';
         var nx='';
         for(var k=done+1;k<=done+3;k++){
           var it=trkShotAt(ps,k); if(!it.sh) break;
@@ -4955,7 +4955,7 @@ var UI = (function(){
       +'</div>';
     var labA=(opts.filter(function(o){return o.id===corrA;})[0]||{}).label||"";
     var labB=(opts.filter(function(o){return o.id===corrB;})[0]||{}).label||"";
-    html+='<div id="chartHolder">'+CHART.renderDual(DOMAIN.seriesFor(st,corrA), DOMAIN.seriesFor(st,corrB), labA, labB, "#0ea5a4", "#6366f1")+'</div>';
+    html+='<div id="chartHolder">'+CHART.renderDual(DOMAIN.seriesFor(st,corrA), DOMAIN.seriesFor(st,corrB), labA, labB, PAL.series.weight, PAL.series.waist)+'</div>';
     html+='<div class="rellinks"><a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div>';
     html+='</div>';
     app.innerHTML=html;
@@ -5704,6 +5704,7 @@ var UI = (function(){
   }
   function applyTheme(){
     var t=THEME.apply(STORE.state.settings.theme);
+    rebuildDerived();
     var btn=$("#themeBtn"); if(btn) btn.textContent = t.dark?"☀️":"🌙";
     var meta=document.querySelector('meta[name="theme-color"]');
     if(meta) meta.setAttribute("content", t.dark?t.bg:t.brand);
