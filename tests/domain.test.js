@@ -577,3 +577,23 @@ test("parseRoute(buildRoute(t,s)) round-trips", function () {
       assert.strictEqual(r.sub, pair[1]);
     });
 });
+
+test("bmiCategory: names the band and leaves the colour to the UI", function () {
+  var cases = [[17.2, 0, "bmi.cat.under"], [18.5, 1, "bmi.cat.normal"], [24.9, 1, "bmi.cat.normal"],
+               [25, 2, "bmi.cat.over"], [30, 3, "bmi.cat.ob1"], [34.9, 3, "bmi.cat.ob1"],
+               [35, 4, "bmi.cat.ob2"], [40, 5, "bmi.cat.ob3"], [61, 5, "bmi.cat.ob3"]];
+  cases.forEach(function (c) {
+    var r = DOMAIN.bmiCategory(c[0]);
+    assert.strictEqual(r.band, c[1], "band for " + c[0]);
+    assert.strictEqual(r.key, c[2]);
+    assert.strictEqual(r.color, undefined);   // DOMAIN stays free of the palette
+  });
+});
+
+test("BMI_BANDS are the boundaries bmiBand actually splits on", function () {
+  assert.deepStrictEqual(Array.from(DOMAIN.BMI_BANDS), [0, 18.5, 25, 30, 35, 40]);
+  Array.from(DOMAIN.BMI_BANDS).forEach(function (edge, i) {
+    assert.strictEqual(DOMAIN.bmiBand(edge), i);
+    if (i > 0) assert.strictEqual(DOMAIN.bmiBand(edge - 0.01), i - 1);
+  });
+});

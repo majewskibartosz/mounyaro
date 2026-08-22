@@ -1333,13 +1333,16 @@ var DOMAIN = (function(){
     var h = heightCm/100;
     return weightKg/(h*h);
   }
+  // BMI_BANDS[i] is the lower bound of band i; band 0 is "under".
+  var BMI_BANDS=[0, 18.5, 25, 30, 35, 40];
+  var BMI_KEYS=["bmi.cat.under","bmi.cat.normal","bmi.cat.over","bmi.cat.ob1","bmi.cat.ob2","bmi.cat.ob3"];
+  function bmiBand(b){
+    for(var i=BMI_BANDS.length-1;i>0;i--){ if(b>=BMI_BANDS[i]) return i; }
+    return 0;
+  }
   function bmiCategory(b){
-    if(b < 18.5) return {key:"bmi.cat.under", color:"#0284c7"};
-    if(b < 25)   return {key:"bmi.cat.normal",color:"#16a34a"};
-    if(b < 30)   return {key:"bmi.cat.over",  color:"#f59e0b"};
-    if(b < 35)   return {key:"bmi.cat.ob1",   color:"#f97316"};
-    if(b < 40)   return {key:"bmi.cat.ob2",   color:"#dc2626"};
-    return {key:"bmi.cat.ob3", color:"#991b1b"};
+    var i=bmiBand(b);
+    return { key:BMI_KEYS[i], band:i };   // colour is the UI's business: DOMAIN has no palette
   }
   function healthyWeightRange(heightCm){
     if(!heightCm) return null;
@@ -1748,7 +1751,7 @@ var DOMAIN = (function(){
     unitsForDose:unitsForDose, vialAsOf:vialAsOf,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
-    stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory,
+    stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory, bmiBand:bmiBand, BMI_BANDS:BMI_BANDS,
     healthyWeightRange:healthyWeightRange, monthChange:monthChange, travelCompare:travelCompare,
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, doseCountdown:doseCountdown,
@@ -3062,18 +3065,15 @@ var UI = (function(){
     var pct = Math.max(0, Math.min(100, (b-lo)/(hi-lo)*100));
     // segment widths across 15..40: under(15-18.5),normal(18.5-25),over(25-30),ob1(30-35),ob2/3(35-40)
     function segW(a,bnd){ return (bnd-a)/(hi-lo)*100; }
-    var segs=[
-      {w:segW(15,18.5),c:"#0284c7"},
-      {w:segW(18.5,25),c:"#16a34a"},
-      {w:segW(25,30),c:"#f59e0b"},
-      {w:segW(30,35),c:"#f97316"},
-      {w:segW(35,40),c:"#dc2626"}
-    ];
+    // one scale, not two: the gauge segments are DOMAIN's own band edges
+    var edges=DOMAIN.BMI_BANDS.slice(1);   // 18.5 25 30 35 40 — the gauge stops at the last edge
+    var segs=[], prev=15;
+    for(var bi=0;bi<edges.length;bi++){ segs.push({ w:segW(prev, edges[bi]), c:PAL.bmi[bi] }); prev=edges[bi]; }
     var segHtml = segs.map(function(x){ return '<div class="seg" style="width:'+x.w+'%;background:'+x.c+'"></div>'; }).join("");
     var html=''
     +'<div class="stats" style="margin-bottom:14px">'
-    +'<div class="stat"><span class="k">'+esc(I18N.t("bmi.your"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(b,1)+'</span></div>'
-    +'<div class="stat"><span class="k">'+esc(I18N.t("bmi.category"))+'</span><span class="v" style="font-size:16px;color:'+cat.color+'">'+esc(I18N.t(cat.key))+'</span></div>'
+    +'<div class="stat"><span class="k">'+esc(I18N.t("bmi.your"))+'</span><span class="v" style="color:'+PAL.bmi[cat.band]+'">'+fmtNum(b,1)+'</span></div>'
+    +'<div class="stat"><span class="k">'+esc(I18N.t("bmi.category"))+'</span><span class="v" style="font-size:16px;color:'+PAL.bmi[cat.band]+'">'+esc(I18N.t(cat.key))+'</span></div>'
     +'</div>'
     +'<div class="gauge">'
     +'<div class="track">'+segHtml
@@ -4899,7 +4899,7 @@ var UI = (function(){
       +(todayCk?statDate(String(todayCk.ts).slice(0,10), todayCk.ts):'')+'</a>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
-      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>'; }
+      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+PAL.bmi[cat.band]+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>'; }
     else { html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v muted" style="font-size:13px">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></a>'; }
     html+='</div></div>';
 
