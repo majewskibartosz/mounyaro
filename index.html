@@ -200,6 +200,8 @@
   .pepbar>span{display:block;height:100%;background:var(--c)}
   .pfcols{display:grid;grid-template-columns:repeat(8,1fr);gap:7px}
   .pfCol{appearance:none;border:0;border-radius:9px;height:30px;cursor:pointer}
+  .pfCol.taken{opacity:.3;cursor:not-allowed;
+    background-image:linear-gradient(to top right,transparent 45%,var(--ink) 45%,var(--ink) 55%,transparent 55%)}
   .pfCol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
   /* progress bar (TRT cadence / peptide cycle) */
@@ -461,6 +463,7 @@ var I18N = (function(){
     "pep.draw":{pl:"Nabierz",en:"Draw"},
     "pep.drawAt":{pl:"przy",en:"at"},
     "pep.vialsPast":{pl:"Poprzednie fiolki",en:"Earlier vials"},
+    "pep.colorTaken":{pl:"Kolor zajęty przez inny środek",en:"Colour already used by another substance"},
     "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
     "pep.vialNone":{pl:"Podaj fiolkę i wodę, aby liczyć jednostki na insulinówce.",en:"Enter the vial and water to get units on an insulin syringe."},
     "pep.vialDel":{pl:"Usunąć ten wpis fiolki?",en:"Delete this vial entry?"},
@@ -3591,9 +3594,21 @@ var UI = (function(){
     var unit=pepDraft.unit||(isNew?"mcg":(p.unit||"j"));
     var every=isNew?1:pepInterval(st,p);
     var cycOn=isNew?false:!!(p.cycleDays && p.cycleStart);
+    // Colours worn by another substance are struck through, so two cards can
+    // never end up the same colour on the abdomen map. Archived peptides count:
+    // their dots and history rows keep their colour. If somehow every colour is
+    // taken, none is blocked — a duplicate beats being unable to choose at all.
+    var taken={};
+    taken[SUBSTANCE_COLORS.trt]=true;
+    peptideList(st, true).forEach(function(o){ if(!p || o.id!==p.id) taken[o.color]=true; });
+    if(!p || p.id!=="mounjaro") taken[SUBSTANCE_COLORS.mounjaro]=true;
+    var free=0;
+    PEP_COLORS.forEach(function(c){ if(!taken[c]) free++; });
     var sw=PEP_COLORS.map(function(c){
-      return '<button type="button" class="pfCol" data-c="'+c+'" style="background:'+c
-        +';'+(c===col?"outline:2px solid var(--ink);outline-offset:2px":"")+'" aria-label="'+c+'"></button>';
+      var busy=(free>0) && !!taken[c] && c!==col;
+      return '<button type="button" class="pfCol'+(busy?" taken":"")+'" data-c="'+c+'"'+(busy?' disabled':'')
+        +' style="background-color:'+c+';'+(c===col?"outline:2px solid var(--ink);outline-offset:2px":"")+'"'
+        +' title="'+esc(busy?I18N.t("pep.colorTaken"):c)+'" aria-label="'+esc(busy?I18N.t("pep.colorTaken"):c)+'"></button>';
     }).join("");
     return '<div class="card" style="border-color:'+col+'59">'
       +'<h2 style="margin:0 0 10px">'+esc(I18N.t("inj.pepEditTitle"))+'</h2>'
@@ -3636,6 +3651,7 @@ var UI = (function(){
       pepEditId=pepSel; pepDraft={}; viewInject();
     });
     $all(".pfCol").forEach(function(b){ b.addEventListener("click",function(){
+      if(b.disabled) return;
       pepDraft.color=b.getAttribute("data-c");
       $all(".pfCol").forEach(function(x){ x.style.outline=""; x.style.outlineOffset=""; });
       b.style.outline="2px solid var(--ink)"; b.style.outlineOffset="2px";
