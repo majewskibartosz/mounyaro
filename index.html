@@ -235,6 +235,12 @@
   .tiny{font-size:12px}
   .center{text-align:center}
   .stat{display:flex;flex-direction:column;gap:2px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px}
+  /* tiles and rhythm rows double as links: keep them looking like tiles */
+  a.stat,a.rrow{text-decoration:none;color:inherit;-webkit-tap-highlight-color:transparent}
+  a.stat:hover,a.rrow:hover{border-color:var(--brand);background:var(--card)}
+  a.rrow:hover{background:var(--soft)}
+  a.stat:active,a.rrow:active{opacity:.7}
+  a.rrow{display:block;border:1px solid transparent;border-radius:12px;margin:0 -6px;padding:0 6px}
   .stat .k{font-size:12px;color:var(--muted);font-weight:600}
   .stat .v{font-size:20px;font-weight:800}
   .stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
@@ -4605,14 +4611,15 @@ var UI = (function(){
   // Two stacked columns: what it is on the left, when it is due on the right.
   // The exact moment sits under the countdown, so a half-day cadence tells you
   // straight away whether the next shot is a morning or an evening one.
-  function rhythmRow(label, color, frac, right, pill, foot){
-    return '<div style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:nowrap;font-size:14px;font-weight:700">'
+  function rhythmRow(label, color, frac, right, pill, foot, href){
+    var tag=href?'a class="rrow" href="'+esc(href)+'"':'div';
+    return '<'+tag+' style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:nowrap;font-size:14px;font-weight:700">'
       +'<span style="min-width:0;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap"><span class="nowrap">'+esc(label)+'</span>'+(pill||'')+'</span>'
       +'<span style="flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.3">'
         +'<span class="muted tiny" style="white-space:nowrap">'+esc(right||"")+'</span>'
         +(foot?'<span class="muted" style="font-size:10.5px;white-space:nowrap;opacity:.8;font-variant-numeric:tabular-nums">'+esc(foot)+'</span>':'')
       +'</span></div>'
-      + progressBar(frac, color, "", "") + '</div>';
+      + progressBar(frac, color, "", "") + (href?'</a>':'</div>');
   }
   // Every view opens with this: the title plus the two history arrows. In an
   // installed PWA there is no browser chrome to go back with, so without them the
@@ -4639,11 +4646,11 @@ var UI = (function(){
     var illNow=DOMAIN.illnessAsOf(st, today);
     if(illNow && illNow.ongoing){
       var ic=illColor(illNow.severity);
-      html+='<div class="banner" style="background:'+ic+'1a;border-color:'+ic+'59;color:'+ic
-        +';display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">'
+      html+='<a class="banner" href="#diary" style="background:'+ic+'1a;border-color:'+ic+'59;color:'+ic
+        +';text-decoration:none;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">'
         +'<span>&#129298; <b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+illNow.dayN
         +(illNow.label?' &middot; '+esc(illNow.label):'')+'</span>'
-        +'<a class="btn ghost sm" href="#diary">'+esc(I18N.t("ill.end"))+'</a></div>';
+        +'<span class="btn ghost sm">'+esc(I18N.t("ill.end"))+'</span></a>';
     }
 
     // --- rhythm widgets ---
@@ -4653,13 +4660,13 @@ var UI = (function(){
     if(mjTabOn(st)){
       var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), parseEvery(st.calc.intervalDays,7), Date.now());
       if(mjCd){
-        html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today), fmtNextShot(mjCd.nextMs));
-      } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today)); }
+        html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today), fmtNextShot(mjCd.nextMs), "#inject/mounjaro");
+      } else { html+=rhythmRow("Mounjaro", SUBSTANCE_COLORS.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today), null, "#inject/mounjaro"); }
     }
     // TRT
     var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now());
-    if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today), fmtNextShot(ip.nextMs)); }
-    else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today)); }
+    if(ip){ html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today), fmtNextShot(ip.nextMs), "#inject/trt"); }
+    else { html+=rhythmRow("TRT", SUBSTANCE_COLORS.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today), null, "#inject/trt"); }
     // Peptide cycle
     // Peptides: only those actually being injected, soonest first, capped at three
     // — one row per peptide would push Mounjaro and TRT off the fold.
@@ -4672,10 +4679,11 @@ var UI = (function(){
     pepRows.sort(function(a,b){ return a.cd.remainingMs-b.cd.remainingMs; });
     pepRows.slice(0,3).forEach(function(x){
       html+=rhythmRow(x.p.name, substColor(st,x.p.id), x.cd.overdue?1:x.cd.frac,
-                      countdownText(x.cd), nowDosePill(st,x.p.id,today), fmtNextShot(x.cd.nextMs));
+                      countdownText(x.cd), nowDosePill(st,x.p.id,today), fmtNextShot(x.cd.nextMs),
+                      DOMAIN.buildRoute("inject", x.p.id));
     });
     if(pepRows.length>3){
-      html+='<div class="muted tiny" style="margin:-4px 0 6px">+'+(pepRows.length-3)+'</div>';
+      html+='<a class="muted tiny" href="#inject/peptides" style="display:inline-block;margin:-4px 0 6px;color:inherit">+'+(pepRows.length-3)+'</a>';
     }
     html+='</div>';
 
@@ -4684,7 +4692,7 @@ var UI = (function(){
     function statDate(iso, ts){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+injDayMarkers(st,iso,ts)+'</span>':''; }
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10), bpL.ts):'')+'</div>';
+    html+='<a class="stat" href="#bp"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10), bpL.ts):'')+'</a>';
     var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData");
     // month-to-date + total deltas on their own line, each coloured by its own sign
@@ -4695,25 +4703,25 @@ var UI = (function(){
       var wmc=DOMAIN.monthChange(wl, "weightKg", today);
       wDeltas='<span class="muted tiny" style="font-weight:600;white-space:nowrap">'+(wmc?dSpan(I18N.t("pulpit.monthShort"),wmc.diff)+' · ':'')+dSpan(I18N.t("pulpit.totalShort"),d)+'</span>';
     }
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="font-size:18px">'+wtxt+'</span>'+wDeltas+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>';
+    html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="font-size:18px">'+wtxt+'</span>'+wDeltas+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>';
     var waistL=wl.filter(function(e){return e.waistCm!=null;});
     if(waistL.length){
       var curWa=waistL[0].waistCm, watxt=fmtNum(curWa,1)+" cm", wacol="var(--ink)";
       if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
-      html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date, waistL[0].ts)+'</div>';
+      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date, waistL[0].ts)+'</a>';
     }
     // latest wellbeing values from today (notes with dots or legacy check-ins)
     var ckAll=(st.stateLog||[]).slice();
     (st.journal||[]).forEach(function(e){ if(hasStateVals(e)) ckAll.push(e); });
     ckAll.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
     var todayCk=ckAll.filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
-    html+='<div class="stat"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
+    html+='<a class="stat" href="#diary"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
       +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span>'
-      +(todayCk?statDate(String(todayCk.ts).slice(0,10), todayCk.ts):'')+'</div>';
+      +(todayCk?statDate(String(todayCk.ts).slice(0,10), todayCk.ts):'')+'</a>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
-      html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</div>'; }
-    else { html+='<div class="stat"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="font-size:13px" class="muted">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></div>'; }
+      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+cat.color+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>'; }
+    else { html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v muted" style="font-size:13px">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></a>'; }
     html+='</div></div>';
 
     // --- mini body map (link to injections) ---
@@ -5455,7 +5463,7 @@ var UI = (function(){
     if(tab!=="inject" || !sub) return;
     var st=s(), seg=null, pep=null;
     if(sub==="trt") seg="trt";
-    else if(sub==="peptide") seg="peptide";
+    else if(sub==="peptides") seg="peptide";   // plural: the card list. "peptide" is a legacy peptide id
     else if(sub==="mounjaro" && mjTabOn(st)) seg="mounjaro";
     else if(peptideById(st, sub)){ seg="peptide"; pep=sub; }   // covers Tirzepatyd when the tab is off
     else return;
@@ -5469,8 +5477,8 @@ var UI = (function(){
   // through every substance the user glanced at.
   function injectSub(st){
     if(injSeg!=="peptide") return injSeg;
-    if(!pepSel) return "peptide";
-    return (pepSel==="mounjaro" && mjTabOn(st)) ? "peptide" : pepSel;   // "mounjaro" would reopen the tab
+    if(!pepSel) return "peptides";
+    return (pepSel==="mounjaro" && mjTabOn(st)) ? "peptides" : pepSel;   // "mounjaro" would reopen the tab
   }
   function syncInjectRoute(){
     var h=DOMAIN.buildRoute("inject", injectSub(s()));
