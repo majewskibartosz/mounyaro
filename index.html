@@ -1909,6 +1909,19 @@ function el(tag, attrs, html){
   return e;
 }
 function fmtNum(n, dp){ if(n==null||isNaN(n)) return "—"; return Number(n).toFixed(dp==null?2:dp); }
+// Dosing intervals may be fractional (3.5 = every 84 h). Accepts a comma as the
+// decimal mark (Polish keyboards), floors at half a day and rounds to 2 places so
+// stored values compare cleanly (doseStreakAsOf tests `every` with !==).
+function parseEvery(v, fallback){
+  var n=parseFloat(String(v==null?"":v).replace(",","."));
+  if(!isFinite(n) || n<=0) n=fallback;
+  return Math.round(Math.max(0.5, n)*100)/100;
+}
+// "3.5" -> "3,5" in Polish, and a whole number stays whole
+function fmtEvery(n){
+  var t=String(Math.round(n*100)/100);
+  return I18N.lang==="pl" ? t.replace(".", ",") : t;
+}
 // Amount with the currency code shown faded right after the number, so it's
 // always clear what the number means (e.g. "756,02 PLN"). Returns HTML.
 function fmtMoney(n, currency){
@@ -3694,7 +3707,7 @@ var UI = (function(){
       } else {
         html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
       }
-      html+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="mjEvery" min="1" value="'+every+'"></div>';
+      html+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
     } else if(injSeg==="trt"){
       var iv=Math.max(1, st.inj.trt.intervalDays||3), lt=lastInjDate(st,"trt");
       var ip=DOMAIN.intervalProgress(lt, iv, today);
@@ -3702,7 +3715,7 @@ var UI = (function(){
         var rl=ip.remaining>0?(I18N.t("inj.nextIn")+" "+ip.remaining+" "+I18N.t("inj.daysShort")):(ip.remaining===0?I18N.t("inj.due"):Math.abs(ip.remaining)+" "+I18N.t("inj.daysShort")+" "+I18N.t("inj.overdue"));
         html+=progressBar(ip.frac, color, lt, rl);
       } else { html+='<div class="empty">'+esc(I18N.t("inj.empty"))+'</div>'; }
-      html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="trtEvery" min="1" value="'+iv+'"></div>';
+      html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+iv+'"></div>';
       // retro-stamp a date range with its real interval: pre-stamping entries
       // show a bare dose, and the d counter can only reset where the data says
       // the schedule changed. Overwrites, so a wrong stamp can be re-applied.
@@ -3713,7 +3726,7 @@ var UI = (function(){
         +'<div class="grid g3">'
         +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
         +'<div class="field"><label>'+esc(I18N.t("inj.backfillTo"))+'</label><input type="date" id="bfTo"></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="numeric" id="bfEvery" min="1" value="'+iv+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="bfEvery" min="0.5" step="0.5" value="'+iv+'"></div>'
         +'</div>'
         +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
     } else {
@@ -3898,13 +3911,13 @@ var UI = (function(){
       });
     }
     // config inputs
-    if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewInject(); });
-    if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=Math.max(1,parseInt(this.value,10)||3); STORE.save(); viewInject(); });
+    if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=parseEvery(this.value,7); STORE.save(); viewInject(); });
+    if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=parseEvery(this.value,3); STORE.save(); viewInject(); });
     // stamp the chosen interval onto every TRT entry in the date range
     // (sandbag-hidden ones included — the schedule was a fact either way)
     if($("#bfApply")) $("#bfApply").addEventListener("click",function(){
       var from=$("#bfFrom").value||null, to=$("#bfTo").value||null;
-      var bev=Math.max(1, parseInt($("#bfEvery").value,10)||1);
+      var bev=parseEvery($("#bfEvery").value,1);
       var hits=(st.injLog||[]).filter(function(e){
         return e && e.substance==="trt" && e.date && (!from||e.date>=from) && (!to||e.date<=to);
       });
@@ -3948,7 +3961,7 @@ var UI = (function(){
         if(sb!==null){ if(sb) editing.sandbag=true; else delete editing.sandbag; }
         // interval backfill: re-saving a pre-stamping TRT entry adopts the
         // current interval; an already-stamped entry keeps its historical one
-        if(injSeg==="trt" && editing.every==null) editing.every=Math.max(1, st.inj.trt.intervalDays||3);
+        if(injSeg==="trt" && editing.every==null) editing.every=parseEvery(st.inj.trt.intervalDays,3);
         if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
         var unitCode=(injSeg==="peptide")?"j":"mg";
@@ -3956,7 +3969,7 @@ var UI = (function(){
         if(pos) entry.pos=pos;
         // TRT dosage = mg per shot + interval; snapshot the interval so a
         // schedule change (e.g. every 2 days -> daily) reads as a dose change
-        if(injSeg==="trt") entry.every=Math.max(1, st.inj.trt.intervalDays||3);
+        if(injSeg==="trt") entry.every=parseEvery(st.inj.trt.intervalDays,3);
         if(sb) entry.sandbag=true;
         if(injSeg==="peptide" && name) entry.name=name;
         // The tracker position derives from jab.history, so logging (and
@@ -4167,7 +4180,7 @@ var UI = (function(){
     +'<div class="grid g3">'
     +  '<div class="field" id="oPriceField"><label><span id="oPriceLbl">'+esc(I18N.t("cost.pricePerPen"))+'</span></label><input type="number" inputmode="decimal" id="oPrice" value="'+(st.calc.costPerPen!=null?st.calc.costPerPen:"")+'" placeholder="150"></div>'
     +  '<div class="field" id="oCurField"><label>'+esc(I18N.t("cost.currency"))+'</label>'+currencyInput("oCur",st.settings.currency)+'</div>'
-    +  '<div class="field"><label>'+esc(I18N.t("opt.interval"))+'</label><input type="number" inputmode="numeric" id="oInterval" value="'+(st.calc.intervalDays||7)+'" min="1"></div>'
+    +  '<div class="field"><label>'+esc(I18N.t("opt.interval"))+'</label><input type="number" inputmode="decimal" id="oInterval" value="'+(st.calc.intervalDays||7)+'" min="0.5" step="0.5"></div>'
     +'</div>'
     +'<p class="tiny muted" id="oCostShared" style="margin:-4px 0 12px">'+esc(I18N.t("opt.costShared"))+'</p>'
     +'<label class="toggle" style="margin:8px 0 12px"><input type="checkbox" id="oGold"'+(g.enabled?" checked":"")+'><span class="switch"></span>'
@@ -4407,7 +4420,7 @@ var UI = (function(){
     // price + currency shared with the Cost tab; interval shared by both modes
     $("#oPrice").addEventListener("input",function(){ st.calc.costPerPen = this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#oCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
-    $("#oInterval").addEventListener("change",function(){ st.calc.intervalDays = Math.max(1, parseInt(this.value,10)||7); STORE.save(); });
+    $("#oInterval").addEventListener("change",function(){ st.calc.intervalDays = parseEvery(this.value,7); STORE.save(); });
     $("#oGold").addEventListener("change",function(){
       st.settings.goldenDose.enabled=this.checked;
       $("#oGoldRow").className = this.checked?"":"hidden";
@@ -4417,7 +4430,7 @@ var UI = (function(){
       st.settings.goldenDose.enabled = $("#oGold").checked;
       st.calc.costPerPen = $("#oPrice").value===""?null:parseFloat($("#oPrice").value);
       st.settings.currency = ($("#oCur").value||"PLN").toUpperCase();
-      st.calc.intervalDays = Math.max(1, parseInt($("#oInterval").value,10)||7);
+      st.calc.intervalDays = parseEvery($("#oInterval").value,7);
       st.calc.strengthMg = strength;
       if($("#oBase")) st.calc.baseDose = $("#oBase").value===""?null:parseFloat($("#oBase").value);
       STORE.save();
@@ -4507,7 +4520,7 @@ var UI = (function(){
     var st=s();
     var S=st.calc.strengthMg||5;
     var base=parseFloat($("#oBase").value);
-    var interval=Math.max(1, parseInt($("#oInterval").value,10)||7);
+    var interval=parseEvery($("#oInterval").value,7);
     var pattern=(st.calc.pattern&&st.calc.pattern.length)?st.calc.pattern:[1];
     var P=(st.settings.penCosts?st.settings.penCosts[String(S)]:null), cur=st.settings.currency;
     var r=DOMAIN.planRegimen(S, base, pattern, interval, P, st.settings.goldenDose);
