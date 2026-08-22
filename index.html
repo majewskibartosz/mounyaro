@@ -1658,7 +1658,10 @@ var STORE = (function(){
       illness:[],          // illness/infection episodes: {id,start,end,label,severity} (end:null = still running)
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
-            peptide:{ unit:"j", cycleDays:56, cycleStart:null, name:"" } }
+            // every peptide/blend is tracked on its own:
+            // {id,name,color,unit,intervalDays,cycleDays,cycleStart,archived}
+            // Injections reference one by id in their `substance` field.
+            peptides:[] }
     };
   }
   var state = defaults();
@@ -1673,9 +1676,52 @@ var STORE = (function(){
       var raw = localStorage.getItem(KEY);
       if(raw){
         var parsed = JSON.parse(raw);
-        state = merge(defaults(), parsed);
+        state = migratePeptides(merge(defaults(), parsed));
       }
     }catch(e){ /* corrupt -> keep defaults */ }
+  }
+  // Peptides used to be a single config object with one free-text blend name on
+  // each injection. Rebuild that into one record per blend: every distinct name
+  // becomes its own peptide and its rows are re-stamped, while unnamed rows keep
+  // working untouched under the id "peptide". Runs after every merge (load,
+  // import, adopt) and returns immediately once a list exists.
+  var PEP_MIGRATE_COLORS=["#f59e0b","#38bdf8","#a78bfa","#fb7185","#34d399","#facc15","#f472b6","#22d3ee"];
+  function migratePeptides(st){
+    if(!st || !st.inj) return st;
+    if(!st.inj.peptides) st.inj.peptides=[];
+    if(st.inj.peptides.length) return st;              // already migrated
+    var legacy=st.inj.peptide || null, rows=[], names=[], seen={};
+    (st.injLog||[]).forEach(function(e){
+      if(!e || e.substance!=="peptide") return;
+      rows.push(e);
+      var n=String(e.name||"").trim();
+      if(n && !seen[n]){ seen[n]=true; names.push(n); }
+    });
+    if(!rows.length && !legacy) return st;              // nothing peptide-ish to carry over
+    var list=[], byName={}, ci=0;
+    function mk(id, name){
+      var p={ id:id, name:name, color:PEP_MIGRATE_COLORS[ci++ % PEP_MIGRATE_COLORS.length],
+              unit:"j", intervalDays:1, cycleDays:null, cycleStart:null, archived:false };
+      list.push(p); return p;
+    }
+    // Anything without a name (or a bare legacy config) stays on the old id, so
+    // those injLog rows need no rewrite at all.
+    var hasUnnamed=rows.some(function(e){ return !String(e.name||"").trim(); });
+    if(hasUnnamed || !names.length){
+      var base=mk("peptide", (legacy&&String(legacy.name||"").trim()) || "Peptyd");
+      if(legacy){ base.cycleDays=legacy.cycleDays||null; base.cycleStart=legacy.cycleStart||null;
+                  if(legacy.unit) base.unit=legacy.unit; }
+    }
+    names.forEach(function(n){
+      if(list.length===1 && list[0].id==="peptide" && list[0].name===n){ byName[n]=list[0]; return; }
+      byName[n]=mk("pep"+list.length, n);
+    });
+    rows.forEach(function(e){
+      var n=String(e.name||"").trim();
+      if(n && byName[n]) e.substance=byName[n].id;
+    });
+    st.inj.peptides=list;
+    return st;
   }
   function merge(base, over){
     if(typeof over!=="object"||over===null) return base;
@@ -1730,7 +1776,7 @@ var STORE = (function(){
       try{
         var parsed = JSON.parse(r.result);
         if(typeof parsed!=="object"||!parsed) throw new Error("bad");
-        state = merge(defaults(), parsed);
+        state = migratePeptides(merge(defaults(), parsed));
         save();
         cb(true);
       }catch(e){ cb(false); }
@@ -1781,7 +1827,7 @@ var STORE = (function(){
   }
   function adoptParsed(parsed){
     if(typeof parsed!=="object"||!parsed) return false;
-    state = merge(defaults(), parsed);
+    state = migratePeptides(merge(defaults(), parsed));
     if(!memoryOnly){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
     return true;
   }
