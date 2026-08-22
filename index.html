@@ -391,12 +391,6 @@ var I18N = (function(){
     "pulpit.bp":{pl:"Ciśnienie",en:"Blood pressure"},
     "pulpit.weight":{pl:"Waga",en:"Weight"},
     "pulpit.noData":{pl:"—",en:"—"},
-    "pulpit.actions":{pl:"Szybkie akcje",en:"Quick actions"},
-    "pulpit.goInject":{pl:"Zastrzyki",en:"Injections"},
-    "pulpit.goDiary":{pl:"Dziennik",en:"Journal"},
-    "pulpit.goBp":{pl:"Ciśnienie",en:"BP"},
-    "pulpit.goWeight":{pl:"Waga",en:"Weight"},
-    "pulpit.goCorr":{pl:"Korelacje",en:"Correlations"},
     "pulpit.mapHint":{pl:"Ostatnie miejsca wkłuć →",en:"Recent injection sites →"},
     // cross-links between related tabs
     "rel.toDiary":{pl:"Dodaj notatkę",en:"Add a note"},
@@ -4729,15 +4723,6 @@ var UI = (function(){
       html+='<div class="card"><a href="#inject" style="text-decoration:none;color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</a>'
         +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div></div>';
     }
-
-    // --- quick actions ---
-    html+='<div class="card"><h2>'+esc(I18N.t("pulpit.actions"))+'</h2><div class="row">'
-      +'<a class="btn" href="#inject">'+icon("inject")+esc(I18N.t("pulpit.goInject"))+'</a>'
-      +'<a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("pulpit.goDiary"))+'</a>'
-      +'<a class="btn ghost" href="#bp">'+icon("bp")+esc(I18N.t("pulpit.goBp"))+'</a>'
-      +'<a class="btn ghost" href="#weight">'+icon("weight")+esc(I18N.t("pulpit.goWeight"))+'</a>'
-      +'<a class="btn ghost" href="#correlate">'+icon("correlate")+esc(I18N.t("pulpit.goCorr"))+'</a>'
-      +'</div></div>';
 
     app.innerHTML=html;
   }
