@@ -2353,6 +2353,19 @@ var THEME=(function(){
     }
     return v;
   }
+  function mix(hexA, hexB, t){
+    function ch(h,i){ return parseInt(h.substr(1+i*2,2),16); }
+    function hh(v){ return Math.round(v).toString(16).padStart(2,"0"); }
+    var r=[0,1,2].map(function(i){ return ch(hexA,i)+(ch(hexB,i)-ch(hexA,i))*t; });
+    return "#"+r.map(hh).join("");
+  }
+  // symptom-severity dots need their own guaranteed green->red ramp: the
+  // 5-stop `state` array's "best" end is each IDE theme's cyan/teal accent
+  // (kept there for a 5th distinct wellbeing hue), not a true green — reusing
+  // it here read as two confusable greens instead of a clear green-to-red run.
+  function symSevRamp(good, warn, bad){
+    return [good, mix(good,warn,0.5), warn, mix(warn,bad,0.5), bad];
+  }
 
   // ---- presets -----------------------------------------------------------
   // Mounyaro Light/Dark reproduce the look the app shipped with before presets
@@ -2504,7 +2517,7 @@ var THEME=(function(){
       onBrand:pick(p.onBrand, pickInk(p.brand)),
       tintA:d?"33":"22", tintB:d?"3d":"2b",
       sev:sev, sevBand:band, sevOp:d?0.13:0.09, sevStroke:d?0.7:0.55,
-      state:p.state, bmi:p.bmi, ring:p.ring, dose:p.dose,
+      state:p.state, symSev:symSevRamp(p.good,p.warn,p.bad), bmi:p.bmi, ring:p.ring, dose:p.dose,
       series:{ weight:pick(p.series.weight,p.brand), waist:p.series.waist,
                sys:p.series.sys, dia:p.series.dia, pulse:p.series.pulse },
       chartGrid:pick(p.chartGrid,p.line), chartAxis:pick(p.chartAxis,p.muted),
@@ -2539,6 +2552,7 @@ var THEME=(function(){
     ["weight","waist","sys","dia","pulse"].forEach(function(k){ v["--series-"+k]=t.series[k]; });
     t.sev.forEach(function(c,i){ v["--sev-"+(i+1)]=c; });
     t.state.forEach(function(c,i){ v["--state-"+(i+1)]=c; });
+    t.symSev.forEach(function(c,i){ v["--sym-sev-"+(i+1)]=c; });
     t.bmi.forEach(function(c,i){ v["--bmi-"+(i+1)]=c; });
     t.pep.forEach(function(c,i){ v["--pep-"+(i+1)]=c; });
     return v;
@@ -3861,8 +3875,10 @@ var UI = (function(){
           h+='<div class="staterow"><span class="sname">'+esc(sy.label)+'</span><span class="sdots">';
           for(var v=1;v<=5;v++){
             // severity runs the opposite way from wellbeing: none (1) is good
-            // (green), severe (5) is bad (red) — the same ramp, read backwards.
-            var vc=PAL.state[5-v], on=(symDraft[e.id+":"+sy.key]===v);
+            // (green), severe (5) is bad (red) — its own ramp, not the
+            // wellbeing one, whose "best" slot is a theme's cyan accent rather
+            // than a true green (see symSevRamp).
+            var vc=PAL.symSev[v-1], on=(symDraft[e.id+":"+sy.key]===v);
             h+='<button type="button" class="sdot symdot'+(on?" on":"")+'" data-cond="'+esc(e.id)+'" data-sym="'+esc(sy.key)
               +'" data-v="'+v+'" style="background:'+vc+';color:'+vc+'" aria-label="'+esc(sy.label)+' '+v+'/5"></button>';
           }
@@ -3908,9 +3924,12 @@ var UI = (function(){
         if(dISO===addDaysISO(today,-1)) return I18N.t("diary.yesterday");
         return fmtDate(dISO);
       }
-      // "🤒 Grypa: Gorączka 3 · Ból gardła 2" — one line per condition that has
+      // "🤒 Grypa: ● Gorączka · ● Ból gardła" — one line per condition that has
       // a value that day, grouped so two conditions logged the same day read as
-      // two lines, not an unlabelled soup of numbers. A condition or symptom
+      // two lines, not an unlabelled soup of numbers. Each symptom gets a small
+      // dot in its severity colour (same ramp as the composer's tap targets) —
+      // a bare "3" or "2" next to two unrelated symptoms reads as ambiguous,
+      // the colour makes "how bad" legible at a glance. A condition or symptom
       // that was later deleted outright (never just archived) has nothing left
       // to resolve a label from, so it is silently skipped — the same thing the
       // delete confirmation already promises ("marks disappear from notes").
@@ -3925,13 +3944,15 @@ var UI = (function(){
           if(!cond) return;
           var sym=null; (cond.symptoms||[]).forEach(function(sy){ if(sy.key===symKey) sym=sy; });
           if(!sym) return;
-          (byCond[condId]=byCond[condId]||{cond:cond,parts:[]}).parts.push(esc(sym.label)+' '+v);
+          var dot='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+PAL.symSev[v-1]+';margin-right:4px" aria-hidden="true"></span>';
+          (byCond[condId]=byCond[condId]||{cond:cond,parts:[]}).parts.push(dot+esc(sym.label)+' '+v+'/5');
         });
         return Object.keys(byCond).map(function(cid){
           var g=byCond[cid];
           return '<div class="muted tiny" style="margin-top:2px">'
             +(g.cond.type==="illness"?'&#129298;':'&#129657;')+' '
-            +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+': '+g.parts.join(' &middot; ')+'</div>';
+            +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+': '
+            +g.parts.map(function(p){ return '<span style="display:inline-flex;align-items:center;margin-right:8px">'+p+'</span>'; }).join('')+'</div>';
         }).join('');
       }
       journalPage=pageClamp(journalPage, items.length);
