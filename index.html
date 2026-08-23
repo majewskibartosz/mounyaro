@@ -87,6 +87,13 @@
   .g2{grid-template-columns:1fr 1fr}
   .g3{grid-template-columns:1fr 1fr 1fr}
   @media(max-width:600px){.g2,.g3{grid-template-columns:1fr}}
+  /* one back-to-back reading per line, at every width */
+  .bpser,.bpserh{display:grid;grid-template-columns:15px 1fr 1fr 1fr;gap:6px;align-items:center}
+  .bpser{margin-bottom:6px}
+  .bpserh{font-size:11px;font-weight:600;color:var(--muted);margin:2px 0 4px}
+  .bpserh span{text-align:center}
+  .bpser .n{font-size:12px;font-weight:700;color:var(--muted);text-align:center}
+  .bpser input{padding:9px 6px;font-size:15px;text-align:center}
   .field{margin:0 0 12px}
 
   /* tap-to-choose chips (pen strength) */
@@ -644,6 +651,12 @@ var I18N = (function(){
     "bp.history":{pl:"Historia pomiarów",en:"Reading history"},
     "bp.latest":{pl:"Ostatni pomiar",en:"Latest reading"},
     "bp.reading":{pl:"Pomiar",en:"Reading"},
+    "bp.modeOne":{pl:"Jeden pomiar",en:"Single reading"},
+    "bp.modeSeries":{pl:"Seria 3",en:"Series of 3"},
+    "bp.seriesHint":{pl:"Zmierz trzy razy pod rząd, z minutą przerwy. Zapisana zostanie średnia — pojedyncze pomiary też zostają w historii.",en:"Measure three times in a row, a minute apart. The average is what gets logged — the individual readings are kept too."},
+    "bp.avg":{pl:"Średnia",en:"Average"},
+    "bp.avgOf":{pl:"śr. z {n}",en:"avg of {n}"},
+    "bp.needTwo":{pl:"Wpisz przynajmniej dwa pomiary, żeby policzyć średnią.",en:"Enter at least two readings to average."},
     "bp.legSys":{pl:"Górne",en:"Systolic"},
     "bp.legDia":{pl:"Dolne",en:"Diastolic"},
     "bp.legPulse":{pl:"Tętno",en:"Pulse"},
@@ -1738,6 +1751,20 @@ var DOMAIN = (function(){
              dia:minMaxAvg(rows.map(function(e){ return e.dia; })),
              pulse:pulse };
   }
+  // Several readings taken back to back — the way blood pressure is supposed to
+  // be measured — collapsed into the one number that goes in the log. A row only
+  // counts once it has both values; pulse is averaged over the rows that carry
+  // one, so filling it in for two of three still yields a pulse.
+  function bpAverage(rows){
+    var use=(rows||[]).filter(function(r){ return r && r.sys>0 && r.dia>0; });
+    if(!use.length) return null;
+    function mean(vals){ var t=0,i; for(i=0;i<vals.length;i++) t+=vals[i]; return Math.round(t/vals.length); }
+    var pulses=use.filter(function(r){ return r.pulse!=null && r.pulse>0; }).map(function(r){ return r.pulse; });
+    return { sys:mean(use.map(function(r){ return r.sys; })),
+             dia:mean(use.map(function(r){ return r.dia; })),
+             pulse:pulses.length?mean(pulses):null,
+             n:use.length };
+  }
   function weightWindowStats(entries){
     var rows=(entries||[]).filter(function(e){ return e.weightKg!=null; })
       .slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
@@ -1803,7 +1830,7 @@ var DOMAIN = (function(){
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, doseCountdown:doseCountdown,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
-    chartWindow:chartWindow, bpWindowStats:bpWindowStats, weightWindowStats:weightWindowStats,
+    chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
     parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
@@ -1819,7 +1846,7 @@ var STORE = (function(){
   function defaults(){
     return {
       schemaVersion:1,
-      settings:{ lang:"pl", theme:"light", lastDark:"mounyaroDark", currency:"PLN", showDoseWeeks:true, showMounjaroTab:true, showDoseBackfill:false, goldenDose:{enabled:false, extraClicks:8},
+      settings:{ lang:"pl", theme:"light", lastDark:"mounyaroDark", currency:"PLN", showDoseWeeks:true, showMounjaroTab:true, showDoseBackfill:false, bpSeries:false, goldenDose:{enabled:false, extraClicks:8},
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" },
@@ -3227,8 +3254,35 @@ var UI = (function(){
   var bpEdit=null;  // id of the reading being edited (null = adding a new one)
   var bpPage=0;     // history page (5 rows each)
   var bpRange={days:null, offset:0}; // chart day window: days null = full history
+  // One back-to-back reading per line, headed once. The long labels
+  // ("Skurczowe / górne") do not fit three across, so the chart's short ones are
+  // reused — they already name these three numbers everywhere else.
+  function bpSeriesHeadHTML(){
+    return '<div class="bpserh"><span></span><span>'+esc(I18N.t("bp.legSys"))+'</span>'
+      +'<span>'+esc(I18N.t("bp.legDia"))+'</span><span>'+esc(I18N.t("bp.legPulse"))+'</span></div>';
+  }
+  function bpRowHTML(i){
+    function f(id, ph){
+      return '<input type="number" inputmode="numeric" class="bpS" id="'+id+i+'" placeholder="'+ph+'"'
+        +' aria-label="'+esc(I18N.t("bp.reading")+" "+i)+'">';
+    }
+    return '<div class="bpser"><span class="n">'+i+'</span>'
+      + f("bpSys","120") + f("bpDia","80") + f("bpPulse","70") + '</div>';
+  }
+  // Reads the three rows back out of the DOM; the average is DOMAIN's business.
+  function bpSeriesRows(){
+    var rows=[], i;
+    for(i=1;i<=3;i++){
+      var sy=parseInt(($("#bpSys"+i)||{}).value,10), di=parseInt(($("#bpDia"+i)||{}).value,10),
+          pu=parseInt(($("#bpPulse"+i)||{}).value,10);
+      if(!isNaN(sy) || !isNaN(di) || !isNaN(pu))
+        rows.push({ sys:isNaN(sy)?null:sy, dia:isNaN(di)?null:di, pulse:isNaN(pu)?null:pu });
+    }
+    return rows;
+  }
   function viewBP(){
     var st=s();
+    var series=!!st.settings.bpSeries;
     var log = st.bp.log || [];
     var editing=null;
     if(bpEdit){
@@ -3285,11 +3339,18 @@ var UI = (function(){
     html+='<div class="card"><p class="sub">'+esc(I18N.t("bp.sub"))+'</p>'
     + (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
     + '<div class="row" id="bpCtx" style="margin:0 0 10px'+(bpCtx0?'':';display:none')+'">'+bpCtx0+'</div>'
-    + '<div class="grid g3">'
+    + (editing?'':'<div class="seg" data-bpmode>'
+        +'<button type="button" data-m="one"'+(series?'':' class="on"')+'>'+esc(I18N.t("bp.modeOne"))+'</button>'
+        +'<button type="button" data-m="series"'+(series?' class="on"':'')+'>'+esc(I18N.t("bp.modeSeries"))+'</button></div>')
+    + '<div id="bpOne"'+(series?' hidden':'')+'><div class="grid g3">'
     +   '<div class="field"><label>'+esc(I18N.t("bp.sys"))+'</label><input type="number" inputmode="numeric" id="bpSys" placeholder="120" value="'+(editing?esc(editing.sys):'')+'"></div>'
     +   '<div class="field"><label>'+esc(I18N.t("bp.dia"))+'</label><input type="number" inputmode="numeric" id="bpDia" placeholder="80" value="'+(editing?esc(editing.dia):'')+'"></div>'
     +   '<div class="field"><label>'+esc(I18N.t("bp.pulse"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="numeric" id="bpPulse" placeholder="70" value="'+(editing&&editing.pulse!=null?esc(editing.pulse):'')+'"></div>'
-    + '</div>'
+    + '</div></div>'
+    + (editing?'':'<div id="bpMany"'+(series?'':' hidden')+'>'
+        +'<p class="tiny muted" style="margin:-2px 0 10px">'+esc(I18N.t("bp.seriesHint"))+'</p>'
+        + bpSeriesHeadHTML() + [1,2,3].map(bpRowHTML).join('')
+        +'<div id="bpAvg" class="note" style="margin:2px 0 12px"></div></div>')
     + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("bp.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label><input type="date" id="bpDate" value="'+(editing?toLocalDT(editing.ts):nowLocalDT()).slice(0,10)+'"></div>'
     + '<div class="field"><label>'+esc(I18N.t("common.time"))+'</label><input type="time" id="bpTime" value="'+(editing?toLocalDT(editing.ts):nowLocalDT()).slice(11,16)+'"></div></div>'
     + '<label class="toggle" style="margin:4px 0 12px"><input type="checkbox" id="bpFast"'+((editing?editing.fasting:morning)?" checked":"")+'><span class="switch"></span><span>'+esc(I18N.t("bp.fasting"))+'</span></label>'
@@ -3310,7 +3371,10 @@ var UI = (function(){
             +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:var(--brand-t14);color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
-            + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')+'</td>'
+            + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')
+            + (e.readings&&e.readings.length>1?'<br><span class="muted tiny nowrap" title="'
+                +esc(e.readings.map(function(r){ return r.sys+"/"+r.dia; }).join(" · "))+'">'
+                +esc(I18N.t("bp.avgOf").replace("{n}",e.readings.length))+'</span>':'')+'</td>'
             + '<td style="width:25%">'+doseCell(e)+'</td>'
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
@@ -3320,10 +3384,20 @@ var UI = (function(){
     app.innerHTML=html;
 
     $("#bpAdd").addEventListener("click",function(){
-      var sys=parseInt($("#bpSys").value,10), dia=parseInt($("#bpDia").value,10);
-      if(isNaN(sys)||sys<=0){ $("#bpSys").focus(); return; }
-      if(isNaN(dia)||dia<=0){ $("#bpDia").focus(); return; }
-      var pulse=$("#bpPulse").value===""?null:parseInt($("#bpPulse").value,10);
+      var sys, dia, pulse, readings=null;
+      var inSeries = !editing && $("#bpMany") && !$("#bpMany").hidden;
+      if(inSeries){
+        readings=bpSeriesRows();
+        var avg=DOMAIN.bpAverage(readings);
+        if(!avg || avg.n<2){ toast(I18N.t("bp.needTwo")); var f1=$("#bpSys1"); if(f1) f1.focus(); return; }
+        sys=avg.sys; dia=avg.dia; pulse=avg.pulse;
+        readings=readings.filter(function(r){ return r.sys>0 && r.dia>0; });
+      } else {
+        sys=parseInt($("#bpSys").value,10); dia=parseInt($("#bpDia").value,10);
+        if(isNaN(sys)||sys<=0){ $("#bpSys").focus(); return; }
+        if(isNaN(dia)||dia<=0){ $("#bpDia").focus(); return; }
+        pulse=$("#bpPulse").value===""?null:parseInt($("#bpPulse").value,10);
+      }
       var whenVal=$("#bpDate").value ? $("#bpDate").value+"T"+($("#bpTime").value||"12:00") : "";
       var when=whenVal?new Date(whenVal):new Date();
       if(isNaN(when.getTime())) when=new Date();
@@ -3332,17 +3406,42 @@ var UI = (function(){
                    note:($("#bpNote").value||"").trim() };
       if(editing){
         // doseMg (legacy manual field) is left untouched on edit
+        // an edited value is no longer the average of the stored series, so the
+        // series stops claiming to back it up
+        var was=editing.readings?DOMAIN.bpAverage(editing.readings):null;
+        if(was && (was.sys!==fields.sys || was.dia!==fields.dia || was.pulse!==fields.pulse)) editing.readings=null;
         editing.ts=fields.ts; editing.sys=fields.sys; editing.dia=fields.dia; editing.pulse=fields.pulse;
         editing.fasting=fields.fasting; editing.note=fields.note;
         bpEdit=null;
       } else {
         fields.id=uid(); fields.doseMg=null;
+        if(readings && readings.length>1) fields.readings=readings;
         st.bp.log.push(fields);
       }
       st.bp.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       bpPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewBP();
     });
+    // Swaps the two blocks by visibility rather than re-rendering, so switching
+    // mode never throws away what is already typed.
+    $all('[data-bpmode] button').forEach(function(b){ b.addEventListener("click",function(){
+      var on=(b.getAttribute("data-m")==="series");
+      st.settings.bpSeries=on; STORE.save();
+      $all('[data-bpmode] button').forEach(function(x){ x.classList.toggle("on", x===b); });
+      $("#bpOne").hidden=on; $("#bpMany").hidden=!on;
+      if(on) bpRefreshAvg();
+    });});
+    function bpRefreshAvg(){
+      var box=$("#bpAvg"); if(!box) return;
+      var a=DOMAIN.bpAverage(bpSeriesRows());
+      box.innerHTML = (a && a.n>1)
+        ? '<b>'+esc(I18N.t("bp.avg"))+': '+a.sys+'/'+a.dia+'</b>'
+          +(a.pulse!=null?' &middot; '+a.pulse+' bpm':'')
+          +' <span class="muted tiny">'+esc(I18N.t("bp.avgOf").replace("{n}",a.n))+'</span>'
+        : '<span class="muted tiny">'+esc(I18N.t("bp.needTwo"))+'</span>';
+    }
+    $all(".bpS").forEach(function(i){ i.addEventListener("input", bpRefreshAvg); });
+    if(series) bpRefreshAvg();
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
     bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
     bindRange("bpRg", bpRange, viewBP);

@@ -597,3 +597,43 @@ test("BMI_BANDS are the boundaries bmiBand actually splits on", function () {
     if (i > 0) assert.strictEqual(DOMAIN.bmiBand(edge - 0.01), i - 1);
   });
 });
+
+test("bpAverage: three back-to-back readings collapse to one, rounded", function () {
+  var r = DOMAIN.bpAverage([{ sys: 128, dia: 84, pulse: 70 },
+                            { sys: 124, dia: 80, pulse: 66 },
+                            { sys: 121, dia: 79, pulse: 65 }]);
+  assert.strictEqual(r.sys, 124);          // 373/3 = 124.33
+  assert.strictEqual(r.dia, 81);           // 243/3 = 81
+  assert.strictEqual(r.pulse, 67);         // 201/3 = 67
+  assert.strictEqual(r.n, 3);
+});
+
+test("bpAverage: a row needs both values to count", function () {
+  var r = DOMAIN.bpAverage([{ sys: 130, dia: 80, pulse: 70 },
+                            { sys: 120, dia: null, pulse: 60 },   // half-typed row is ignored
+                            { sys: 140, dia: 90, pulse: 80 }]);
+  assert.strictEqual(r.n, 2);
+  assert.strictEqual(r.sys, 135);
+  assert.strictEqual(r.dia, 85);
+  assert.strictEqual(r.pulse, 75);         // the ignored row's pulse does not sneak in
+});
+
+test("bpAverage: pulse averages over the rows that have one", function () {
+  var r = DOMAIN.bpAverage([{ sys: 120, dia: 80, pulse: 60 },
+                            { sys: 130, dia: 90, pulse: null },
+                            { sys: 128, dia: 82, pulse: 70 }]);
+  assert.strictEqual(r.n, 3);
+  assert.strictEqual(r.pulse, 65);
+  assert.strictEqual(DOMAIN.bpAverage([{ sys: 120, dia: 80 }]).pulse, null);
+});
+
+test("bpAverage: nothing usable in, null out", function () {
+  assert.strictEqual(DOMAIN.bpAverage([]), null);
+  assert.strictEqual(DOMAIN.bpAverage(null), null);
+  assert.strictEqual(DOMAIN.bpAverage([{ sys: 0, dia: 0 }, { sys: null, dia: 80 }]), null);
+});
+
+test("bpAverage: a single reading still averages to itself", function () {
+  var r = DOMAIN.bpAverage([{ sys: 118, dia: 76, pulse: 61 }]);
+  assert.deepStrictEqual([r.sys, r.dia, r.pulse, r.n], [118, 76, 61, 1]);
+});
