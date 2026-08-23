@@ -645,6 +645,7 @@ var I18N = (function(){
     "cond.symptomPh":{pl:"np. Gorączka",en:"e.g. Fever"},
     "cond.symptomAdd":{pl:"Dodaj",en:"Add"},
     "cond.checkinHint":{pl:"zapisuje się przyciskiem — razem z notatką albo samo",en:"saved with the button — with a note or on its own"},
+    "cond.sectionDetails":{pl:"Szczegóły",en:"Details"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
@@ -3768,7 +3769,7 @@ var UI = (function(){
           +'<button type="button" class="'+removeCls+'"'+(c.key?' data-key="'+esc(c.key)+'"':' data-idx="'+chips.indexOf(c)+'"')
           +' style="border:0;background:none;cursor:pointer;padding:0;line-height:1;color:inherit;font-size:15px" aria-label="'+esc(I18N.t("common.delete"))+'">&times;</button></span>';
       }).join('');
-      return '<div class="field"><label>'+esc(I18N.t("cond.symptoms"))+'</label>'
+      return '<div class="field"><label class="dayhead" style="margin:16px 0 8px">'+esc(I18N.t("cond.symptoms"))+'</label>'
         + '<div style="margin-bottom:6px">'+(body||'<span class="muted tiny">'+esc(I18N.t("cond.symptomsNone"))+'</span>')+'</div>'
         + '<div class="row"><input type="text" id="condSymInput" maxlength="40" placeholder="'+esc(I18N.t("cond.symptomPh"))+'" style="flex:1;min-width:0">'
         + '<button type="button" class="btn ghost sm" id="condSymAdd">'+esc(I18N.t("cond.symptomAdd"))+'</button></div></div>';
@@ -3777,18 +3778,23 @@ var UI = (function(){
     // is whether there is still an "end it" action to offer.
     function condEditorHTML(e, sh){
       var labelKey = e.type==="illness" ? "ill.labelPh" : "cond.labelPhChronic";
+      // for something still ongoing, ending it is the action you actually come
+      // back for — it goes right under the banner, before the fields you only
+      // touch when something changes (start/label/severity/symptoms)
+      var finishHTML = sh
+        ? '<div class="grid g2" style="margin-top:10px"><div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="condEndDate" value="'+esc(today)+'"></div>'
+          + '<div class="field" style="display:flex;align-items:flex-end"><button class="btn" id="condFinish" data-id="'+esc(e.id)+'" style="width:100%">'+esc(I18N.t("ill.end"))+'</button></div></div>'
+        : '';
       return (sh ? condOngoingText(e, sh) : '')
+        + finishHTML
+        + '<div class="dayhead" style="margin-top:'+(sh?'16':'2')+'px">'+esc(I18N.t("cond.sectionDetails"))+'</div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+(sh?' <span class="muted tiny">('+esc(I18N.t("ill.startHint"))+')</span>':'')+'</label><input type="date" class="condEdStart" value="'+esc(e.start)+'"></div>'
         + (e.end ? '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" class="condEdEnd" value="'+esc(e.end)+'"></div>' : '')
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" class="condEdLabel" maxlength="60" placeholder="'+esc(I18N.t(labelKey))+'" value="'+esc(e.label||"")+'"></div>'
         + illSevHtml(condDraft.severity, "condsev")
         + symptomBuilderHTML((e.symptoms||[]).filter(function(sy){ return !sy.archived; }), "condSymDel")
-        + '<div class="row" style="margin-top:10px"><button class="btn ghost" id="condEdSave" data-id="'+esc(e.id)+'">'+esc(I18N.t(sh?"ill.applyChanges":"ill.update"))+'</button>'
-        + '<button class="btn danger" id="condEdDrop" data-id="'+esc(e.id)+'">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>'
-        + (sh ? '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
-             + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="condEndDate" value="'+esc(today)+'"></div>'
-             + '<div class="field" style="display:flex;align-items:flex-end"><button class="btn" id="condFinish" data-id="'+esc(e.id)+'" style="width:100%">'+esc(I18N.t("ill.end"))+'</button></div></div></div>'
-           : '');
+        + '<div class="row" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)"><button class="btn ghost" id="condEdSave" data-id="'+esc(e.id)+'">'+esc(I18N.t(sh?"ill.applyChanges":"ill.update"))+'</button>'
+        + '<button class="btn danger" id="condEdDrop" data-id="'+esc(e.id)+'">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>';
     }
 
     html+='<div class="card"><h2 style="margin:0 0 10px">'+esc(I18N.t("cond.title"))+'</h2>'
@@ -3811,18 +3817,19 @@ var UI = (function(){
     // open conditions: tap the row to expand to the full editor, same as the
     // old single illness card did for its one open episode.
     condOpenList.forEach(function(e){
-      var sh=condShapedById[e.id], c=illColor(e.severity);
+      var sh=condShapedById[e.id];
       if(condOpenId===e.id){
         html+='<div class="logentry" style="margin-top:10px"><div class="lbody">'+condEditorHTML(e, sh)+'</div></div>';
         return;
       }
-      html+='<div class="logentry condRow" data-id="'+esc(e.id)+'" style="margin-top:10px;cursor:pointer"><div class="lbody"><div class="lmeta">'
-        + (e.type==="illness" ? '&#129298;' : '&#129657;')+' '
-        + '<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'
-          +esc(I18N.t(e.type==="illness"?"ill.ongoing":"cond.ongoingChronic"))+' &middot; '+esc(I18N.t("ill.dayN"))+' '+sh.dayN+'</span>'
-        + (e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
-        + '</div>'+(e.label?'<div class="ltext">'+esc(e.label)+'</div>':'')+'</div>'
-        + '<span class="muted" style="padding:0 8px">&#9660;</span></div>';
+      // collapsed = just enough to say "there is one" — day count, severity
+      // and everything else only shows up once you actually tap it open
+      html+='<div class="logentry condRow" data-id="'+esc(e.id)+'" style="margin-top:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px">'
+        + '<div class="lbody" style="display:flex;align-items:center;gap:8px;min-width:0">'
+        + '<span style="font-size:18px;flex:none">'+(e.type==="illness" ? '&#129298;' : '&#129657;')+'</span>'
+        + '<span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+          +esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+'</span></div>'
+        + '<span class="muted" style="padding:0 8px;flex:none">&#9660;</span></div>';
     });
     // past (closed) conditions, newest first — dedicated edit/delete icons, no
     // need to expand just to remove one.
