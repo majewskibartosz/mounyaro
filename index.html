@@ -627,6 +627,19 @@ var I18N = (function(){
     "ill.markStart":{pl:"To początek choroby",en:"This is the start of an illness"},
     "ill.markEnd":{pl:"To koniec choroby",en:"This is the end of the illness"},
     "ill.legend":{pl:"Zacieniowane = choroba",en:"Shaded = illness"},
+    "cond.title":{pl:"Choroby i schorzenia",en:"Illnesses & conditions"},
+    "cond.addIllness":{pl:"Nowa infekcja",en:"New infection"},
+    "cond.addChronic":{pl:"Nowe schorzenie",en:"New condition"},
+    "cond.typeIllness":{pl:"Infekcja",en:"Infection"},
+    "cond.typeChronic":{pl:"Schorzenie / kontuzja",en:"Condition / injury"},
+    "cond.subIllness":{pl:"Zaznacz początek — najwyżej jedna infekcja naraz.",en:"Mark the start — at most one infection at a time."},
+    "cond.subChronic":{pl:"Zaznacz początek — schorzenia mogą trwać niezależnie, kilka naraz.",en:"Mark the start — conditions can run independently, several at once."},
+    "cond.labelPhChronic":{pl:"np. łokieć tenisisty, ból pleców",en:"e.g. tennis elbow, lower back pain"},
+    "cond.ongoingChronic":{pl:"Trwa",en:"Ongoing"},
+    "cond.confirmDrop":{pl:"Usunąć ten wpis? Oznaczenia znikną z notatek i wykresów.",en:"Delete this entry? Its marks disappear from notes and charts."},
+    "cond.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
+    "cond.none":{pl:"Brak chorób i schorzeń.",en:"No illnesses or conditions yet."},
+    "cond.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
@@ -3637,35 +3650,44 @@ var UI = (function(){
       });
     });});
   }
-  // At most one open episode at a time — refuse instead of silently stacking.
+  // At most one open illness at a time — refuse instead of silently stacking.
+  // Chronic conditions have no such limit: several can run independently.
   // A retrospective episode (endISO given) is born closed, so it never touches
   // that invariant and can be backfilled even while another episode is running.
-  function startIllness(startISO, endISO, label, severity){
+  function startCondition(type, startISO, endISO, label, severity){
     var st=s();
-    if(!endISO && DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
+    if(type==="illness" && !endISO && DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
     if(!st.conditions) st.conditions=[];
-    st.conditions.push({ id:uid(), type:"illness", start:startISO,
+    st.conditions.push({ id:uid(), type:type, start:startISO,
                       end:endISO ? ((endISO<startISO)?startISO:endISO) : null,
                       label:String(label||"").trim().slice(0,60), severity:severity||null, symptoms:[] });
     return true;
   }
   // Closing before the start would make the episode cover nothing — clamp to the start.
-  function endIllness(endISO){
-    var ep=DOMAIN.openIllness(s());
+  function endCondition(id, endISO){
+    var ep=null;
+    (s().conditions||[]).forEach(function(e){ if(e.id===id) ep=e; });
     if(!ep){ toast(I18N.t("ill.noneOpen")); return false; }
     ep.end = (endISO<ep.start) ? ep.start : endISO;
     return true;
   }
-  var illCardOpen=false;   // illness card expanded (collapsed = one summary row)
-  var illEditId=null;      // past episode being edited
-  var illPage=0;           // past-episode list page
-  var illDraft={ severity:null };   // severity pick for the episode card form
-  var jIllDraft={ severity:null };  // severity pick for the composer's "start" toggle
-  var illSeed=null;                 // which form illDraft currently belongs to
-  // Seed the card draft once per form identity, so a re-render doesn't undo a
-  // deliberate deselect but switching forms doesn't inherit the other's pick.
-  function illSeedFor(key, sev){
-    if(illSeed!==key){ illSeed=key; illDraft.severity=(sev==null?null:sev); }
+  // Thin wrappers: the note composer's own "start/end an infection" toggle
+  // calls these by name and by illness's single-open-episode assumption.
+  function startIllness(startISO, endISO, label, severity){ return startCondition("illness", startISO, endISO, label, severity); }
+  function endIllness(endISO){
+    var ep=DOMAIN.openIllness(s());
+    return ep ? endCondition(ep.id, endISO) : (toast(I18N.t("ill.noneOpen")), false);
+  }
+  var condAddType=null;    // null | "illness" | "chronic" — which "add new" form is open
+  var condOpenId=null;     // id of the ONE condition card expanded to its full editor (open or past — same editor)
+  var condPage=0;          // past-episode list page
+  var condDraft={ severity:null };  // severity pick for whichever form condSeed names
+  var jIllDraft={ severity:null };  // severity pick for the composer's own "start infection" toggle
+  var condSeed=null;
+  // Seed the draft once per form identity, so a re-render doesn't undo a
+  // deliberate deselect but switching forms doesn't inherit another's pick.
+  function condSeedFor(key, sev){
+    if(condSeed!==key){ condSeed=key; condDraft.severity=(sev==null?null:sev); }
   }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
   var journalPage=0;     // notes list page (5 each)
@@ -3678,84 +3700,102 @@ var UI = (function(){
     }
     var html=pageHead("diary.title");
 
-    // --- illness / infection episodes: the always-visible start/end control ---
-    // One open episode at a time, so this card is either "start" or "end" — never both.
-    var illOpen=DOMAIN.openIllness(st), illNow=illOpen?DOMAIN.illnessAsOf(st,today):null;
-    var illEd=null;
-    if(illEditId){
-      (st.conditions||[]).forEach(function(e){ if(e.id===illEditId) illEd=e; });
-      if(!illEd) illEditId=null;
+    // --- conditions: infections (one open at a time) + chronic conditions and
+    // injuries (any number open at once) share one card list. Open conditions
+    // expand on tap, same as the old single illness card did; past ones keep
+    // their own edit/delete icons so closing one is never more than one tap.
+    var condAll=DOMAIN.conditionEpisodes(st);                 // both types, newest start first
+    var condOpenList=condAll.filter(function(e){ return !e.end; });
+    var condPast=condAll.filter(function(e){ return !!e.end; });
+    var condShapedById={};
+    DOMAIN.openConditions(st, today).forEach(function(o){ condShapedById[o.id]=o; });
+    if(condOpenId && !condAll.some(function(e){ return e.id===condOpenId; })) condOpenId=null;
+    if(condAddType==="illness" && DOMAIN.openIllness(st)) condAddType=null;   // started elsewhere meanwhile
+    var condEd = condOpenId ? condAll.filter(function(e){ return e.id===condOpenId; })[0] : null;
+    if(condEd) condSeedFor("edit:"+condEd.id, condEd.severity);
+    else if(condAddType) condSeedFor("new:"+condAddType, null);
+    else condSeed=null;
+
+    function condOngoingText(e, sh){
+      var c=illColor(e.severity);
+      return '<div class="banner" id="condNow" style="margin:0 0 10px;background:'+c+'1a;border-color:'+c+'59;color:'+c+'">'
+        +'<b>'+esc(I18N.t(e.type==="illness"?"ill.ongoing":"cond.ongoingChronic"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+sh.dayN
+        +(e.label?' &middot; '+esc(e.label):'')+'</div>';
     }
-    var illC=illColor(illOpen?illOpen.severity:null);
-    if(illEditId) illSeedFor("edit:"+illEditId, (illEd||{}).severity);
-    else if(illOpen) illSeedFor("open:"+illOpen.id, illOpen.severity);
-    else if(illCardOpen) illSeedFor("new", null);
-    else illSeed=null;
-    // Collapsed by default: one summary row (plus a slim status strip while an
-    // episode runs) that expands into the full editor on tap, so the card reads
-    // as part of the diary instead of a screenful of its own.
-    html+='<div class="card">'
-      + '<div id="illHead" style="cursor:pointer">'
-      + '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap">'
-      + '<h2 style="margin:0">&#129298; '+esc(I18N.t("ill.title"))+'</h2>'
-      + '<span class="muted" style="font-size:14px">'+(illCardOpen?'&#9650;':'&#9660;')+'</span>'
+    // Shared editor body for any condition, open or past — the only difference
+    // is whether there is still an "end it" action to offer.
+    function condEditorHTML(e, sh){
+      var labelKey = e.type==="illness" ? "ill.labelPh" : "cond.labelPhChronic";
+      return (sh ? condOngoingText(e, sh) : '')
+        + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+(sh?' <span class="muted tiny">('+esc(I18N.t("ill.startHint"))+')</span>':'')+'</label><input type="date" class="condEdStart" value="'+esc(e.start)+'"></div>'
+        + (e.end ? '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" class="condEdEnd" value="'+esc(e.end)+'"></div>' : '')
+        + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" class="condEdLabel" maxlength="60" placeholder="'+esc(I18N.t(labelKey))+'" value="'+esc(e.label||"")+'"></div>'
+        + illSevHtml(condDraft.severity, "condsev")
+        + '<div class="row" style="margin-top:10px"><button class="btn ghost" id="condEdSave" data-id="'+esc(e.id)+'">'+esc(I18N.t(sh?"ill.applyChanges":"ill.update"))+'</button>'
+        + '<button class="btn danger" id="condEdDrop" data-id="'+esc(e.id)+'">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>'
+        + (sh ? '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
+             + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="condEndDate" value="'+esc(today)+'"></div>'
+             + '<div class="field" style="display:flex;align-items:flex-end"><button class="btn" id="condFinish" data-id="'+esc(e.id)+'" style="width:100%">'+esc(I18N.t("ill.end"))+'</button></div></div></div>'
+           : '');
+    }
+
+    html+='<div class="card"><h2 style="margin:0 0 10px">'+esc(I18N.t("cond.title"))+'</h2>'
+      + '<div class="row">'
+      + '<button type="button" class="btn ghost" id="condAddIll">&#129298; '+esc(I18N.t("cond.addIllness"))+'</button>'
+      + '<button type="button" class="btn ghost" id="condAddChr">&#129657; '+esc(I18N.t("cond.addChronic"))+'</button>'
       + '</div>';
-    if(!illCardOpen && illOpen){
-      html+='<div class="banner" style="margin:8px 0 0;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
-        +'<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+(illNow?illNow.dayN:1)
-        +(illOpen.label?' &middot; '+esc(illOpen.label):'')+'</div>';
-    }
-    html+='</div>';
-    if(illCardOpen && illOpen){
-      html+='<div class="banner" id="illNow" style="margin:10px 0;background:'+illC+'1a;border-color:'+illC+'59;color:'+illC+'">'
-        +'<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+(illNow?illNow.dayN:1)
-        +(illOpen.label?' &middot; '+esc(illOpen.label):'')+'</div>'
-        + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.startHint"))+')</span></label><input type="date" id="illStart" value="'+esc(illOpen.start)+'"></div>'
-        + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'" value="'+esc(illOpen.label||"")+'"></div>'
-        + illSevHtml(illDraft.severity, "illsev")
-        + '<div class="row" style="margin-top:10px"><button class="btn ghost" id="illApply">'+esc(I18N.t("ill.applyChanges"))+'</button>'
-        + '<button class="btn danger" id="illDrop">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>'
-        // ending it is a separate act from correcting it, hence its own block
-        + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
-        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" id="illEnd" value="'+esc(today)+'"></div>'
-        + '<div class="field" style="display:flex;align-items:flex-end"><button class="btn" id="illFinish" style="width:100%">'+esc(I18N.t("ill.end"))+'</button></div></div>'
+    if(condAddType){
+      html+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">'
+        + '<p class="sub" style="margin:0 0 8px">'+esc(I18N.t(condAddType==="illness"?"cond.subIllness":"cond.subChronic"))+'</p>'
+        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="condStart" value="'+esc(today)+'"></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.endNewHint"))+')</span></label><input type="date" id="condEndNew"></div></div>'
+        + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="condLabel" maxlength="60" placeholder="'+esc(I18N.t(condAddType==="illness"?"ill.labelPh":"cond.labelPhChronic"))+'"></div>'
+        + illSevHtml(condDraft.severity, "condsev")
+        + '<div class="row" style="margin-top:10px"><button class="btn" id="condSave">'+esc(I18N.t("ill.save"))+'</button>'
+        + '<button class="btn ghost" id="condAddCancel">'+esc(I18N.t("cond.cancel"))+'</button></div>'
         + '</div>';
-    } else if(illCardOpen){
-      html+='<p class="sub" style="margin-top:8px">'+esc(I18N.t("ill.sub"))+'</p>'
-        + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="illStart" value="'+esc(today)+'"></div>'
-        + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.endNewHint"))+')</span></label><input type="date" id="illEndNew"></div></div>'
-        + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="illLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'"></div>'
-        + illSevHtml(illDraft.severity, "illsev")
-        + '<div class="row" style="margin-top:10px"><button class="btn" id="illSave">'+esc(I18N.t("ill.save"))+'</button></div>';
     }
-    // past (closed) episodes, newest first — where dates get corrected after the fact
-    var illPast=illCardOpen ? DOMAIN.illnessEpisodes(st).filter(function(e){ return !!e.end; }) : [];
-    if(illPast.length){
+    // open conditions: tap the row to expand to the full editor, same as the
+    // old single illness card did for its one open episode.
+    condOpenList.forEach(function(e){
+      var sh=condShapedById[e.id], c=illColor(e.severity);
+      if(condOpenId===e.id){
+        html+='<div class="logentry" style="margin-top:10px"><div class="lbody">'+condEditorHTML(e, sh)+'</div></div>';
+        return;
+      }
+      html+='<div class="logentry condRow" data-id="'+esc(e.id)+'" style="margin-top:10px;cursor:pointer"><div class="lbody"><div class="lmeta">'
+        + (e.type==="illness" ? '&#129298;' : '&#129657;')+' '
+        + '<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'
+          +esc(I18N.t(e.type==="illness"?"ill.ongoing":"cond.ongoingChronic"))+' &middot; '+esc(I18N.t("ill.dayN"))+' '+sh.dayN+'</span>'
+        + (e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
+        + '</div>'+(e.label?'<div class="ltext">'+esc(e.label)+'</div>':'')+'</div>'
+        + '<span class="muted" style="padding:0 8px">&#9660;</span></div>';
+    });
+    // past (closed) conditions, newest first — dedicated edit/delete icons, no
+    // need to expand just to remove one.
+    if(condPast.length){
       html+='<h2 style="margin-top:16px">'+esc(I18N.t("ill.past"))+'</h2>';
-      illPage=pageClamp(illPage, illPast.length);
-      pageSlice(illPast, illPage).forEach(function(e){
+      condPage=pageClamp(condPage, condPast.length);
+      pageSlice(condPast, condPage).forEach(function(e){
         var c=illColor(e.severity), n=daysBetweenISO(e.start, e.end)+1;
-        if(illEditId===e.id){
-          html+='<div class="logentry"><div class="lbody">'
-            +'<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" class="illEdStart" value="'+esc(e.start)+'"></div>'
-            +'<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" class="illEdEnd" value="'+esc(e.end)+'"></div></div>'
-            +'<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" class="illEdLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'" value="'+esc(e.label||"")+'"></div>'
-            +illSevHtml(illDraft.severity, "illsev")
-            +'<div class="row" style="margin-top:10px"><button class="btn sm" id="illEdSave">'+esc(I18N.t("ill.update"))+'</button>'
-            +'<button class="btn ghost sm" id="illEdCancel">'+esc(I18N.t("common.cancel"))+'</button></div>'
-            +'</div></div>';
-        } else {
-          html+='<div class="logentry"><div class="lbody"><div class="lmeta">'
-            +'<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
-            +'<span>'+n+' '+esc(I18N.t(n===1?"ill.day1":"ill.days"))+'</span>'
-            +(e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
-            +'</div>'+(e.label?'<div class="ltext">'+esc(e.label)+'</div>':'')+'</div>'
-            +'<button class="btn ghost sm illEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button>'
-            +'<button class="btn ghost sm illDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
-            +'</div>';
+        if(condOpenId===e.id){
+          html+='<div class="logentry"><div class="lbody">'+condEditorHTML(e, null)+'</div></div>';
+          return;
         }
+        html+='<div class="logentry"><div class="lbody"><div class="lmeta">'
+          + (e.type==="illness" ? '&#129298;' : '&#129657;')+' '
+          +'<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
+          +'<span>'+n+' '+esc(I18N.t(n===1?"ill.day1":"ill.days"))+'</span>'
+          +(e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
+          +'</div>'+(e.label?'<div class="ltext">'+esc(e.label)+'</div>':'')+'</div>'
+          +'<button class="btn ghost sm condEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button>'
+          +'<button class="btn ghost sm condDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
+          +'</div>';
       });
-      html+=pagerHTML("illPg", illPage, illPast.length);
+      html+=pagerHTML("condPg", condPage, condPast.length);
+    }
+    if(!condOpenList.length && !condPast.length && !condAddType){
+      html+='<p class="empty" style="margin-top:10px">'+esc(I18N.t("cond.none"))+'</p>';
     }
     html+='</div>';
 
@@ -3931,58 +3971,68 @@ var UI = (function(){
     }
     bindIllToggle();
     function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
-    if($("#illHead")) $("#illHead").addEventListener("click",function(){ illCardOpen=!illCardOpen; illSeed=null; viewDiary(); });
-    if($("#illSave")) $("#illSave").addEventListener("click",function(){
-      if(!startIllness($("#illStart").value||today, $("#illEndNew").value||null, $("#illLabel").value, illDraft.severity)) return;
-      illSeed=null; illCommit();
+    if($("#condAddIll")) $("#condAddIll").addEventListener("click",function(){
+      if(DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return; }
+      condAddType=(condAddType==="illness")?null:"illness"; condOpenId=null; condSeed=null; viewDiary();
     });
-    // "update" keeps the episode running; "end" closes it on the picked date
-    if($("#illApply")) $("#illApply").addEventListener("click",function(){
-      illOpen.start=$("#illStart").value||illOpen.start;
-      illOpen.label=String($("#illLabel").value||"").trim().slice(0,60);
-      illOpen.severity=illDraft.severity||null;
-      illSeed=null; illCommit();
+    if($("#condAddChr")) $("#condAddChr").addEventListener("click",function(){
+      condAddType=(condAddType==="chronic")?null:"chronic"; condOpenId=null; condSeed=null; viewDiary();
     });
-    if($("#illDrop")) $("#illDrop").addEventListener("click",function(){
-      if(!confirm(I18N.t("ill.confirmDrop"))) return;
-      var id=illOpen.id;
+    if($("#condAddCancel")) $("#condAddCancel").addEventListener("click",function(){ condAddType=null; condSeed=null; viewDiary(); });
+    if($("#condSave")) $("#condSave").addEventListener("click",function(){
+      if(!startCondition(condAddType, $("#condStart").value||today, $("#condEndNew").value||null, $("#condLabel").value, condDraft.severity)) return;
+      condAddType=null; condSeed=null; illCommit();
+    });
+    $all(".condRow").forEach(function(b){ b.addEventListener("click",function(){
+      var id=b.getAttribute("data-id");
+      condOpenId=(condOpenId===id)?null:id; condSeed=null; viewDiary();
+    });});
+    // "apply" keeps the condition running; "end" closes it on the picked date
+    if($("#condEdSave")) $("#condEdSave").addEventListener("click",function(){
+      var id=$("#condEdSave").getAttribute("data-id"), e=null;
+      condAll.forEach(function(x){ if(x.id===id) e=x; });
+      if(!e) return;
+      var a=$(".condEdStart").value||e.start, endEl=$(".condEdEnd");
+      e.start=a; if(endEl) e.end=(endEl.value<a)?a:endEl.value;
+      e.label=String($(".condEdLabel").value||"").trim().slice(0,60);
+      e.severity=condDraft.severity||null;
+      condOpenId=null; condSeed=null; illCommit();
+    });
+    if($("#condEdDrop")) $("#condEdDrop").addEventListener("click",function(){
+      if(!confirm(I18N.t("cond.confirmDrop"))) return;
+      var id=$("#condEdDrop").getAttribute("data-id");
       st.conditions=(st.conditions||[]).filter(function(e){ return e.id!==id; });
-      illSeed=null; STORE.save(); viewDiary();
+      condOpenId=null; condSeed=null; STORE.save(); viewDiary();
     });
     // live day-count preview, so it is obvious the start field does something
-    if($("#illStart")) $("#illStart").addEventListener("input",function(){
-      var bn=$("#illNow"), v=this.value;
-      if(!bn || !v || v>today) return;
-      bn.innerHTML='<b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '
-        +(daysBetweenISO(v, today)+1)+(illOpen.label?' &middot; '+esc(illOpen.label):'');
+    if($(".condEdStart")) $(".condEdStart").addEventListener("input",function(){
+      var bn=$("#condNow"), v=this.value, e=condEd;
+      if(!bn || !v || v>today || !e) return;
+      bn.innerHTML='<b>'+esc(I18N.t(e.type==="illness"?"ill.ongoing":"cond.ongoingChronic"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '
+        +(daysBetweenISO(v, today)+1)+(e.label?' &middot; '+esc(e.label):'');
     });
-    if($("#illFinish")) $("#illFinish").addEventListener("click",function(){
-      illOpen.start=$("#illStart").value||illOpen.start;
-      illOpen.label=String($("#illLabel").value||"").trim().slice(0,60);
-      illOpen.severity=illDraft.severity||null;
-      if(!endIllness($("#illEnd").value||today)) return;
-      illSeed=null; illCommit();
+    if($("#condFinish")) $("#condFinish").addEventListener("click",function(){
+      var id=$("#condFinish").getAttribute("data-id"), e=null;
+      condAll.forEach(function(x){ if(x.id===id) e=x; });
+      if(!e) return;
+      e.start=$(".condEdStart").value||e.start;
+      e.label=String($(".condEdLabel").value||"").trim().slice(0,60);
+      e.severity=condDraft.severity||null;
+      if(!endCondition(id, $("#condEndDate").value||today)) return;
+      condOpenId=null; condSeed=null; illCommit();
     });
-    $all(".illEdit").forEach(function(b){ b.addEventListener("click",function(){
-      illEditId=b.getAttribute("data-id"); illSeed=null; viewDiary();
+    $all(".condEdit").forEach(function(b){ b.addEventListener("click",function(){
+      condOpenId=b.getAttribute("data-id"); condSeed=null; viewDiary();
     });});
-    $all(".illDel").forEach(function(b){ b.addEventListener("click",function(){
-      if(!confirm(I18N.t("ill.confirmDel"))) return;
+    $all(".condDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("cond.confirmDel"))) return;
       var id=b.getAttribute("data-id");
       st.conditions=(st.conditions||[]).filter(function(e){ return e.id!==id; });
-      if(illEditId===id){ illEditId=null; illSeed=null; }
+      if(condOpenId===id){ condOpenId=null; condSeed=null; }
       STORE.save(); viewDiary();
     });});
-    if($("#illEdCancel")) $("#illEdCancel").addEventListener("click",function(){ illEditId=null; illSeed=null; viewDiary(); });
-    if($("#illEdSave")) $("#illEdSave").addEventListener("click",function(){
-      var a=$(".illEdStart").value||illEd.start, b=$(".illEdEnd").value||illEd.end;
-      illEd.start=a; illEd.end=(b<a)?a:b;   // an end before the start collapses to one day
-      illEd.label=String($(".illEdLabel").value||"").trim().slice(0,60);
-      illEd.severity=illDraft.severity||null;
-      illEditId=null; illSeed=null; illCommit();
-    });
-    bindIllSev("illsev", illDraft);
-    bindPager("illPg", function(){return illPage;}, function(v){illPage=v;}, viewDiary);
+    bindIllSev("condsev", condDraft);
+    bindPager("condPg", function(){return condPage;}, function(v){condPage=v;}, viewDiary);
   }
 
   /* ============ INJECTIONS (Mounjaro / TRT / peptides) + abdomen spot map ============ */
