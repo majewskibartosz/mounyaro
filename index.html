@@ -88,10 +88,10 @@
   .g3{grid-template-columns:1fr 1fr 1fr}
   @media(max-width:600px){.g2,.g3{grid-template-columns:1fr}}
   /* one back-to-back reading per line, at every width */
-  .bpAvgToggle{display:inline-flex;align-items:center;gap:2px;border:0;background:none;padding:0;
+  .chevToggle{display:inline-flex;align-items:center;gap:2px;border:0;background:none;padding:0;
     color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
-  .bpAvgToggle svg{width:11px;height:11px;transition:transform .15s}
-  .bpAvgToggle.open svg{transform:rotate(180deg)}
+  .chevToggle svg{width:11px;height:11px;transition:transform .15s}
+  .chevToggle.open svg{transform:rotate(180deg)}
   .bpser,.bpserh{display:grid;grid-template-columns:15px 1fr 1fr 1fr;gap:6px;align-items:center}
   .bpser{margin-bottom:6px}
   .bpserh{font-size:11px;font-weight:600;color:var(--muted);margin:2px 0 4px}
@@ -3466,7 +3466,7 @@ var UI = (function(){
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
             + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')
-            + (e.readings&&e.readings.length>1?'<br><button type="button" class="bpAvgToggle'+(bpOpenId===e.id?' open':'')+'" data-id="'+esc(e.id)+'">'
+            + (e.readings&&e.readings.length>1?'<br><button type="button" class="chevToggle bpAvgToggle'+(bpOpenId===e.id?' open':'')+'" data-id="'+esc(e.id)+'">'
                 +esc(I18N.t("bp.avgOf").replace("{n}",e.readings.length))+icon("chevron")+'</button>':'')+'</td>'
             + '<td style="width:25%">'+doseCell(e)+'</td>'
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
@@ -3728,6 +3728,7 @@ var UI = (function(){
   }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
   var journalPage=0;     // notes list page (5 each)
+  var symLineOpenId=null; // id of the journal entry whose symptom detail is expanded (one at a time)
   function viewDiary(){
     var st=s(), today=todayISO();
     var editing=null;
@@ -3814,14 +3815,11 @@ var UI = (function(){
         + '<button class="btn ghost" id="condAddCancel">'+esc(I18N.t("cond.cancel"))+'</button></div>'
         + '</div>';
     }
-    // open conditions: tap the row to expand to the full editor, same as the
-    // old single illness card did for its one open episode.
+    // open conditions: tap the row to expand to the full editor, tap it again
+    // (the header stays put, chevron flips) to collapse it back — same row,
+    // same handler, both directions.
     condOpenList.forEach(function(e){
-      var sh=condShapedById[e.id];
-      if(condOpenId===e.id){
-        html+='<div class="logentry" style="margin-top:10px"><div class="lbody">'+condEditorHTML(e, sh)+'</div></div>';
-        return;
-      }
+      var sh=condShapedById[e.id], open=(condOpenId===e.id);
       // collapsed = just enough to say "there is one" — day count, severity
       // and everything else only shows up once you actually tap it open
       html+='<div class="logentry condRow" data-id="'+esc(e.id)+'" style="margin-top:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px">'
@@ -3829,7 +3827,8 @@ var UI = (function(){
         + '<span style="font-size:18px;flex:none">'+(e.type==="illness" ? '&#129298;' : '&#129657;')+'</span>'
         + '<span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
           +esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+'</span></div>'
-        + '<span class="muted" style="padding:0 8px;flex:none">&#9660;</span></div>';
+        + '<span class="muted" style="padding:0 8px;flex:none">'+(open?'&#9650;':'&#9660;')+'</span></div>';
+      if(open) html+='<div class="logentry"><div class="lbody">'+condEditorHTML(e, sh)+'</div></div>';
     });
     // past (closed) conditions, newest first — dedicated edit/delete icons, no
     // need to expand just to remove one.
@@ -3837,11 +3836,9 @@ var UI = (function(){
       html+='<h2 style="margin-top:16px">'+esc(I18N.t("ill.past"))+'</h2>';
       condPage=pageClamp(condPage, condPast.length);
       pageSlice(condPast, condPage).forEach(function(e){
-        var c=illColor(e.severity), n=daysBetweenISO(e.start, e.end)+1;
-        if(condOpenId===e.id){
-          html+='<div class="logentry"><div class="lbody">'+condEditorHTML(e, null)+'</div></div>';
-          return;
-        }
+        var c=illColor(e.severity), n=daysBetweenISO(e.start, e.end)+1, open=(condOpenId===e.id);
+        // the edit icon toggles: tap again on an already-open one to collapse
+        // it back, same as the open-conditions row above.
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'
           + (e.type==="illness" ? '&#129298;' : '&#129657;')+' '
           +'<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
@@ -3851,6 +3848,7 @@ var UI = (function(){
           +'<button class="btn ghost sm condEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button>'
           +'<button class="btn ghost sm condDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
           +'</div>';
+        if(open) html+='<div class="logentry"><div class="lbody">'+condEditorHTML(e, null)+'</div></div>';
       });
       html+=pagerHTML("condPg", condPage, condPast.length);
     }
@@ -3931,16 +3929,17 @@ var UI = (function(){
         if(dISO===addDaysISO(today,-1)) return I18N.t("diary.yesterday");
         return fmtDate(dISO);
       }
-      // "🤒 Grypa: ● Gorączka · ● Ból gardła" — one line per condition that has
-      // a value that day, grouped so two conditions logged the same day read as
-      // two lines, not an unlabelled soup of numbers. Each symptom gets a small
-      // dot in its severity colour (same ramp as the composer's tap targets) —
-      // a bare "3" or "2" next to two unrelated symptoms reads as ambiguous,
-      // the colour makes "how bad" legible at a glance. A condition or symptom
-      // that was later deleted outright (never just archived) has nothing left
-      // to resolve a label from, so it is silently skipped — the same thing the
-      // delete confirmation already promises ("marks disappear from notes").
-      function symptomLineHTML(symptoms){
+      // Collapsed: just which condition(s) this entry touched — "🤒 Grypa"
+      // — same "say there's one, don't dump the fields" rule as the condition
+      // card rows above. Tap the chevron to expand into a line per condition
+      // with a small dot per symptom in its severity colour (same ramp as the
+      // composer's tap targets) — a bare "3" or "2" next to two unrelated
+      // symptoms reads as ambiguous, the colour makes "how bad" legible at a
+      // glance. A condition or symptom that was later deleted outright (never
+      // just archived) has nothing left to resolve a label from, so it is
+      // silently skipped — the same thing the delete confirmation already
+      // promises ("marks disappear from notes").
+      function symptomLineHTML(symptoms, entryId){
         if(!symptoms) return '';
         var byCond={};
         Object.keys(symptoms).forEach(function(k){
@@ -3954,13 +3953,23 @@ var UI = (function(){
           var dot='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+PAL.symSev[v-1]+';margin-right:4px" aria-hidden="true"></span>';
           (byCond[condId]=byCond[condId]||{cond:cond,parts:[]}).parts.push(dot+esc(sym.label)+' '+v+'/5');
         });
-        return Object.keys(byCond).map(function(cid){
-          var g=byCond[cid];
-          return '<div class="muted tiny" style="margin-top:2px">'
-            +(g.cond.type==="illness"?'&#129298;':'&#129657;')+' '
-            +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+': '
-            +g.parts.map(function(p){ return '<span style="display:inline-flex;align-items:center;margin-right:8px">'+p+'</span>'; }).join('')+'</div>';
-        }).join('');
+        var ids=Object.keys(byCond);
+        if(!ids.length) return '';
+        function condLabel(g){ return (g.cond.type==="illness"?'&#129298;':'&#129657;')+' '
+          +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic")); }
+        var open=(symLineOpenId===entryId);
+        var h='<div class="muted tiny" style="margin-top:2px">'
+          +ids.map(function(cid){ return condLabel(byCond[cid]); }).join(' &middot; ')
+          +' <button type="button" class="chevToggle symLineToggle'+(open?' open':'')+'" data-id="'+esc(entryId)+'">'
+          +esc(I18N.t("cond.sectionDetails"))+icon("chevron")+'</button></div>';
+        if(open){
+          h+=ids.map(function(cid){
+            var g=byCond[cid];
+            return '<div class="muted tiny" style="margin-top:2px">'+condLabel(g)+': '
+              +g.parts.map(function(p){ return '<span style="display:inline-flex;align-items:center;margin-right:8px">'+p+'</span>'; }).join('')+'</div>';
+          }).join('');
+        }
+        return h;
       }
       journalPage=pageClamp(journalPage, items.length);
       var lastDay=null;
@@ -3983,7 +3992,7 @@ var UI = (function(){
         var body = it.state ? statePillsHTML(it.state)
           : (it.vals?statePillsHTML(it.vals):'')
             + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '')
-            + symptomLineHTML(it.symptoms);
+            + symptomLineHTML(it.symptoms, it.id);
         html+='<div class="logentry'+(ill?' ill':'')+'"'
           +(ill?' style="border-left-color:'+ic+';background:linear-gradient(90deg,'+ic+'14,transparent 55%)"':'')
           +'><div class="lbody"><div class="lmeta">'+meta+'</div>'
@@ -4047,6 +4056,9 @@ var UI = (function(){
       journalEdit=null; stateDraft={ energy:null, mood:null, clarity:null }; symDraft={}; viewDiary();
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
+    $all(".symLineToggle").forEach(function(b){ b.addEventListener("click",function(){
+      var id=b.getAttribute("data-id"); symLineOpenId=(symLineOpenId===id)?null:id; viewDiary();
+    });});
     // backfilling? recompute the therapy-week/dose pills for the picked date
     // (innerHTML on these two containers only — the textarea keeps what's typed)
     $("#jDate").addEventListener("input",function(){
@@ -4174,7 +4186,8 @@ var UI = (function(){
       condOpenId=null; condSeed=null; illCommit();
     });
     $all(".condEdit").forEach(function(b){ b.addEventListener("click",function(){
-      condOpenId=b.getAttribute("data-id"); condAddType=null; condSeed=null; viewDiary();
+      var id=b.getAttribute("data-id");
+      condOpenId=(condOpenId===id)?null:id; condAddType=null; condSeed=null; viewDiary();
     });});
     $all(".condDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("cond.confirmDel"))) return;
