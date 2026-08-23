@@ -644,7 +644,6 @@ var I18N = (function(){
     "cond.symptomsNone":{pl:"Brak jeszcze objawów — dodaj poniżej",en:"No symptoms yet — add one below"},
     "cond.symptomPh":{pl:"np. Gorączka",en:"e.g. Fever"},
     "cond.symptomAdd":{pl:"Dodaj",en:"Add"},
-    "cond.checkinHint":{pl:"zapisuje się przyciskiem — razem z notatką albo samo",en:"saved with the button — with a note or on its own"},
     "cond.sectionDetails":{pl:"Szczegóły",en:"Details"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
@@ -3891,7 +3890,6 @@ var UI = (function(){
         });
         h+='</div>';
       });
-      if(h) h+='<div class="muted tiny" style="margin:0 0 10px">'+esc(I18N.t("cond.checkinHint"))+'</div>';
       return h;
     }
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
