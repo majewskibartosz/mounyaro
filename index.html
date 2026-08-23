@@ -5433,6 +5433,16 @@ var UI = (function(){
     }
     // wellbeing series hidden from correlations for now (user request);
     // DOMAIN.seriesFor still understands state:* when this comes back
+    // symptom severity per condition — open or closed, active or archived
+    // symptom, as long as at least one day was actually logged
+    (st.conditions||[]).forEach(function(c){
+      (c.symptoms||[]).forEach(function(sy){
+        var key=c.id+":"+sy.key;
+        var hasPoint=(st.journal||[]).some(function(e){ return e&&e.symptoms&&e.symptoms[key]!=null; });
+        if(!hasPoint) return;
+        opts.push({ id:"symptom:"+key, label:(c.label||I18N.t(c.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+" · "+sy.label });
+      });
+    });
     return opts;
   }
   var corrA=null, corrB=null;
