@@ -3967,16 +3967,18 @@ var UI = (function(){
           +' <button type="button" class="chevToggle symLineToggle'+(open?' open':'')+'" data-id="'+esc(entryId)+'">'
           +esc(I18N.t("cond.sectionDetails"))+icon("chevron")+'</button></div>';
         if(open){
-          // the condition's own name is already on the chip line right above —
-          // repeat it here only when there's more than one condition in this
-          // entry, otherwise it's the exact same text twice for no reason.
-          // Each symptom gets its own line — several dots run together read
-          // as one soup, same reasoning as giving each its own colour.
+          // the condition's own full name is already on the chip line right
+          // above — repeating it as a heading per group just doubles that
+          // same text. When there's more than one condition in this entry,
+          // its icon alone in front of each symptom is enough to tell the
+          // groups apart. Each symptom still gets its own line — several
+          // dots run together read as one soup, same reasoning as giving
+          // each its own colour.
           h+=ids.map(function(cid){
             var g=byCond[cid];
-            var heading=ids.length>1 ? '<div class="muted tiny" style="margin-top:4px;font-weight:700">'+condLabel(g)+'</div>' : '';
-            return heading+g.parts.map(function(p){
-              return '<div class="muted tiny" style="margin-top:2px;display:flex;align-items:center">'+p+'</div>';
+            var prefix=ids.length>1 ? ((g.cond.type==="illness"?'&#129298;':'&#129657;')+' ') : '';
+            return g.parts.map(function(p){
+              return '<div class="muted tiny" style="margin-top:2px;display:flex;align-items:center">'+prefix+p+'</div>';
             }).join('');
           }).join('');
         }
