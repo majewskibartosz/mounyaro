@@ -640,6 +640,10 @@ var I18N = (function(){
     "cond.confirmDel":{pl:"Usunąć ten wpis?",en:"Delete this entry?"},
     "cond.none":{pl:"Brak chorób i schorzeń.",en:"No illnesses or conditions yet."},
     "cond.cancel":{pl:"Anuluj",en:"Cancel"},
+    "cond.symptoms":{pl:"Objawy",en:"Symptoms"},
+    "cond.symptomsNone":{pl:"Brak jeszcze objawów — dodaj poniżej",en:"No symptoms yet — add one below"},
+    "cond.symptomPh":{pl:"np. Gorączka",en:"e.g. Fever"},
+    "cond.symptomAdd":{pl:"Dodaj",en:"Add"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
@@ -3654,13 +3658,13 @@ var UI = (function(){
   // Chronic conditions have no such limit: several can run independently.
   // A retrospective episode (endISO given) is born closed, so it never touches
   // that invariant and can be backfilled even while another episode is running.
-  function startCondition(type, startISO, endISO, label, severity){
+  function startCondition(type, startISO, endISO, label, severity, symptoms){
     var st=s();
     if(type==="illness" && !endISO && DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
     if(!st.conditions) st.conditions=[];
     st.conditions.push({ id:uid(), type:type, start:startISO,
                       end:endISO ? ((endISO<startISO)?startISO:endISO) : null,
-                      label:String(label||"").trim().slice(0,60), severity:severity||null, symptoms:[] });
+                      label:String(label||"").trim().slice(0,60), severity:severity||null, symptoms:symptoms||[] });
     return true;
   }
   // Closing before the start would make the episode cover nothing — clamp to the start.
@@ -3684,6 +3688,23 @@ var UI = (function(){
   var condDraft={ severity:null };  // severity pick for whichever form condSeed names
   var jIllDraft={ severity:null };  // severity pick for the composer's own "start infection" toggle
   var condSeed=null;
+  var condNewSymptoms=[];  // labels typed while composing a brand-new condition, before it is saved
+  var condFieldDraft={};   // other fields of the open form, captured across a symptom add/remove re-render
+  function condCaptureFields(){
+    condFieldDraft = {
+      label:($("#condLabel")||{}).value, start:($("#condStart")||{}).value, endNew:($("#condEndNew")||{}).value,
+      edLabel:($(".condEdLabel")||{}).value, edStart:($(".condEdStart")||{}).value, edEnd:($(".condEdEnd")||{}).value
+    };
+  }
+  function condRestoreFields(){
+    var d=condFieldDraft;
+    if($("#condLabel") && d.label) $("#condLabel").value=d.label;
+    if($("#condStart") && d.start) $("#condStart").value=d.start;
+    if($("#condEndNew") && d.endNew) $("#condEndNew").value=d.endNew;
+    if($(".condEdLabel") && d.edLabel) $(".condEdLabel").value=d.edLabel;
+    if($(".condEdStart") && d.edStart) $(".condEdStart").value=d.edStart;
+    if($(".condEdEnd") && d.edEnd) $(".condEdEnd").value=d.edEnd;
+  }
   // Seed the draft once per form identity, so a re-render doesn't undo a
   // deliberate deselect but switching forms doesn't inherit another's pick.
   function condSeedFor(key, sev){
@@ -3722,6 +3743,21 @@ var UI = (function(){
         +'<b>'+esc(I18N.t(e.type==="illness"?"ill.ongoing":"cond.ongoingChronic"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+sh.dayN
         +(e.label?' &middot; '+esc(e.label):'')+'</div>';
     }
+    // chips: [{label, key?}] — existing symptoms carry a key (remove = archive-or-
+    // delete against real history), a brand-new condition's draft entries don't
+    // (remove = drop from the in-memory list, nothing saved yet either way).
+    function symptomBuilderHTML(chips, removeCls){
+      var body=chips.map(function(c){
+        return '<span class="pill" style="display:inline-flex;align-items:center;gap:5px;margin:0 6px 6px 0">'
+          +esc(c.label)
+          +'<button type="button" class="'+removeCls+'"'+(c.key?' data-key="'+esc(c.key)+'"':' data-idx="'+chips.indexOf(c)+'"')
+          +' style="border:0;background:none;cursor:pointer;padding:0;line-height:1;color:inherit;font-size:15px" aria-label="'+esc(I18N.t("common.delete"))+'">&times;</button></span>';
+      }).join('');
+      return '<div class="field"><label>'+esc(I18N.t("cond.symptoms"))+'</label>'
+        + '<div style="margin-bottom:6px">'+(body||'<span class="muted tiny">'+esc(I18N.t("cond.symptomsNone"))+'</span>')+'</div>'
+        + '<div class="row"><input type="text" id="condSymInput" maxlength="40" placeholder="'+esc(I18N.t("cond.symptomPh"))+'" style="flex:1;min-width:0">'
+        + '<button type="button" class="btn ghost sm" id="condSymAdd">'+esc(I18N.t("cond.symptomAdd"))+'</button></div></div>';
+    }
     // Shared editor body for any condition, open or past — the only difference
     // is whether there is still an "end it" action to offer.
     function condEditorHTML(e, sh){
@@ -3731,6 +3767,7 @@ var UI = (function(){
         + (e.end ? '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" class="condEdEnd" value="'+esc(e.end)+'"></div>' : '')
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" class="condEdLabel" maxlength="60" placeholder="'+esc(I18N.t(labelKey))+'" value="'+esc(e.label||"")+'"></div>'
         + illSevHtml(condDraft.severity, "condsev")
+        + symptomBuilderHTML((e.symptoms||[]).filter(function(sy){ return !sy.archived; }), "condSymDel")
         + '<div class="row" style="margin-top:10px"><button class="btn ghost" id="condEdSave" data-id="'+esc(e.id)+'">'+esc(I18N.t(sh?"ill.applyChanges":"ill.update"))+'</button>'
         + '<button class="btn danger" id="condEdDrop" data-id="'+esc(e.id)+'">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>'
         + (sh ? '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
@@ -3751,6 +3788,7 @@ var UI = (function(){
         + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.endNewHint"))+')</span></label><input type="date" id="condEndNew"></div></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="condLabel" maxlength="60" placeholder="'+esc(I18N.t(condAddType==="illness"?"ill.labelPh":"cond.labelPhChronic"))+'"></div>'
         + illSevHtml(condDraft.severity, "condsev")
+        + symptomBuilderHTML(condNewSymptoms.map(function(lbl){ return {label:lbl}; }), "condSymDelNew")
         + '<div class="row" style="margin-top:10px"><button class="btn" id="condSave">'+esc(I18N.t("ill.save"))+'</button>'
         + '<button class="btn ghost" id="condAddCancel">'+esc(I18N.t("cond.cancel"))+'</button></div>'
         + '</div>';
@@ -3973,19 +4011,52 @@ var UI = (function(){
     function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
     if($("#condAddIll")) $("#condAddIll").addEventListener("click",function(){
       if(DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return; }
-      condAddType=(condAddType==="illness")?null:"illness"; condOpenId=null; condSeed=null; viewDiary();
+      condAddType=(condAddType==="illness")?null:"illness"; condOpenId=null; condSeed=null; condNewSymptoms=[]; viewDiary();
     });
     if($("#condAddChr")) $("#condAddChr").addEventListener("click",function(){
-      condAddType=(condAddType==="chronic")?null:"chronic"; condOpenId=null; condSeed=null; viewDiary();
+      condAddType=(condAddType==="chronic")?null:"chronic"; condOpenId=null; condSeed=null; condNewSymptoms=[]; viewDiary();
     });
-    if($("#condAddCancel")) $("#condAddCancel").addEventListener("click",function(){ condAddType=null; condSeed=null; viewDiary(); });
+    if($("#condAddCancel")) $("#condAddCancel").addEventListener("click",function(){ condAddType=null; condSeed=null; condNewSymptoms=[]; viewDiary(); });
     if($("#condSave")) $("#condSave").addEventListener("click",function(){
-      if(!startCondition(condAddType, $("#condStart").value||today, $("#condEndNew").value||null, $("#condLabel").value, condDraft.severity)) return;
-      condAddType=null; condSeed=null; illCommit();
+      var syms=condNewSymptoms.map(function(lbl){ return { key:"sym_"+uid(), label:lbl, archived:false }; });
+      if(!startCondition(condAddType, $("#condStart").value||today, $("#condEndNew").value||null, $("#condLabel").value, condDraft.severity, syms)) return;
+      condAddType=null; condSeed=null; condNewSymptoms=[]; illCommit();
     });
     $all(".condRow").forEach(function(b){ b.addEventListener("click",function(){
       var id=b.getAttribute("data-id");
-      condOpenId=(condOpenId===id)?null:id; condSeed=null; viewDiary();
+      condOpenId=(condOpenId===id)?null:id; condAddType=null; condSeed=null; viewDiary();
+    });});
+    // typing a symptom: routed to whichever form is currently showing — the
+    // brand-new-condition draft, or a real condition's own list.
+    if($("#condSymAdd")) $("#condSymAdd").addEventListener("click",function(){
+      var v=String(($("#condSymInput")||{}).value||"").trim().slice(0,40);
+      if(!v) return;
+      condCaptureFields();
+      if(condAddType){ condNewSymptoms.push(v); viewDiary(); condRestoreFields(); return; }
+      if(condEd){
+        if(!condEd.symptoms) condEd.symptoms=[];
+        condEd.symptoms.push({ key:"sym_"+uid(), label:v, archived:false });
+        STORE.save(); viewDiary(); condRestoreFields();
+      }
+    });
+    $all(".condSymDelNew").forEach(function(b){ b.addEventListener("click",function(){
+      condCaptureFields();
+      condNewSymptoms.splice(parseInt(b.getAttribute("data-idx"),10), 1); viewDiary(); condRestoreFields();
+    });});
+    // Removing a symptom archives it if any note already used it (so that
+    // history keeps resolving the label), otherwise it is dropped outright —
+    // the same rule an archived peptide already follows.
+    $all(".condSymDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!condEd) return;
+      condCaptureFields();
+      var key=b.getAttribute("data-key"), compound=condEd.id+":"+key;
+      var used=(st.journal||[]).some(function(j){ return j.symptoms && j.symptoms[compound]!=null; });
+      if(used){
+        condEd.symptoms.forEach(function(sy){ if(sy.key===key) sy.archived=true; });
+      } else {
+        condEd.symptoms=(condEd.symptoms||[]).filter(function(sy){ return sy.key!==key; });
+      }
+      STORE.save(); viewDiary(); condRestoreFields();
     });});
     // "apply" keeps the condition running; "end" closes it on the picked date
     if($("#condEdSave")) $("#condEdSave").addEventListener("click",function(){
@@ -4022,7 +4093,7 @@ var UI = (function(){
       condOpenId=null; condSeed=null; illCommit();
     });
     $all(".condEdit").forEach(function(b){ b.addEventListener("click",function(){
-      condOpenId=b.getAttribute("data-id"); condSeed=null; viewDiary();
+      condOpenId=b.getAttribute("data-id"); condAddType=null; condSeed=null; viewDiary();
     });});
     $all(".condDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("cond.confirmDel"))) return;
