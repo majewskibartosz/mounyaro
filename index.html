@@ -88,6 +88,10 @@
   .g3{grid-template-columns:1fr 1fr 1fr}
   @media(max-width:600px){.g2,.g3{grid-template-columns:1fr}}
   /* one back-to-back reading per line, at every width */
+  .bpAvgToggle{display:inline-flex;align-items:center;gap:2px;border:0;background:none;padding:0;
+    color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
+  .bpAvgToggle svg{width:11px;height:11px;transition:transform .15s}
+  .bpAvgToggle.open svg{transform:rotate(180deg)}
   .bpser,.bpserh{display:grid;grid-template-columns:15px 1fr 1fr 1fr;gap:6px;align-items:center}
   .bpser{margin-bottom:6px}
   .bpserh{font-size:11px;font-weight:600;color:var(--muted);margin:2px 0 4px}
@@ -3254,6 +3258,7 @@ var UI = (function(){
   var bpEdit=null;  // id of the reading being edited (null = adding a new one)
   var bpPage=0;     // history page (5 rows each)
   var bpRange={days:null, offset:0}; // chart day window: days null = full history
+  var bpOpenId=null; // id of the entry whose series detail is expanded (one at a time)
   // One back-to-back reading per line, headed once. The long labels
   // ("Skurczowe / górne") do not fit three across, so the chart's short ones are
   // reused — they already name these three numbers everywhere else.
@@ -3372,12 +3377,18 @@ var UI = (function(){
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
             + (e.pulse!=null?'<br><span class="muted tiny nowrap">'+e.pulse+' bpm</span>':'')
-            + (e.readings&&e.readings.length>1?'<br><span class="muted tiny nowrap" title="'
-                +esc(e.readings.map(function(r){ return r.sys+"/"+r.dia; }).join(" · "))+'">'
-                +esc(I18N.t("bp.avgOf").replace("{n}",e.readings.length))+'</span>':'')+'</td>'
+            + (e.readings&&e.readings.length>1?'<br><button type="button" class="bpAvgToggle'+(bpOpenId===e.id?' open':'')+'" data-id="'+esc(e.id)+'">'
+                +esc(I18N.t("bp.avgOf").replace("{n}",e.readings.length))+icon("chevron")+'</button>':'')+'</td>'
             + '<td style="width:25%">'+doseCell(e)+'</td>'
             + '<td class="num"><button class="btn ghost sm bpEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm bpDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
+        if(bpOpenId===e.id && e.readings && e.readings.length>1){
+          html+='<tr><td colspan="4" style="padding-top:0"><div class="tiny muted">'
+            +e.readings.map(function(r,i){
+                return (i+1)+'. '+r.sys+'/'+r.dia+(r.pulse!=null?' &middot; '+r.pulse+' bpm':'');
+              }).join('<br>')
+            +'</div></td></tr>';
+        }
       });
       html+='</tbody></table></div>'+pagerHTML("bpPg", bpPage, log.length)+'</div>';
     }
@@ -3442,6 +3453,9 @@ var UI = (function(){
     }
     $all(".bpS").forEach(function(i){ i.addEventListener("input", bpRefreshAvg); });
     if(series) bpRefreshAvg();
+    $all(".bpAvgToggle").forEach(function(b){ b.addEventListener("click",function(){
+      var id=b.getAttribute("data-id"); bpOpenId=(bpOpenId===id)?null:id; viewBP();
+    });});
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
     bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
     bindRange("bpRg", bpRange, viewBP);
