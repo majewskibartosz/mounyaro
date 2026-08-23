@@ -173,10 +173,10 @@ test("suggestSpot via recentInjPos: hidden sandbagged shots don't repel the sugg
 
 // ---- illness / infection episodes ----
 function ill(id, start, end, extra) {
-  return Object.assign({ id: id, start: start, end: end || null, label: "", severity: null }, extra || {});
+  return Object.assign({ id: id, type: "illness", start: start, end: end || null, label: "", severity: null }, extra || {});
 }
 function illState(episodes) {
-  return { illness: episodes };
+  return { conditions: episodes };
 }
 
 test("openIllness: returns the episode without an end date", function () {
@@ -254,6 +254,65 @@ test("illnessSpans: an end before the start collapses to a single day", function
   var out = Array.from(DOMAIN.illnessSpans(st, null, null));
   assert.strictEqual(out[0].from, "2026-08-10");
   assert.strictEqual(out[0].to, "2026-08-10");
+});
+
+function cond(id, type, start, end, extra) {
+  return Object.assign({ id: id, type: type, start: start, end: end || null, label: "", severity: null, symptoms: [] }, extra || {});
+}
+
+test("openConditions: several chronic conditions can be open the same day, illness cannot", function () {
+  var st = { conditions: [
+    cond("a", "chronic", "2026-07-01", null, { label: "Łokieć tenisisty" }),
+    cond("b", "chronic", "2026-07-15", null, { label: "Bóle pleców" }),
+    cond("c", "illness", "2026-08-01", null)
+  ] };
+  var chronic = Array.from(DOMAIN.openConditions(st, "2026-08-10", "chronic"));
+  assert.strictEqual(chronic.length, 2);
+  assert.deepStrictEqual(chronic.map(function (c) { return c.id; }).sort(), ["a", "b"]);
+  var all = Array.from(DOMAIN.openConditions(st, "2026-08-10"));
+  assert.strictEqual(all.length, 3);
+});
+
+test("openConditions: a closed condition does not cover a date after its end", function () {
+  var st = { conditions: [cond("a", "chronic", "2026-07-01", "2026-07-10")] };
+  assert.strictEqual(DOMAIN.openConditions(st, "2026-07-05").length, 1);
+  assert.strictEqual(DOMAIN.openConditions(st, "2026-07-11").length, 0);
+});
+
+test("openConditions: dayN counts per condition independently", function () {
+  var st = { conditions: [cond("a", "chronic", "2026-08-01", null), cond("b", "chronic", "2026-08-09", null)] };
+  var out = Array.from(DOMAIN.openConditions(st, "2026-08-10"));
+  var byId = {}; out.forEach(function (c) { byId[c.id] = c.dayN; });
+  assert.strictEqual(byId.a, 10);
+  assert.strictEqual(byId.b, 2);
+});
+
+test("openConditions: empty state and no date give an empty list", function () {
+  assert.deepStrictEqual(Array.from(DOMAIN.openConditions({ conditions: [] }, "2026-08-10")), []);
+  assert.deepStrictEqual(Array.from(DOMAIN.openConditions({ conditions: [cond("a", "chronic", "2026-08-01", null)] }, null)), []);
+});
+
+test("conditionSpans: filters by type the same way illnessSpans filters to illness", function () {
+  var st = { conditions: [cond("a", "chronic", "2026-08-01", "2026-08-05"), cond("b", "illness", "2026-08-03", "2026-08-06")] };
+  var chronicOnly = Array.from(DOMAIN.conditionSpans(st, null, null, "chronic"));
+  assert.strictEqual(chronicOnly.length, 1);
+  assert.strictEqual(chronicOnly[0].id, "a");
+  var illnessOnly = Array.from(DOMAIN.illnessSpans(st, null, null));
+  assert.strictEqual(illnessOnly.length, 1);
+  assert.strictEqual(illnessOnly[0].id, "b");
+});
+
+test("seriesFor: symptom severity averages per day, namespaced by condition", function () {
+  var st = { journal: [
+    { id: "j1", ts: "2026-08-01T09:00:00.000Z", symptoms: { "cond1:fever": 4, "cond2:pain": 2 } },
+    { id: "j2", ts: "2026-08-01T20:00:00.000Z", symptoms: { "cond1:fever": 2 } },
+    { id: "j3", ts: "2026-08-02T09:00:00.000Z", symptoms: { "cond1:fever": 3 } }
+  ] };
+  var fever = Array.from(DOMAIN.seriesFor(st, "symptom:cond1:fever")).map(function (p) { return { date: p.date, value: p.value }; });
+  assert.deepStrictEqual(fever, [{ date: "2026-08-01", value: 3 }, { date: "2026-08-02", value: 3 }]);
+  var pain = Array.from(DOMAIN.seriesFor(st, "symptom:cond2:pain")).map(function (p) { return { date: p.date, value: p.value }; });
+  assert.deepStrictEqual(pain, [{ date: "2026-08-01", value: 2 }]);
+  assert.deepStrictEqual(Array.from(DOMAIN.seriesFor(st, "symptom:cond1:nonexistent")), []);
 });
 
 // ---- chart windows & window stats ----

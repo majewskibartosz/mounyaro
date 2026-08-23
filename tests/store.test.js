@@ -53,7 +53,7 @@ test("round-trip: sandbag flag and setting survive load -> save", function () {
   assert.strictEqual(persisted.injLog[0].sandbag, true);
 });
 
-test("migration: a backup without illness episodes gains an empty list", function () {
+test("migration: a backup without condition episodes gains an empty list", function () {
   var old = {
     schemaVersion: 1,
     settings: { lang: "pl" },
@@ -63,11 +63,25 @@ test("migration: a backup without illness episodes gains an empty list", functio
   ls.setItem(KEY, JSON.stringify(old));
   var STORE = harness.loadStore(ls);
   STORE.load();
-  assert.deepStrictEqual(Array.from(STORE.state.illness), []);
+  assert.deepStrictEqual(Array.from(STORE.state.conditions), []);
   assert.strictEqual(STORE.state.journal.length, 1);
 });
 
-test("illness episodes survive a load/save round-trip, open one included", function () {
+test("condition episodes survive a load/save round-trip, open one included", function () {
+  var eps = [
+    { id: "e1", type: "illness", start: "2026-07-01", end: "2026-07-06", label: "angina", severity: 3, symptoms: [] },
+    { id: "e2", type: "chronic", start: "2026-08-17", end: null, label: "łokieć tenisisty", severity: 1, symptoms: [] }
+  ];
+  var ls = harness.fakeLocalStorage();
+  ls.setItem(KEY, JSON.stringify({ schemaVersion: 1, conditions: eps }));
+  var STORE = harness.loadStore(ls);
+  STORE.load();
+  STORE.save();
+  var out = JSON.parse(ls.getItem(KEY));
+  assert.deepStrictEqual(out.conditions, eps);
+});
+
+test("migration: a legacy illness backup becomes typed conditions, and old key is dropped", function () {
   var eps = [
     { id: "e1", start: "2026-07-01", end: "2026-07-06", label: "angina", severity: 3 },
     { id: "e2", start: "2026-08-17", end: null, label: "", severity: 1 }
@@ -76,9 +90,29 @@ test("illness episodes survive a load/save round-trip, open one included", funct
   ls.setItem(KEY, JSON.stringify({ schemaVersion: 1, illness: eps }));
   var STORE = harness.loadStore(ls);
   STORE.load();
+  var out = Array.from(STORE.state.conditions);
+  assert.strictEqual(out.length, 2);
+  out.forEach(function (c) { assert.strictEqual(c.type, "illness"); assert.deepStrictEqual(Array.from(c.symptoms), []); });
+  assert.strictEqual(out[0].id, "e1");
+  assert.strictEqual(out[0].label, "angina");
+  assert.strictEqual(STORE.state.illness, undefined);
   STORE.save();
-  var out = JSON.parse(ls.getItem(KEY));
-  assert.deepStrictEqual(out.illness, eps);
+  var saved = JSON.parse(ls.getItem(KEY));
+  assert.strictEqual(saved.illness, undefined);
+});
+
+test("migration: legacy illness is ignored once conditions already has entries", function () {
+  var ls = harness.fakeLocalStorage();
+  ls.setItem(KEY, JSON.stringify({
+    schemaVersion: 1,
+    illness: [{ id: "old", start: "2026-01-01", end: null, label: "", severity: null }],
+    conditions: [{ id: "new", type: "chronic", start: "2026-08-01", end: null, label: "kolano", severity: null, symptoms: [] }]
+  }));
+  var STORE = harness.loadStore(ls);
+  STORE.load();
+  var out = Array.from(STORE.state.conditions);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].id, "new");
 });
 
 // ---- peptides: one record per blend ----

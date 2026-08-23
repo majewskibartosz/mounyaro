@@ -1513,6 +1513,23 @@ var DOMAIN = (function(){
         for(var ai=0;ai<arr.length;ai++) sum+=arr[ai];
         out.push({date:dk, value:Math.round(sum/arr.length*10)/10});
       }}
+    } else if(kind==="symptom"){
+      // per-condition symptom severity: daily average of the 1-5 taps recorded
+      // on journal entries, keyed "<conditionId>:<symptomKey>" — same shape as
+      // the wellbeing branch above, just namespaced so two conditions can never
+      // collide on a symptom key.
+      var symCompound=parts[1]+":"+parts[2], byDaySym={};
+      (state.journal||[]).forEach(function(e){
+        if(e && e.symptoms && e.symptoms[symCompound]!=null && e.ts){
+          var sd2=String(e.ts).slice(0,10);
+          (byDaySym[sd2]=byDaySym[sd2]||[]).push(Number(e.symptoms[symCompound]));
+        }
+      });
+      for(var dk2 in byDaySym){ if(byDaySym.hasOwnProperty(dk2)){
+        var arr2=byDaySym[dk2], sum2=0;
+        for(var ai2=0;ai2<arr2.length;ai2++) sum2+=arr2[ai2];
+        out.push({date:dk2, value:Math.round(sum2/arr2.length*10)/10});
+      }}
     } else if(sourceId==="waist"){
       (state.weightLog||[]).forEach(function(e){
         if(e && e.waistCm!=null) out.push({date:e.date, value:Number(e.waistCm)});
@@ -1663,25 +1680,50 @@ var DOMAIN = (function(){
     return out;
   }
 
-  // ---- illness / infection episodes ----
-  // Day-grained periods: {id,start,end,label,severity}. end===null means the
-  // episode is still running, so it covers every date from its start onwards.
-  // Same noon anchor as therapyWeek so day counts survive DST changes.
+  // ---- conditions: illness episodes + chronic conditions/injuries ----
+  // Day-grained periods: {id,type,start,end,label,severity,symptoms}. end===null
+  // means the period is still running, so it covers every date from its start
+  // onwards. Same noon anchor as therapyWeek so day counts survive DST changes.
+  // "illness" (infections) and "chronic" (standing conditions/injuries) share this
+  // one engine; the only behavioural difference — at most one open illness, but
+  // any number of open chronic conditions at once — lives in the UI layer that
+  // starts them, not here.
   function illnessDaySpan(aISO, bISO){
     return Math.round((new Date(bISO+"T12:00:00")-new Date(aISO+"T12:00:00"))/86400000);
   }
-  function illnessEpisodes(state){
-    return ((state&&state.illness)||[]).filter(function(e){ return e && e.start; })
+  function conditionEpisodes(state, type){
+    return ((state&&state.conditions)||[]).filter(function(e){ return e && e.start && (!type || e.type===type); })
       .slice().sort(function(a,b){ return a.start<b.start?1:a.start>b.start?-1:0; });  // newest first
   }
-  // The one episode without an end date, or null. At most one is ever open.
+  function illnessEpisodes(state){ return conditionEpisodes(state, "illness"); }
+  // The one illness episode without an end date, or null. At most one is ever open
+  // (chronic conditions have no such limit — see openConditions).
   function openIllness(state){
     var eps=illnessEpisodes(state);
     for(var i=0;i<eps.length;i++){ if(!eps[i].end) return eps[i]; }
     return null;
   }
+  function shapeConditionAsOf(best, dateISO){
+    return { id:best.id, type:best.type, start:best.start, end:best.end||null, ongoing:!best.end,
+             label:best.label||"", severity:best.severity||null, symptoms:best.symptoms||[],
+             dayN:illnessDaySpan(best.start, dateISO)+1,
+             total:best.end?illnessDaySpan(best.start, best.end)+1:null };
+  }
+  // Every condition (of the given type, or any type) covering a date, each with
+  // which day of it that is. Unlike illness there is no "at most one" here — any
+  // number of chronic conditions can be running the same day.
+  function openConditions(state, dateISO, type){
+    if(!dateISO) return [];
+    return conditionEpisodes(state, type).filter(function(e){
+      if(dateISO<e.start) return false;
+      if(e.end && dateISO>e.end) return false;
+      return true;
+    }).map(function(e){ return shapeConditionAsOf(e, dateISO); })
+      .sort(function(a,b){ return a.start<b.start?1:a.start>b.start?-1:0; });  // latest start first
+  }
   // Episode covering a date + which day of it that is (1-based), or null.
   // On overlap the latest start wins, so a nested episode reads as the current one.
+  // Illness-only: at most one is ever open, so "the one" is well defined.
   function illnessAsOf(state, dateISO){
     if(!dateISO) return null;
     var best=null;
@@ -1690,26 +1732,23 @@ var DOMAIN = (function(){
       if(e.end && dateISO>e.end) return;
       if(!best || e.start>best.start) best=e;
     });
-    if(!best) return null;
-    return { id:best.id, start:best.start, end:best.end||null, ongoing:!best.end,
-             label:best.label||"", severity:best.severity||null,
-             dayN:illnessDaySpan(best.start, dateISO)+1,
-             total:best.end?illnessDaySpan(best.start, best.end)+1:null };
+    return best ? shapeConditionAsOf(best, dateISO) : null;
   }
   // Episodes overlapping [fromISO,toISO] (either bound may be null = open), clipped
   // to that window so a chart can draw them straight onto its own x-domain.
-  function illnessSpans(state, fromISO, toISO){
+  function conditionSpans(state, fromISO, toISO, type){
     var out=[];
-    illnessEpisodes(state).forEach(function(e){
+    conditionEpisodes(state, type).forEach(function(e){
       var a=e.start, b=e.end||toISO||e.start;
       if(b<a) b=a;                                  // malformed end: treat as a one-day episode
       if(toISO && a>toISO) return;
       if(fromISO && b<fromISO) return;
-      out.push({ id:e.id, from:(fromISO&&a<fromISO)?fromISO:a, to:(toISO&&b>toISO)?toISO:b,
+      out.push({ id:e.id, type:e.type, from:(fromISO&&a<fromISO)?fromISO:a, to:(toISO&&b>toISO)?toISO:b,
                  severity:e.severity||null, label:e.label||"", ongoing:!e.end });
     });
     return out.sort(function(a,b){ return a.from<b.from?-1:a.from>b.from?1:0; });
   }
+  function illnessSpans(state, fromISO, toISO){ return conditionSpans(state, fromISO, toISO, "illness"); }
 
   // ---- chart date windows & window stats ----
   // A contiguous day window over a log, anchored at today: offset 0 is the
@@ -1834,6 +1873,7 @@ var DOMAIN = (function(){
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, doseCountdown:doseCountdown,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
+    conditionEpisodes:conditionEpisodes, openConditions:openConditions, conditionSpans:conditionSpans,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
     parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
@@ -1870,7 +1910,7 @@ var STORE = (function(){
       journal:[],          // free-text log entries: {id,ts,text}
       stateLog:[],         // 1-tap wellbeing check-ins: {id,ts,energy,mood,clarity} (1-5 or null)
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
-      illness:[],          // illness/infection episodes: {id,start,end,label,severity} (end:null = still running)
+      conditions:[],        // illness episodes + chronic conditions/injuries: {id,type,start,end,label,severity,symptoms} (end:null = still running)
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
             // every peptide/blend is tracked on its own:
@@ -1979,7 +2019,23 @@ var STORE = (function(){
     });
     return st;
   }
-  function hydrate(parsed){ return ensurePepTones(ensureTirzepatide(migratePeptides(merge(defaults(), parsed)))); }
+  // A legacy backup's "illness" array survives merge() untouched (unknown keys
+  // are never pruned), so it is still there to read the one time this runs.
+  // Idempotent like the other migrations: returns immediately once conditions
+  // already has entries.
+  function migrateConditions(st){
+    if(!st) return st;
+    if(!st.conditions) st.conditions=[];
+    if(st.conditions.length) return st;
+    if(st.illness && st.illness.length){
+      st.conditions = st.illness.map(function(e){
+        return Object.assign({ type:"illness", symptoms:[] }, e);
+      });
+    }
+    delete st.illness;
+    return st;
+  }
+  function hydrate(parsed){ return ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), parsed))))); }
   function merge(base, over){
     if(typeof over!=="object"||over===null) return base;
     var out = Array.isArray(base)? base.slice():Object.assign({},base);
@@ -3587,10 +3643,10 @@ var UI = (function(){
   function startIllness(startISO, endISO, label, severity){
     var st=s();
     if(!endISO && DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
-    if(!st.illness) st.illness=[];
-    st.illness.push({ id:uid(), start:startISO,
+    if(!st.conditions) st.conditions=[];
+    st.conditions.push({ id:uid(), type:"illness", start:startISO,
                       end:endISO ? ((endISO<startISO)?startISO:endISO) : null,
-                      label:String(label||"").trim().slice(0,60), severity:severity||null });
+                      label:String(label||"").trim().slice(0,60), severity:severity||null, symptoms:[] });
     return true;
   }
   // Closing before the start would make the episode cover nothing — clamp to the start.
@@ -3627,7 +3683,7 @@ var UI = (function(){
     var illOpen=DOMAIN.openIllness(st), illNow=illOpen?DOMAIN.illnessAsOf(st,today):null;
     var illEd=null;
     if(illEditId){
-      (st.illness||[]).forEach(function(e){ if(e.id===illEditId) illEd=e; });
+      (st.conditions||[]).forEach(function(e){ if(e.id===illEditId) illEd=e; });
       if(!illEd) illEditId=null;
     }
     var illC=illColor(illOpen?illOpen.severity:null);
@@ -3890,7 +3946,7 @@ var UI = (function(){
     if($("#illDrop")) $("#illDrop").addEventListener("click",function(){
       if(!confirm(I18N.t("ill.confirmDrop"))) return;
       var id=illOpen.id;
-      st.illness=(st.illness||[]).filter(function(e){ return e.id!==id; });
+      st.conditions=(st.conditions||[]).filter(function(e){ return e.id!==id; });
       illSeed=null; STORE.save(); viewDiary();
     });
     // live day-count preview, so it is obvious the start field does something
@@ -3913,7 +3969,7 @@ var UI = (function(){
     $all(".illDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("ill.confirmDel"))) return;
       var id=b.getAttribute("data-id");
-      st.illness=(st.illness||[]).filter(function(e){ return e.id!==id; });
+      st.conditions=(st.conditions||[]).filter(function(e){ return e.id!==id; });
       if(illEditId===id){ illEditId=null; illSeed=null; }
       STORE.save(); viewDiary();
     });});
