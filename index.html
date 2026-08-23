@@ -644,6 +644,7 @@ var I18N = (function(){
     "cond.symptomsNone":{pl:"Brak jeszcze objawów — dodaj poniżej",en:"No symptoms yet — add one below"},
     "cond.symptomPh":{pl:"np. Gorączka",en:"e.g. Fever"},
     "cond.symptomAdd":{pl:"Dodaj",en:"Add"},
+    "cond.checkinHint":{pl:"zapisuje się przyciskiem — razem z notatką albo samo",en:"saved with the button — with a note or on its own"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
@@ -3686,7 +3687,7 @@ var UI = (function(){
   var condOpenId=null;     // id of the ONE condition card expanded to its full editor (open or past — same editor)
   var condPage=0;          // past-episode list page
   var condDraft={ severity:null };  // severity pick for whichever form condSeed names
-  var jIllDraft={ severity:null };  // severity pick for the composer's own "start infection" toggle
+  var symDraft={};  // "<conditionId>:<symptomKey>" -> 1..5, drafted in the composer like stateDraft
   var condSeed=null;
   var condNewSymptoms=[];  // labels typed while composing a brand-new condition, before it is saved
   var condFieldDraft={};   // other fields of the open form, captured across a symptom add/remove re-render
@@ -3843,27 +3844,39 @@ var UI = (function(){
       var tags=weekTags(st, dISO);
       return tags.length ? weekPills(tags) : '<span class="muted tiny">'+esc(I18N.t("diary.ctxNone"))+'</span>';
     }
-    // One toggle, never two: the note's own date decides whether it can open an
-    // episode or close the running one. Hidden while editing an existing note —
-    // episode dates are corrected in the card above, not by moving a note.
-    function illToggleHtml(dISO){
-      if(editing) return "";
-      var on=DOMAIN.illnessAsOf(st, dISO);
-      if(on && on.ongoing){
-        return '<label class="toggle" style="margin:0 0 10px"><input type="checkbox" id="jIllEnd"><span class="switch"></span>'
-          +'<span>&#129298; '+esc(I18N.t("ill.markEnd"))+' <span class="muted tiny">('+esc(I18N.t("ill.dayN"))+' '+on.dayN+')</span></span></label>';
-      }
-      if(on) return "";   // inside a closed episode: nothing to open or close here
-      return '<label class="toggle" style="margin:0 0 6px"><input type="checkbox" id="jIllStart"><span class="switch"></span>'
-        +'<span>&#129298; '+esc(I18N.t("ill.markStart"))+'</span></label>'
-        +'<div id="jIllMore" style="display:none;margin:0 0 10px">'
-        +'<div class="field"><input type="text" id="jIllLabel" maxlength="60" placeholder="'+esc(I18N.t("ill.labelPh"))+'"></div>'
-        +illSevHtml(jIllDraft.severity, "jillsev")+'</div>';
+    // Starting or ending a condition happens on the card above, once, not here
+    // every day — the composer's own job is the quick daily check-in for
+    // whatever is already open. One block per open condition, symptoms only
+    // (no block at all for one with none configured yet).
+    function condCheckinHTML(dISO){
+      var open=DOMAIN.openConditions(st, dISO);
+      var h='';
+      open.forEach(function(o){
+        var e=null; (st.conditions||[]).forEach(function(c){ if(c.id===o.id) e=c; });
+        var active=e?(e.symptoms||[]).filter(function(sy){ return !sy.archived; }):[];
+        if(!active.length) return;
+        h+='<div style="margin:0 0 10px"><div style="font-size:14px;font-weight:800;color:var(--ink);margin:0 0 2px">'
+          +(e.type==="illness"?'&#129298;':'&#129657;')+' '+esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+'</div>';
+        active.forEach(function(sy){
+          h+='<div class="staterow"><span class="sname">'+esc(sy.label)+'</span><span class="sdots">';
+          for(var v=1;v<=5;v++){
+            // severity runs the opposite way from wellbeing: none (1) is good
+            // (green), severe (5) is bad (red) — the same ramp, read backwards.
+            var vc=PAL.state[5-v], on=(symDraft[e.id+":"+sy.key]===v);
+            h+='<button type="button" class="sdot symdot'+(on?" on":"")+'" data-cond="'+esc(e.id)+'" data-sym="'+esc(sy.key)
+              +'" data-v="'+v+'" style="background:'+vc+';color:'+vc+'" aria-label="'+esc(sy.label)+' '+v+'/5"></button>';
+          }
+          h+='</span></div>';
+        });
+        h+='</div>';
+      });
+      if(h) h+='<div class="muted tiny" style="margin:0 0 10px">'+esc(I18N.t("cond.checkinHint"))+'</div>';
+      return h;
     }
     html+='<div class="card"><p class="sub">'+esc(I18N.t("diary.sub"))+'</p>'
       + (editing?'<div class="note" style="margin:0 0 10px">'+esc(I18N.t("diary.editing"))+'</div>':'')
       + '<div class="row" id="jCtx" style="margin:0 0 10px">'+ctxHtml(whenVal.slice(0,10))+'</div>'
-      + '<div id="jIll">'+illToggleHtml(whenVal.slice(0,10))+'</div>'
+      + '<div id="jSym">'+condCheckinHTML(whenVal.slice(0,10))+'</div>'
       + stateRowsHTML()
       + '<div class="field"><textarea id="jText" rows="3" maxlength="2000" placeholder="'+esc(I18N.t("diary.ph"))+'">'+(editing?esc(editing.text):'')+'</textarea></div>'
       + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("diary.when"))+' <span class="muted tiny">('+esc(I18N.t("diary.whenHint"))+')</span></label><input type="date" id="jDate" value="'+whenVal.slice(0,10)+'"></div>'
@@ -3875,7 +3888,7 @@ var UI = (function(){
 
     // log list: journal entries (text and/or wellbeing), legacy standalone
     // check-ins and old slider-diary notes, newest first
-    var items=(st.journal||[]).map(function(e){ return {id:e.id, key:String(e.ts), ts:e.ts, text:e.text, vals:(hasStateVals(e)?e:null), legacy:false}; });
+    var items=(st.journal||[]).map(function(e){ return {id:e.id, key:String(e.ts), ts:e.ts, text:e.text, vals:(hasStateVals(e)?e:null), symptoms:e.symptoms, legacy:false}; });
     (st.stateLog||[]).forEach(function(e){
       items.push({id:e.id, key:String(e.ts), ts:e.ts, state:e, legacy:false});
     });
@@ -3894,6 +3907,32 @@ var UI = (function(){
         if(dISO===today) return I18N.t("diary.today");
         if(dISO===addDaysISO(today,-1)) return I18N.t("diary.yesterday");
         return fmtDate(dISO);
+      }
+      // "🤒 Grypa: Gorączka 3 · Ból gardła 2" — one line per condition that has
+      // a value that day, grouped so two conditions logged the same day read as
+      // two lines, not an unlabelled soup of numbers. A condition or symptom
+      // that was later deleted outright (never just archived) has nothing left
+      // to resolve a label from, so it is silently skipped — the same thing the
+      // delete confirmation already promises ("marks disappear from notes").
+      function symptomLineHTML(symptoms){
+        if(!symptoms) return '';
+        var byCond={};
+        Object.keys(symptoms).forEach(function(k){
+          var v=symptoms[k]; if(v==null) return;
+          var sep=k.indexOf(":"); if(sep<0) return;
+          var condId=k.slice(0,sep), symKey=k.slice(sep+1), cond=null;
+          (st.conditions||[]).forEach(function(c){ if(c.id===condId) cond=c; });
+          if(!cond) return;
+          var sym=null; (cond.symptoms||[]).forEach(function(sy){ if(sy.key===symKey) sym=sy; });
+          if(!sym) return;
+          (byCond[condId]=byCond[condId]||{cond:cond,parts:[]}).parts.push(esc(sym.label)+' '+v);
+        });
+        return Object.keys(byCond).map(function(cid){
+          var g=byCond[cid];
+          return '<div class="muted tiny" style="margin-top:2px">'
+            +(g.cond.type==="illness"?'&#129298;':'&#129657;')+' '
+            +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+': '+g.parts.join(' &middot; ')+'</div>';
+        }).join('');
       }
       journalPage=pageClamp(journalPage, items.length);
       var lastDay=null;
@@ -3915,7 +3954,8 @@ var UI = (function(){
           : '<span>'+esc(fmtTime(it.ts))+'</span>');
         var body = it.state ? statePillsHTML(it.state)
           : (it.vals?statePillsHTML(it.vals):'')
-            + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '');
+            + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '')
+            + symptomLineHTML(it.symptoms);
         html+='<div class="logentry'+(ill?' ill':'')+'"'
           +(ill?' style="border-left-color:'+ic+';background:linear-gradient(90deg,'+ic+'14,transparent 55%)"':'')
           +'><div class="lbody"><div class="lmeta">'+meta+'</div>'
@@ -3934,39 +3974,49 @@ var UI = (function(){
     app.innerHTML=html;
 
     function saveNote(){
-      // one entry carries both the text and the wellbeing dots — either alone is fine
+      // one entry carries the text, the wellbeing dots and the per-condition
+      // symptom taps — any of the three is enough on its own
       var txt=($("#jText").value||"").trim();
       var hasState=stateDraftHasValues();
-      if(!txt && !hasState){ $("#jText").focus(); return; }
+      var hasSym=Object.keys(symDraft).some(function(k){ return symDraft[k]!=null; });
+      if(!txt && !hasState && !hasSym){ $("#jText").focus(); return; }
       var wv=$("#jDate").value ? $("#jDate").value+"T"+($("#jTime").value||"12:00") : "";
       var when=wv?new Date(wv):new Date();
       if(isNaN(when.getTime())) when=new Date();
       if(!st.journal) st.journal=[];
+      // only symptoms of conditions actually open on the note's own date count —
+      // otherwise a dot tapped before backdating the note could attach to a day
+      // it was never shown on
+      var dISO=when.toISOString().slice(0,10);
+      var validKeys={};
+      DOMAIN.openConditions(st, dISO).forEach(function(o){
+        var e=null; (st.conditions||[]).forEach(function(c){ if(c.id===o.id) e=c; });
+        (e&&e.symptoms||[]).forEach(function(sy){ validKeys[e.id+":"+sy.key]=true; });
+      });
+      var symptoms=null;
+      Object.keys(symDraft).forEach(function(k){
+        if(symDraft[k]==null || !validKeys[k]) return;
+        symptoms = symptoms || {}; symptoms[k]=symDraft[k];
+      });
       if(editing){
         editing.text=txt; editing.ts=when.toISOString();
         STATE_PARAMS.forEach(function(p){ editing[p.key]=stateDraft[p.key]; });
+        editing.symptoms=symptoms;
         journalEdit=null;
       } else {
         var entry={ id:uid(), ts:when.toISOString(), text:txt,
-                    energy:stateDraft.energy, mood:stateDraft.mood, clarity:stateDraft.clarity };
+                    energy:stateDraft.energy, mood:stateDraft.mood, clarity:stateDraft.clarity, symptoms:symptoms };
         st.journal.push(entry);
       }
       st.journal.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
-      // the note itself can open or close an illness episode, dated by the note
-      // same day key the list groups by (String(ts).slice(0,10)), so the chip
-      // always lands on the day header the note appears under
-      var dISO=when.toISOString().slice(0,10);
-      var cbS=$("#jIllStart"), cbE=$("#jIllEnd");
-      if(cbS && cbS.checked) startIllness(dISO, null, ($("#jIllLabel")||{}).value, jIllDraft.severity);
-      else if(cbE && cbE.checked) endIllness(dISO);
-      jIllDraft.severity=null;
       stateDraft={ energy:null, mood:null, clarity:null };
+      symDraft={};
       journalPage=0;
       STORE.save(); toast(I18N.t("common.saved")); viewDiary();
     }
     $("#jAdd").addEventListener("click", saveNote);
     if($("#jCancel")) $("#jCancel").addEventListener("click",function(){
-      journalEdit=null; stateDraft={ energy:null, mood:null, clarity:null }; viewDiary();
+      journalEdit=null; stateDraft={ energy:null, mood:null, clarity:null }; symDraft={}; viewDiary();
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // backfilling? recompute the therapy-week/dose pills for the picked date
@@ -3974,7 +4024,7 @@ var UI = (function(){
     $("#jDate").addEventListener("input",function(){
       var d=this.value||today;
       var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml(d);
-      var ic=$("#jIll"); if(ic){ ic.innerHTML=illToggleHtml(d); bindIllToggle(); }
+      var sy=$("#jSym"); if(sy){ sy.innerHTML=condCheckinHTML(d); bindSymDots(); }
     });
     $("#jText").addEventListener("keydown",function(ev){
       if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
@@ -3983,6 +4033,7 @@ var UI = (function(){
       journalEdit=b.getAttribute("data-id");
       var en=(st.journal||[]).filter(function(e){ return e.id===journalEdit; })[0];
       STATE_PARAMS.forEach(function(p){ stateDraft[p.key]=(en&&en[p.key]!=null)?en[p.key]:null; });
+      symDraft=Object.assign({}, (en&&en.symptoms)||{});
       viewDiary(); window.scrollTo(0,0);
     });});
     $all(".jDel").forEach(function(b){ b.addEventListener("click",function(){
@@ -3999,15 +4050,17 @@ var UI = (function(){
       STORE.save(); viewDiary();
     });});
     bindStateDots();
-    // --- illness card + composer toggle wiring ---
-    function bindIllToggle(){
-      var cbS=$("#jIllStart");
-      if(cbS) cbS.addEventListener("change",function(){
-        var more=$("#jIllMore"); if(more) more.style.display=this.checked?"block":"none";
-      });
-      bindIllSev("jillsev", jIllDraft);
+    function bindSymDots(){
+      $all(".symdot").forEach(function(b){ b.addEventListener("click",function(){
+        var c=b.getAttribute("data-cond"), k=b.getAttribute("data-sym"), v=parseInt(b.getAttribute("data-v"),10);
+        var key=c+":"+k;
+        symDraft[key] = (symDraft[key]===v) ? null : v;
+        $all('.symdot[data-cond="'+c+'"][data-sym="'+k+'"]').forEach(function(x){
+          x.classList.toggle("on", parseInt(x.getAttribute("data-v"),10)===symDraft[key]);
+        });
+      });});
     }
-    bindIllToggle();
+    bindSymDots();
     function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
     if($("#condAddIll")) $("#condAddIll").addEventListener("click",function(){
       if(DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return; }
