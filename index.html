@@ -3697,6 +3697,8 @@ var UI = (function(){
     var ep=DOMAIN.openIllness(s());
     return ep ? endCondition(ep.id, endISO) : (toast(I18N.t("ill.noneOpen")), false);
   }
+  var condCardOpen=false;  // whole "Choroby i schorzenia" card collapsed to one line by default —
+                           // most days you're not touching it at all
   var condAddType=null;    // null | "illness" | "chronic" — which "add new" form is open
   var condOpenId=null;     // id of the ONE condition card expanded to its full editor (open or past — same editor)
   var condPage=0;          // past-episode list page
@@ -3797,8 +3799,11 @@ var UI = (function(){
         + '<button class="btn danger" id="condEdDrop" data-id="'+esc(e.id)+'">'+icon("trash")+esc(I18N.t("ill.drop"))+'</button></div>';
     }
 
-    html+='<div class="card"><h2 style="margin:0 0 10px">'+esc(I18N.t("cond.title"))+'</h2>'
-      + '<div class="row">'
+    html+='<div class="card"><div class="condCardHead" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">'
+      + '<h2 style="margin:0">'+esc(I18N.t("cond.title"))+'</h2>'
+      + '<span class="muted" style="padding:0 4px">'+(condCardOpen?'&#9650;':'&#9660;')+'</span></div>';
+    if(condCardOpen){
+    html+='<div class="row" style="margin-top:10px">'
       + '<button type="button" class="btn ghost" id="condAddIll">&#129298; '+esc(I18N.t("cond.addIllness"))+'</button>'
       + '<button type="button" class="btn ghost" id="condAddChr">&#129657; '+esc(I18N.t("cond.addChronic"))+'</button>'
       + '</div>';
@@ -3853,6 +3858,7 @@ var UI = (function(){
     }
     if(!condOpenList.length && !condPast.length && !condAddType){
       html+='<p class="empty" style="margin-top:10px">'+esc(I18N.t("cond.none"))+'</p>';
+    }
     }
     html+='</div>';
 
@@ -4107,6 +4113,9 @@ var UI = (function(){
     }
     bindSymDots();
     function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
+    if($(".condCardHead")) $(".condCardHead").addEventListener("click",function(){
+      condCardOpen=!condCardOpen; viewDiary();
+    });
     if($("#condAddIll")) $("#condAddIll").addEventListener("click",function(){
       if(DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return; }
       condAddType=(condAddType==="illness")?null:"illness"; condOpenId=null; condSeed=null; condNewSymptoms=[]; viewDiary();
