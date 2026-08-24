@@ -3581,7 +3581,11 @@ var UI = (function(){
     return STATE_PARAMS.map(function(p){
       var v=e[p.key];
       // the pill's ink follows the pill's own colour, not the brand's
-      return v==null ? '' : '<span class="statepill" style="background:'+PAL.state[v-1]+';color:'+THEME.pickInk(PAL.state[v-1])+'"><span class="pemoji">'+p.icon+'</span>'+v+'</span>';
+      // same green-to-red ramp as symptom severity, read the other way round
+      // (1=bad/red, 5=good/green) — PAL.state's own "best" slot is a theme's
+      // cyan accent, not a true green, so it doesn't get reused here.
+      var wc=PAL.symSev[5-v];
+      return v==null ? '' : '<span class="statepill" style="background:'+wc+';color:'+THEME.pickInk(wc)+'"><span class="pemoji">'+p.icon+'</span>'+v+'</span>';
     }).join('');
   }
   function stateRowsHTML(){
@@ -3590,8 +3594,9 @@ var UI = (function(){
     STATE_PARAMS.forEach(function(p){
       h+='<div class="staterow"><span class="sname">'+p.icon+' '+esc(I18N.t("state."+p.key))+'</span><span class="sdots">';
       for(var v=1; v<=5; v++){
+        var wc=PAL.symSev[5-v];   // same ramp as symptom severity, reversed: 1=red, 5=true green
         h+='<button type="button" class="sdot'+(stateDraft[p.key]===v?" on":"")+'" data-sp="'+p.key+'" data-v="'+v
-          +'" style="background:'+PAL.state[v-1]+';color:'+PAL.state[v-1]+'" aria-label="'+esc(I18N.t("state."+p.key))+' '+v+'/5"></button>';
+          +'" style="background:'+wc+';color:'+wc+'" aria-label="'+esc(I18N.t("state."+p.key))+' '+v+'/5"></button>';
       }
       h+='</span></div>';
     });
