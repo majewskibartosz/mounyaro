@@ -5116,7 +5116,7 @@ var UI = (function(){
              +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
-            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:null), substColor(st, e.substance),
+            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:substInterval(st, e.substance)), substColor(st, e.substance),
                 DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             : "—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
