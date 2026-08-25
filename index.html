@@ -217,6 +217,13 @@
   .pep{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
        border-radius:14px;overflow:hidden}
   .pep.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
+  .pep.reord{display:grid;grid-template-columns:1fr auto;align-items:center}
+  .pep.reord .wbar{grid-column:1/-1}
+  .pep.reord .pepHead{cursor:default}
+  .pepmove{display:flex;flex-direction:column;gap:4px;padding:0 10px 0 0}
+  .pepmove .btn.sm{padding:4px 9px}
+  .pepmove .btn[disabled]{opacity:.35;pointer-events:none}
+  .substUp svg{transform:rotate(180deg)}
   .pepHead{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;
            color:var(--ink);text-align:left;font:inherit;padding:11px 12px;cursor:pointer}
   .pepHead:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
@@ -539,6 +546,8 @@ var I18N = (function(){
     "pep.vialNone":{pl:"Podaj fiolkę i wodę, aby liczyć jednostki na insulinówce.",en:"Enter the vial and water to get units on an insulin syringe."},
     "pep.vialDel":{pl:"Usunąć ten wpis fiolki?",en:"Delete this vial entry?"},
     "inj.pepAdd":{pl:"Dodaj peptyd",en:"Add peptide"},
+    "inj.reorder":{pl:"Kolejność",en:"Reorder"},
+    "inj.reorderDone":{pl:"Gotowe",en:"Done"},
     "inj.pepNone":{pl:"Brak peptydów. Dodaj pierwszy, aby zacząć śledzić dawki.",en:"No peptides yet. Add one to start tracking doses."},
     "inj.pepNoShots":{pl:"brak wkłuć",en:"no shots yet"},
     "inj.pepColor":{pl:"Kolor",en:"Colour"},
@@ -658,6 +667,8 @@ var I18N = (function(){
     "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
     "set.sandbaggingSub":{pl:"Pozwala oznaczać zastrzyki (na razie TRT) jako sandbagging. Po wyłączeniu oznaczone wpisy znikają z historii, mapy brzucha i obliczeń — dane zostają zapisane.",en:"Lets you mark injections (TRT for now) as sandbagging. When switched off, marked entries disappear from the history, the belly map and all calculations — the data itself is kept."},
     "common.edit":{pl:"Edytuj",en:"Edit"},
+    "common.moveUp":{pl:"W górę",en:"Move up"},
+    "common.moveDown":{pl:"W dół",en:"Move down"},
     "common.update":{pl:"Zaktualizuj",en:"Update"},
     "common.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
 
@@ -1943,6 +1954,9 @@ var STORE = (function(){
       conditions:[],        // illness episodes + chronic conditions/injuries: {id,type,start,end,label,severity,symptoms} (end:null = still running)
       inj:{ mounjaro:{ unit:"mg" },
             trt:{ intervalDays:3, unit:"mg" },
+            // the order the substance rows are shown in, by id. Optional and
+            // never has to be complete: anything missing keeps its natural place.
+            order:[],
             // every peptide/blend is tracked on its own:
             // {id,name,color,unit,intervalDays,cycleDays,cycleStart,archived}
             // Injections reference one by id in their `substance` field.
@@ -4291,7 +4305,28 @@ var UI = (function(){
       if(p.id==="mounjaro" && mjTabOn(st)) return;
       rows.push(p.id);
     });
-    return rows;
+    // The saved order ranks whatever it knows; anything it does not (a compound
+    // added or restored since) falls to the end keeping its natural order, so
+    // st.inj.order never has to be complete or pruned.
+    var rank={};
+    ((st.inj&&st.inj.order)||[]).forEach(function(id,i){ rank[id]=i; });
+    var nat={};
+    rows.forEach(function(id,i){ nat[id]=i; });
+    return rows.slice().sort(function(a,b){
+      var ra=(rank[a]!=null)?rank[a]:Infinity, rb=(rank[b]!=null)?rank[b]:Infinity;
+      if(ra!==rb) return ra<rb?-1:1;
+      return nat[a]-nat[b];
+    });
+  }
+  // Moving a row writes back the WHOLE visible order, so a stale saved list
+  // repairs itself the first time anything is moved.
+  function moveSubst(st, id, dir){
+    var rows=substRows(st), i=rows.indexOf(id), j=i+dir;
+    if(i<0 || j<0 || j>=rows.length) return false;
+    rows.splice(j, 0, rows.splice(i, 1)[0]);
+    if(!st.inj) return false;
+    st.inj.order=rows;
+    return true;
   }
   // One card per substance: colour rail, name, "dose · interval · cycle", and the
   // countdown on the right. The selected card is the one the form below acts on.
@@ -4317,15 +4352,30 @@ var UI = (function(){
       +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
     var on=(selectedSubst()===sub);
-    return '<div class="pep'+(on?" on":"")+(cd&&cd.overdue?" late":"")+'" style="--c:'+substColor(st,sub)+'">'
-      +'<button type="button" class="pepHead" data-id="'+esc(sub)+'">'
-        +'<span class="pepgrow"><span class="pepname">'+esc(substLabel(st,sub))+'</span>'
+    // Reordering makes the row inert — a nested button is invalid markup, and an
+    // inert row means the list cannot scroll out from under the arrows.
+    var inner='<span class="pepgrow"><span class="pepname">'+esc(substLabel(st,sub))+'</span>'
         +'<span class="pepsub">'+bits.join(" &middot; ")+'</span></span>'
         +'<span class="pepdue"><span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span>'
-        +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>'
-      +'</button>'
+        +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>';
+    var head = injReorder
+      ? '<div class="pepHead">'+inner+'</div>'+moveColHTML(st, sub)
+      : '<button type="button" class="pepHead" data-id="'+esc(sub)+'">'+inner+'</button>';
+    return '<div class="pep'+(on&&!injReorder?" on":"")+(injReorder?" reord":"")+(cd&&cd.overdue?" late":"")+'" style="--c:'+substColor(st,sub)+'">'
+      +head
       +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
+  }
+  // Up/down pair, disabled at the ends. `chevron` is the only caret in ICONS, so
+  // the up arrow is the same glyph rotated in CSS.
+  function moveColHTML(st, sub){
+    var rows=substRows(st), i=rows.indexOf(sub);
+    function b(cls, dir, key){
+      var off=(i+dir<0 || i+dir>=rows.length);
+      return '<button type="button" class="btn ghost sm '+cls+'" data-id="'+esc(sub)+'"'
+        +(off?' disabled':'')+' title="'+esc(I18N.t(key))+'" aria-label="'+esc(I18N.t(key))+'">'+icon("chevron")+'</button>';
+    }
+    return '<div class="pepmove">'+b("substUp",-1,"common.moveUp")+b("substDown",1,"common.moveDown")+'</div>';
   }
   var PEP_UNITS=["mcg","mg","j","IU"];
   // Vial + water in, concentration and units out. Only meaningful when the dose
@@ -4444,7 +4494,21 @@ var UI = (function(){
   function bindPeptides(st){
     // tapping a card selects it (and collapses it again on a second tap)
     $all(".pepHead").forEach(function(b){ b.addEventListener("click",function(){
+      if(!b.getAttribute("data-id")) return;      // inert while reordering
       selectSubst(b.getAttribute("data-id"));
+    });});
+    if($("#reordStart")) $("#reordStart").addEventListener("click",function(){
+      // collapse whatever was open so the form does not jump under a moving list
+      injReorder=true; injSeg="peptide"; pepSel=null; pepEditId=null;
+      syncInjectRoute(); viewInject();
+    });
+    if($("#reordDone")) $("#reordDone").addEventListener("click",function(){
+      injReorder=false; viewInject();
+    });
+    $all(".substUp,.substDown").forEach(function(b){ b.addEventListener("click",function(){
+      if(moveSubst(st, b.getAttribute("data-id"), b.classList.contains("substUp")?-1:1)){
+        STORE.save(); viewInject();
+      }
     });});
     if($("#pepAdd")) $("#pepAdd").addEventListener("click",function(){
       pepEditId="new"; pepDraft={}; viewInject();
@@ -4856,6 +4920,7 @@ var UI = (function(){
   var injSeg="peptide", injSel=null, injEdit=null;
   var pepSel=null;      // peptide the form/history act on (null = only the card list)
   var pepEditId=null;   // null | peptide id | "new" — the peptide config form
+  var injReorder=false; // list is in reorder mode: rows inert, arrows shown
   var pepDraft={};      // colour/unit picks that must survive a re-render  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
   var injPage=0;  // history page (5 rows each)
   var injDraft={dose:"",name:"",when:"",sandbag:null}; // preserves typed dose/blend/time/flag across the site-pick re-render (sandbag null = untouched)
@@ -5064,9 +5129,14 @@ var UI = (function(){
     // ---- one list for everything; tapping a row opens it below ----
     html+='<div class="card">'
       +'<div class="peplist">'+substRows(st).map(function(id){ return substCardHTML(st, id); }).join("")+'</div>';
-    if(!pepEditId){
-      html+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="pepAdd" style="width:100%">+ '
-        +esc(I18N.t("inj.pepAdd"))+'</button></div>';
+    if(injReorder){
+      html+='<div class="row" style="margin-top:10px"><button class="btn" id="reordDone" style="width:100%">'
+        +esc(I18N.t("inj.reorderDone"))+'</button></div>';
+    } else if(!pepEditId){
+      html+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="pepAdd" style="flex:1">+ '
+        +esc(I18N.t("inj.pepAdd"))+'</button>'
+        +(substRows(st).length>1?'<button class="btn ghost sm" id="reordStart">'+esc(I18N.t("inj.reorder"))+'</button>':'')
+        +'</div>';
     }
     html+='</div>';
 
