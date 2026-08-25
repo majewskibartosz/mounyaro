@@ -238,7 +238,7 @@
   /* edit mode: dashed, handled, and gently rocking so it reads as movable */
   .pep.reord{display:grid;grid-template-columns:1fr auto;align-items:center;
     border-style:dashed;background:var(--soft);touch-action:none;user-select:none;-webkit-user-select:none}
-  .pep.reord .wbar{grid-column:1/-1;opacity:.45}
+  .pep.reord .wbar{display:none}
   .pep.reord .pepHead{cursor:default}
   .pep.reord .pepdue{opacity:.5}
   .pepgrip{display:flex;align-items:center;justify-content:center;border:0;background:none;
@@ -246,10 +246,13 @@
   .pepgrip:active{cursor:grabbing}
   .pepgrip svg{width:20px;height:20px}
   .pepgrip:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;border-radius:8px}
-  /* the lifted row must track the finger exactly, so no transition on it */
+  /* neighbours slide to open a gap; the lifted row must track the finger exactly.
+     The no-transition rule has to out-specify the sliding one above it (0,4,0
+     beats 0,3,0) or the dragged row eases along behind the pointer. */
   .peplist.reord .pep{transition:transform .18s ease}
-  .pep.dragging{position:relative;z-index:2;transition:none;animation:none;
+  .pep.dragging{position:relative;z-index:2;animation:none;
     box-shadow:0 8px 22px rgba(0,0,0,.32);border-style:solid;border-color:var(--c)}
+  .peplist.reord .pep.dragging{transition:none}
   .pep.dragging .pepgrip{cursor:grabbing}
   @keyframes pepJiggle{
     0%,100%{transform:rotate(-.5deg)}
