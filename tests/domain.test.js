@@ -734,3 +734,47 @@ test("bpAverage: a single reading still averages to itself", function () {
   var r = DOMAIN.bpAverage([{ sys: 118, dia: 76, pulse: 61 }]);
   assert.deepStrictEqual([r.sys, r.dia, r.pulse, r.n], [118, 76, 61, 1]);
 });
+
+// ---- compound name matching ------------------------------------------------
+
+test("normName: one compound stays one compound however it was typed", function () {
+  ["KLOW", "klow", "K-LOW", "k low", " Klow ", "K_LOW", "(KLOW)"].forEach(function (v) {
+    assert.strictEqual(DOMAIN.normName(v), "klow", v);
+  });
+});
+
+test("normName: accents and the Polish l-stroke fold away", function () {
+  assert.strictEqual(DOMAIN.normName("Głutation"), DOMAIN.normName("glutation"));
+  assert.strictEqual(DOMAIN.normName("Tirzepatyd"), DOMAIN.normName("TIRZEPATYD"));
+  assert.strictEqual(DOMAIN.normName("Sémaglutyd"), "semaglutyd");
+});
+
+test("normName: empty-ish input never throws and yields an empty key", function () {
+  [null, undefined, "", "   ", "---", "()"].forEach(function (v) {
+    assert.strictEqual(DOMAIN.normName(v), "");
+  });
+});
+
+test("nameScore: exact beats prefix beats substring", function () {
+  assert.strictEqual(DOMAIN.nameScore("klow", "KLOW"), 100);
+  assert.ok(DOMAIN.nameScore("klo", "KLOW") > DOMAIN.nameScore("klow", "BPC-157 + TB-500 (KLOW)"));
+  assert.ok(DOMAIN.nameScore("klow", "BPC-157 + TB-500 (KLOW)") > 0);
+});
+
+test("nameScore: a typo still matches, an unrelated name does not", function () {
+  assert.ok(DOMAIN.nameScore("klov", "KLOW") > 0);
+  assert.strictEqual(DOMAIN.nameScore("retatrutyd", "KLOW"), 0);
+  assert.strictEqual(DOMAIN.nameScore("", "KLOW"), 0);
+});
+
+test("similarCompounds: ranks matches, drops the rest, keeps all on empty query", function () {
+  var list = [
+    { id: "a", name: "Retatrutyd" },
+    { id: "b", name: "BPC-157 + TB-500 (KLOW)" },
+    { id: "c", name: "KLOW" }
+  ];
+  assert.deepStrictEqual(pluck(DOMAIN.similarCompounds(list, "klow"), "id"), ["c", "b"]);
+  assert.deepStrictEqual(pluck(DOMAIN.similarCompounds(list, "reta"), "id"), ["a"]);
+  assert.strictEqual(DOMAIN.similarCompounds(list, "").length, 3);
+  assert.strictEqual(DOMAIN.similarCompounds([], "klow").length, 0);
+});

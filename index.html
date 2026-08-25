@@ -213,6 +213,24 @@
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
   .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   /* peptide cards: one row per blend, colour rail carries its identity */
+  /* the app's first overlay: full-bleed, above the sticky header and tab bar */
+  .modal{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}
+  .modalhead{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:12px max(12px,env(safe-area-inset-left));border-bottom:1px solid var(--line);background:var(--card)}
+  .modalsearch{padding:10px max(12px,env(safe-area-inset-left));border-bottom:1px solid var(--line)}
+  .modalsearch input{width:100%}
+  .modalbody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:8px max(12px,env(safe-area-inset-left)) calc(16px + env(safe-area-inset-bottom))}
+  .pickhead{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--muted);margin:14px 0 4px}
+  .pickrow{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;color:var(--ink);
+    text-align:left;font:inherit;padding:12px 4px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .pickrow:last-child{border-bottom:0}
+  .pickrow.dim .pickname{color:var(--muted)}
+  .pickrow.asnew{border-bottom:0;background:var(--soft);border-radius:12px;padding:12px;margin-bottom:4px}
+  .pickdot{flex:0 0 auto;width:10px;height:10px;border-radius:50%}
+  .pickname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+  .picknote{flex:0 0 auto;font-size:11.5px;color:var(--muted);font-weight:600}
   .peplist{display:flex;flex-direction:column;gap:9px}
   .pep{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
        border-radius:14px;overflow:hidden}
@@ -547,13 +565,21 @@ var I18N = (function(){
     "pep.vialDel":{pl:"Usunąć ten wpis fiolki?",en:"Delete this vial entry?"},
     "inj.pepAdd":{pl:"Dodaj peptyd",en:"Add peptide"},
     "inj.reorder":{pl:"Kolejność",en:"Reorder"},
+    "pep.pickTitle":{pl:"Wybierz związek",en:"Pick a compound"},
+    "pep.pickSearch":{pl:"Szukaj lub wpisz nową nazwę",en:"Search, or type a new name"},
+    "pep.pickNew":{pl:"Użyj jako nowy związek",en:"Use as a new compound"},
+    "pep.pickPrev":{pl:"Używane wcześniej",en:"Used before"},
+    "pep.pickActive":{pl:"Już na liście",en:"Already in your list"},
+    "pep.pickNone":{pl:"Brak wcześniejszych związków.",en:"No earlier compounds yet."},
+    "pep.pickClose":{pl:"Zamknij",en:"Close"},
+    "pep.dupConfirm":{pl:"Masz już „{name}”. Użyć tego wpisu i zachować jego historię? Anuluj — utworzy nowy.",en:"You already have \u201c{name}\u201d. Use that entry and keep its history? Cancel creates a new one."},
     "inj.reorderDone":{pl:"Gotowe",en:"Done"},
     "inj.pepNone":{pl:"Brak peptydów. Dodaj pierwszy, aby zacząć śledzić dawki.",en:"No peptides yet. Add one to start tracking doses."},
     "inj.pepNoShots":{pl:"brak wkłuć",en:"no shots yet"},
     "inj.pepColor":{pl:"Kolor",en:"Colour"},
     "inj.pepUnit":{pl:"Jednostka",en:"Unit"},
     "inj.pepDelete":{pl:"Usuń peptyd",en:"Delete peptide"},
-    "inj.pepConfirmDel":{pl:"Usunąć ten peptyd? Zapisane wkłucia zostaną w historii.",en:"Delete this peptide? Its logged injections stay in the history."},
+    "inj.pepConfirmDel":{pl:"Usunąć ten związek z listy? Wkłucia zostaną w historii, a związek w podpowiedziach — można go później przywrócić.",en:"Remove this compound from the list? Its injections stay in the history and the compound stays in the suggestions, so you can bring it back later."},
     "inj.pepEditTitle":{pl:"Peptyd",en:"Peptide"},
     "inj.pepEdit":{pl:"Edytuj peptyd",en:"Edit peptide"},
     "inj.cycleOn":{pl:"Śledź cykl (on/off)",en:"Track a cycle (on/off)"},
@@ -1900,6 +1926,57 @@ var DOMAIN = (function(){
     return "#"+t+(sub?"/"+encodeURIComponent(sub):"");
   }
 
+  // ---- compound names -----------------------------------------------------
+  // One compound must stay one compound however it was typed. Collapse a name
+  // to a comparison key: case, accents, Polish l-stroke (which NFD leaves
+  // alone), spaces, dashes, plus signs and brackets all stop mattering, so
+  // "KLOW", "klow", "K-LOW " and "k low" are the same thing.
+  function normName(s){
+    var t=String(s==null?"":s).toLowerCase().replace(/\u0142/g,"l");
+    if(t.normalize) t=t.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    return t.replace(/[^a-z0-9]+/g,"");
+  }
+  // Cheap Levenshtein, bounded by the two lengths — names here are short.
+  function editDistance(a, b){
+    if(a===b) return 0;
+    if(!a.length) return b.length;
+    if(!b.length) return a.length;
+    var prev=[], cur=[], i, j;
+    for(j=0;j<=b.length;j++) prev[j]=j;
+    for(i=1;i<=a.length;i++){
+      cur[0]=i;
+      for(j=1;j<=b.length;j++){
+        var cost=a.charAt(i-1)===b.charAt(j-1)?0:1;
+        cur[j]=Math.min(cur[j-1]+1, prev[j]+1, prev[j-1]+cost);
+      }
+      prev=cur.slice();
+    }
+    return prev[b.length];
+  }
+  // How well a typed name matches an existing one, 0 = not at all. Exact beats
+  // prefix beats substring; a typo still scores through the edit distance, but
+  // only within about a third of the longer name so unrelated names stay out.
+  function nameScore(query, name){
+    var q=normName(query), n=normName(name);
+    if(!q || !n) return 0;
+    if(q===n) return 100;
+    if(n.indexOf(q)===0) return 80;
+    if(n.indexOf(q)>=0) return 60;      // "klow" inside "bpc157tb500klow"
+    if(q.indexOf(n)>=0) return 55;
+    var max=Math.max(q.length, n.length), d=editDistance(q, n);
+    if(d<=Math.max(1, Math.floor(max/3))) return Math.max(1, 40-d);
+    return 0;
+  }
+  // list: [{id,name,...}]. An empty query returns everything, untouched order.
+  function similarCompounds(list, query){
+    var arr=(list||[]).filter(function(p){ return p && p.name!=null; });
+    if(!normName(query)) return arr.slice();
+    return arr.map(function(p){ return { p:p, score:nameScore(query, p.name) }; })
+      .filter(function(x){ return x.score>0; })
+      .sort(function(a,b){ return b.score-a.score; })
+      .map(function(x){ return x.p; });
+  }
+
   return {
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     GOLDEN_UNITS:GOLDEN_UNITS,
@@ -1915,6 +1992,7 @@ var DOMAIN = (function(){
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
     conditionEpisodes:conditionEpisodes, openConditions:openConditions, conditionSpans:conditionSpans,
+    normName:normName, nameScore:nameScore, similarCompounds:similarCompounds,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
     parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
@@ -4377,6 +4455,47 @@ var UI = (function(){
     }
     return '<div class="pepmove">'+b("substUp",-1,"common.moveUp")+b("substDown",1,"common.moveDown")+'</div>';
   }
+  // One row of the compound picker. `dim` marks a compound already on the list:
+  // still choosable, it just opens that entry instead of making a second one.
+  function pickRowHTML(st, p, dim){
+    var c=substColor(st, p.id);
+    return '<button type="button" class="pickrow'+(dim?" dim":"")+'" data-id="'+esc(p.id)+'">'
+      +'<span class="pickdot" style="background:'+c+'"></span>'
+      +'<span class="pickname">'+esc(p.name)+'</span></button>';
+  }
+  // The list half of the picker, re-rendered on its own as you type so the
+  // search field never loses focus or caret to a full view re-render.
+  function pickListHTML(st, q){
+    var all=peptideList(st, true).filter(function(p){ return p.id!=="mounjaro" || !mjTabOn(st); });
+    var hits=DOMAIN.similarCompounds(all, q);
+    var prev=[], live=[];
+    hits.forEach(function(p){ (p.archived?prev:live).push(p); });
+    var h='';
+    if(String(q||"").trim()){
+      h+='<button type="button" class="pickrow asnew" id="pkNew">'
+        +'<span class="pickname"><b>'+esc(String(q).trim())+'</b></span>'
+        +'<span class="picknote">'+esc(I18N.t("pep.pickNew"))+'</span></button>';
+    }
+    if(prev.length){
+      h+='<div class="pickhead">'+esc(I18N.t("pep.pickPrev"))+'</div>'
+        +prev.map(function(p){ return pickRowHTML(st, p, false); }).join('');
+    }
+    if(live.length){
+      h+='<div class="pickhead">'+esc(I18N.t("pep.pickActive"))+'</div>'
+        +live.map(function(p){ return pickRowHTML(st, p, true); }).join('');
+    }
+    if(!h) h='<div class="empty">'+esc(I18N.t("pep.pickNone"))+'</div>';
+    return h;
+  }
+  function pepPickHTML(st, q){
+    return '<div class="modal" id="pkModal">'
+      +'<div class="modalhead"><h2 style="margin:0;font-size:17px">'+esc(I18N.t("pep.pickTitle"))+'</h2>'
+        +'<button type="button" class="btn ghost sm" id="pkClose" aria-label="'+esc(I18N.t("pep.pickClose"))+'">'+esc(I18N.t("pep.pickClose"))+'</button></div>'
+      +'<div class="modalsearch"><input type="text" id="pkQuery" maxlength="60" autocomplete="off" placeholder="'
+        +esc(I18N.t("pep.pickSearch"))+'" value="'+esc(q||"")+'"></div>'
+      +'<div class="modalbody" id="pkList">'+pickListHTML(st, q)+'</div>'
+      +'</div>';
+  }
   var PEP_UNITS=["mcg","mg","j","IU"];
   // Vial + water in, concentration and units out. Only meaningful when the dose
   // itself is a weight — a dose already prescribed in IU has nothing to convert.
@@ -4546,7 +4665,49 @@ var UI = (function(){
     if($("#pfCycleOn")) $("#pfCycleOn").addEventListener("change",function(){
       var box=$("#pfCycle"); if(box) box.style.display=this.checked?"":"none";
     });
-    if($("#pfCancel")) $("#pfCancel").addEventListener("click",function(){ pepEditId=null; pepDraft={}; viewInject(); });
+    if($("#pfCancel")) $("#pfCancel").addEventListener("click",function(){
+      pepEditId=null; pepDraft={}; pepPickOpen=false; document.body.style.overflow=""; viewInject();
+    });
+    // Naming a NEW compound goes through the picker, so an existing one gets
+    // resumed instead of duplicated. Renaming an existing one is just a field.
+    if($("#pfName") && pepEditId==="new"){
+      $("#pfName").addEventListener("focus",function(){
+        if(pepPickOpen) return;
+        pepDraft.pick=this.value||""; pepPickOpen=true; this.blur(); viewInject();
+      });
+    }
+    function closePick(){ pepPickOpen=false; pepDraft.pick=""; document.body.style.overflow=""; viewInject(); }
+    // Adopting a compound resumes its own record — same id, so its injections,
+    // vials and colour all come back with it.
+    function adoptCompound(id){
+      var p=peptideById(st, id); if(!p) return;
+      p.archived=false;
+      pepEditId=p.id; pepSel=p.id; injSeg="peptide";
+      pepPickOpen=false; pepDraft={}; document.body.style.overflow="";
+      STORE.save(); syncInjectRoute(); viewInject();
+    }
+    if($("#pkModal")){
+      document.body.style.overflow="hidden";      // no scrolling the page behind it
+      $("#pkClose").addEventListener("click", closePick);
+      $("#pkQuery").addEventListener("input",function(){
+        // only the list re-renders, or the field would lose focus every keystroke
+        pepDraft.pick=this.value;
+        var l=$("#pkList"); if(l){ l.innerHTML=pickListHTML(st, this.value); bindPickRows(); }
+      });
+      var q=$("#pkQuery"); q.focus(); q.setSelectionRange(q.value.length, q.value.length);
+      bindPickRows();
+    }
+    function bindPickRows(){
+      if($("#pkNew")) $("#pkNew").addEventListener("click",function(){
+        var v=String(pepDraft.pick||"").trim();
+        pepPickOpen=false; document.body.style.overflow="";
+        viewInject();
+        if($("#pfName")) $("#pfName").value=v;   // straight into the form, nothing saved yet
+      });
+      $all(".pickrow[data-id]").forEach(function(b){
+        b.addEventListener("click",function(){ adoptCompound(b.getAttribute("data-id")); });
+      });
+    }
     if($("#pfSave")) $("#pfSave").addEventListener("click",function(){
       var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
       var name=String($("#pfName").value||"").trim().slice(0,60);
@@ -4562,6 +4723,21 @@ var UI = (function(){
                    cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
                    cycleStart:(cycOn&&cs)?cs:null };
       if(isNew){
+        // Looks like something already known? Offer to resume that record rather
+        // than start a second history for the same compound. The bar is a strong
+        // match (identical, prefix or contained — "klow" inside "…(KLOW)"), not
+        // mere resemblance, and it only ever asks: answering no still creates it.
+        var dupe=null, best=0;
+        if(DOMAIN.normName(name)) peptideList(st, true).forEach(function(o){
+          var sc=DOMAIN.nameScore(name, o.name);
+          if(sc>=60 && sc>best){ best=sc; dupe=o; }
+        });
+        if(dupe && confirm(I18N.t("pep.dupConfirm").replace("{name}", dupe.name))){
+          dupe.archived=false;
+          pepEditId=null; pepDraft={}; pepSel=dupe.id; injSeg="peptide";
+          STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
+          return;
+        }
         if(!st.inj.peptides) st.inj.peptides=[];
         var np=Object.assign({ id:"pep_"+uid(), archived:false, vials:[] }, fields);
         // "add" is reachable with any row open now, so land on the new peptide
@@ -4587,12 +4763,11 @@ var UI = (function(){
     });
     if($("#pfDel")) $("#pfDel").addEventListener("click",function(){
       var p=peptideById(st, pepEditId); if(!p) return;
-      var n=(st.injLog||[]).filter(function(e){ return e.substance===p.id; }).length;
       if(!confirm(I18N.t("inj.pepConfirmDel"))) return;
-      // shots stay in the history, so the record is archived rather than dropped —
-      // otherwise those rows would lose their name and colour
-      if(n) p.archived=true;
-      else st.inj.peptides=st.inj.peptides.filter(function(x){ return x.id!==p.id; });
+      // Always archive, never drop. Shots keep their name and colour, and the
+      // compound stays in the picker so re-adding it later resumes the same
+      // record instead of starting a second history under a new id.
+      p.archived=true;
       if(pepSel===p.id) pepSel=null;
       pepEditId=null; pepDraft={}; STORE.save(); syncInjectRoute(); viewInject();
     });
@@ -4921,6 +5096,7 @@ var UI = (function(){
   var pepSel=null;      // peptide the form/history act on (null = only the card list)
   var pepEditId=null;   // null | peptide id | "new" — the peptide config form
   var injReorder=false; // list is in reorder mode: rows inert, arrows shown
+  var pepPickOpen=false;// the compound picker overlay is up
   var pepDraft={};      // colour/unit picks that must survive a re-render  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
   var injPage=0;  // history page (5 rows each)
   var injDraft={dose:"",name:"",when:"",sandbag:null}; // preserves typed dose/blend/time/flag across the site-pick re-render (sandbag null = untouched)
@@ -5178,6 +5354,7 @@ var UI = (function(){
     if(sub && !pepEditId && extras) html+='<div class="card">'+extras+'</div>';
 
     if(pepEditId) html+=pepFormHTML(st);
+    if(pepPickOpen && pepEditId) html+=pepPickHTML(st, pepDraft.pick||"");
     // The logging form and history act on one substance. With the peptide
     // settings open, or no peptide picked yet, the card list is the whole screen.
     var showForm = !pepEditId && !!sub;
