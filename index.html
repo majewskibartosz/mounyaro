@@ -505,9 +505,9 @@ var I18N = (function(){
     "inj.backfillFrom":{pl:"Od",en:"From"},
     "inj.backfillTo":{pl:"Do",en:"To"},
     "inj.backfillApply":{pl:"Oznacz wpisy",en:"Apply"},
-    "inj.backfillConfirm":{pl:"Ustawić ten interwał dla tylu wpisów TRT:",en:"Set this interval on this many TRT entries:"},
+    "inj.backfillConfirm":{pl:"Ustawić ten interwał dla tylu wpisów:",en:"Set this interval on this many entries:"},
     "inj.backfillDone":{pl:"Zaktualizowane wpisy:",en:"Entries updated:"},
-    "inj.backfillNone":{pl:"Brak wpisów TRT w tym zakresie.",en:"No TRT entries in this range."},
+    "inj.backfillNone":{pl:"Brak wpisów w tym zakresie.",en:"No entries in this range."},
     "inj.nextIn":{pl:"następny za",en:"next in"},
     "inj.due":{pl:"termin dziś",en:"due today"},
     "inj.overdue":{pl:"po terminie",en:"overdue"},
@@ -3123,7 +3123,7 @@ var UI = (function(){
       st.jab.history.sort();
       STORE.save(); toast(I18N.t("common.saved")); viewJab();
     }
-    $("#jEvery").addEventListener("change",function(){ st.calc.intervalDays=Math.max(1,parseInt(this.value,10)||7); STORE.save(); viewJab(); });
+    $("#jEvery").addEventListener("change",function(){ setSubstInterval(st,"mounjaro",Math.max(1,parseInt(this.value,10)||7)); STORE.save(); viewJab(); });
     $("#jToday").addEventListener("click",function(){ addJab(todayISO()); });
     $("#jAdd").addEventListener("click",function(){ addJab($("#jDate").value); });
     if($("#jUndo")) $("#jUndo").addEventListener("click",function(){ st.jab.history.pop(); STORE.save(); viewJab(); });
@@ -3621,7 +3621,7 @@ var UI = (function(){
       var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), dateISO);
       if(w==null) return;
       out.push({ label:(sub==="mounjaro"?"MJ":"TRT"), week:w,
-                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO), every:substInterval(st,sub),
+                 dose:DOMAIN.lastDoseAsOf(st,sub,dateISO),
                  doseWeek:doseWeekAsOf(st,sub,dateISO), color:PAL.subst[sub] });
     });
     return out;
@@ -3631,7 +3631,7 @@ var UI = (function(){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+PAL.tintA+';color:'+t.color+'">'
         +esc(t.label)
-        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every!=null?t.dose.every:t.every)):'')
+        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every)):'')
         +' '+esc(I18N.t("common.weekLetter"))+t.week
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
@@ -4493,7 +4493,7 @@ var UI = (function(){
         st.inj.peptides.push(np); injSeg="peptide"; pepSel=np.id; p=np;
       } else {
         Object.assign(p, fields);
-        setPepInterval(st, p, fields.intervalDays);
+        setSubstInterval(st, p.id, fields.intervalDays);
       }
       // A new vial entry only when the mix really differs — otherwise renaming
       // the peptide would pile up identical rows in its vial log.
@@ -4532,6 +4532,31 @@ var UI = (function(){
   }
   function setPepInterval(st, p, v){
     if(p && p.id==="mounjaro") st.calc.intervalDays=v; else p.intervalDays=v;
+  }
+  // A cadence change must never rewrite what already happened. Shots logged
+  // before intervals were stamped carry no `every` of their own, so stamp them
+  // with the value that was in force right up to this moment — then the new one
+  // applies from here on and history can no longer shift under them.
+  function freezeInterval(st, sub){
+    var ev=substInterval(st, sub);
+    if(ev==null) return 0;
+    var n=0;
+    (st.injLog||[]).forEach(function(e){
+      if(e && e.substance===sub && e.every==null){ e.every=ev; n++; }
+    });
+    return n;
+  }
+  // The one way to change a substance's cadence, wherever the field lives
+  // (st.calc for Tirzepatyd, st.inj.trt for TRT, the peptide itself otherwise).
+  // Freezes first, and only on a real change — re-saving the same number must
+  // not stamp anything.
+  function setSubstInterval(st, sub, v){
+    if(v==null) return;
+    if(substInterval(st, sub)!==v) freezeInterval(st, sub);
+    var p=peptideById(st, sub);
+    if(p) setPepInterval(st, p, v);
+    else if(sub==="trt") st.inj.trt.intervalDays=v;
+    else if(sub==="mounjaro") st.calc.intervalDays=v;
   }
   // ---- reconstitution: vials, concentration and units to draw ----
   function pepVials(st, p){ return (p && p.vials) || []; }
@@ -4626,6 +4651,9 @@ var UI = (function(){
     if(sub==="trt") return parseEvery(st.inj.trt.intervalDays,3);
     return null;
   }
+  // The only pill allowed to fall back to the configured cadence: it speaks for
+  // today, and today's cadence is exactly what the substance is set to. Anywhere
+  // a past day is shown the shot must speak for itself, or say nothing.
   function nowDosePill(st, sub, todayISOstr){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
@@ -4654,8 +4682,8 @@ var UI = (function(){
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every!=null?mj.every:substInterval(st,"mounjaro")), PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
-    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every!=null?trt.every:substInterval(st,"trt")), PAL.subst.trt, wt, doseWeekAsOf(st,"trt",dISO)));
+    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every), PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
+    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every), PAL.subst.trt, wt, doseWeekAsOf(st,"trt",dISO)));
     if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
@@ -5031,43 +5059,41 @@ var UI = (function(){
     html+='</div>';
 
     // ---- rhythm extras for whichever row is open ----
-    // Only TRT and Mounjaro have any: the card above already carries the bar and
-    // the countdown, so what is left is the cadence they let you edit in place.
-    // A peptide keeps its own settings behind "edit", exactly as before.
-    if(sub && !pepEditId && (injSeg==="mounjaro" || injSeg==="trt")) {
-    html+='<div class="card">';
+    // The card above already carries the bar and the countdown, so what is left
+    // is the cadence TRT and Mounjaro let you edit in place, plus the interval
+    // repair panel — which any substance can need, peptides included.
+    var extras="";
     if(injSeg==="mounjaro"){
       var every=parseEvery(st.calc.intervalDays,7);
       var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), every, Date.now());
       if(mjCd){
-        html+=ringSVG(mjCd.overdue?1:mjCd.frac, countdownBig(mjCd), countdownText(mjCd), fmtNextShot(mjCd.nextMs));
+        extras+=ringSVG(mjCd.overdue?1:mjCd.frac, countdownBig(mjCd), countdownText(mjCd), fmtNextShot(mjCd.nextMs));
       } else {
-        html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
+        extras+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
       }
-      html+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
-    } else {
-      var iv=parseEvery(st.inj.trt.intervalDays,3);
-      html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+iv+'"></div>';
-      // retro-stamp a date range with its real interval: pre-stamping entries
-      // show a bare dose, and the d counter can only reset where the data says
-      // the schedule changed. Overwrites, so a wrong stamp can be re-applied.
-      // Off unless switched on in settings: it is a one-off repair of old entries,
-      // and it was taking up half the screen on every visit to this form. Still
-      // auto-expands, once shown, while a dosed TRT entry lacks an interval.
-      if(st.settings.showDoseBackfill){
-        var bfPending=(st.injLog||[]).some(function(e){ return e && e.substance==="trt" && e.dose!=null && e.every==null; });
-        html+='<details class="note" style="margin-top:10px"'+(bfPending?' open':'')+'><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
-          +'<p class="sub">'+esc(I18N.t("inj.backfillSub"))+'</p>'
-          +'<div class="grid g3">'
-          +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
-          +'<div class="field"><label>'+esc(I18N.t("inj.backfillTo"))+'</label><input type="date" id="bfTo"></div>'
-          +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="bfEvery" min="0.5" step="0.5" value="'+iv+'"></div>'
-          +'</div>'
-          +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
-      }
+      extras+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
+    } else if(injSeg==="trt"){
+      extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+parseEvery(st.inj.trt.intervalDays,3)+'"></div>';
     }
-    html+='</div>';                    // close the extras card
+    // retro-stamp a date range with its real interval: a shot logged before
+    // cadences were stamped carries none of its own and shows a bare dose, and
+    // the d counter can only reset where the data says the schedule changed.
+    // Overwrites, so a wrong stamp can be re-applied. Off unless switched on in
+    // settings: it is a one-off repair, and it was taking up half the screen on
+    // every visit. Still auto-expands, once shown, while a dosed shot of this
+    // substance lacks an interval.
+    if(sub && st.settings.showDoseBackfill){
+      var bfPending=(st.injLog||[]).some(function(e){ return e && e.substance===sub && e.dose!=null && e.every==null; });
+      extras+='<details class="note" style="margin-top:10px"'+(bfPending?' open':'')+'><summary style="cursor:pointer;font-weight:700">'+esc(I18N.t("inj.backfillTitle"))+'</summary>'
+        +'<p class="sub">'+esc(I18N.t("inj.backfillSub"))+'</p>'
+        +'<div class="grid g3">'
+        +'<div class="field"><label>'+esc(I18N.t("inj.backfillFrom"))+'</label><input type="date" id="bfFrom"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.backfillTo"))+'</label><input type="date" id="bfTo"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="bfEvery" min="0.5" step="0.5" value="'+substInterval(st, sub)+'"></div>'
+        +'</div>'
+        +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
     }
+    if(sub && !pepEditId && extras) html+='<div class="card">'+extras+'</div>';
 
     if(pepEditId) html+=pepFormHTML(st);
     // The logging form and history act on one substance. With the peptide
@@ -5143,7 +5169,7 @@ var UI = (function(){
              +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
-            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every!=null?e.every:substInterval(st, e.substance)), substColor(st, e.substance),
+            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every), substColor(st, e.substance),
                 DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             : "—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
@@ -5244,15 +5270,16 @@ var UI = (function(){
       });
     }
     // config inputs
-    if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ st.calc.intervalDays=parseEvery(this.value,7); STORE.save(); viewInject(); });
-    if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ st.inj.trt.intervalDays=parseEvery(this.value,3); STORE.save(); viewInject(); });
-    // stamp the chosen interval onto every TRT entry in the date range
-    // (sandbag-hidden ones included — the schedule was a fact either way)
+    if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ setSubstInterval(st,"mounjaro",parseEvery(this.value,7)); STORE.save(); viewInject(); });
+    if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ setSubstInterval(st,"trt",parseEvery(this.value,3)); STORE.save(); viewInject(); });
+    // stamp the chosen interval onto every entry of the open substance in the
+    // date range (sandbag-hidden ones included — the schedule was a fact either
+    // way). Never touches another substance's shots.
     if($("#bfApply")) $("#bfApply").addEventListener("click",function(){
       var from=$("#bfFrom").value||null, to=$("#bfTo").value||null;
       var bev=parseEvery($("#bfEvery").value,1);
       var hits=(st.injLog||[]).filter(function(e){
-        return e && e.substance==="trt" && e.date && (!from||e.date>=from) && (!to||e.date<=to);
+        return e && e.substance===sub && e.date && (!from||e.date>=from) && (!to||e.date<=to);
       });
       if(!hits.length){ toast(I18N.t("inj.backfillNone")); return; }
       if(!confirm(I18N.t("inj.backfillConfirm")+" "+hits.length)) return;
@@ -5807,7 +5834,7 @@ var UI = (function(){
     // price + currency shared with the Cost tab; interval shared by both modes
     $("#oPrice").addEventListener("input",function(){ st.calc.costPerPen = this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#oCur").addEventListener("change",function(){ st.settings.currency=(this.value||"PLN").toUpperCase(); STORE.save(); });
-    $("#oInterval").addEventListener("change",function(){ st.calc.intervalDays = parseEvery(this.value,7); STORE.save(); });
+    $("#oInterval").addEventListener("change",function(){ setSubstInterval(st,"mounjaro",parseEvery(this.value,7)); STORE.save(); });
     $("#oGold").addEventListener("change",function(){
       st.settings.goldenDose.enabled=this.checked;
       $("#oGoldRow").className = this.checked?"":"hidden";
@@ -5817,7 +5844,7 @@ var UI = (function(){
       st.settings.goldenDose.enabled = $("#oGold").checked;
       st.calc.costPerPen = $("#oPrice").value===""?null:parseFloat($("#oPrice").value);
       st.settings.currency = ($("#oCur").value||"PLN").toUpperCase();
-      st.calc.intervalDays = parseEvery($("#oInterval").value,7);
+      setSubstInterval(st,"mounjaro",parseEvery($("#oInterval").value,7));
       st.calc.strengthMg = strength;
       if($("#oBase")) st.calc.baseDose = $("#oBase").value===""?null:parseFloat($("#oBase").value);
       STORE.save();
