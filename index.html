@@ -235,13 +235,32 @@
   .pep{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
        border-radius:14px;overflow:hidden}
   .pep.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
-  .pep.reord{display:grid;grid-template-columns:1fr auto;align-items:center}
-  .pep.reord .wbar{grid-column:1/-1}
+  /* edit mode: dashed, handled, and gently rocking so it reads as movable */
+  .pep.reord{display:grid;grid-template-columns:1fr auto;align-items:center;
+    border-style:dashed;background:var(--soft);touch-action:none;user-select:none;-webkit-user-select:none}
+  .pep.reord .wbar{grid-column:1/-1;opacity:.45}
   .pep.reord .pepHead{cursor:default}
-  .pepmove{display:flex;flex-direction:column;gap:4px;padding:0 10px 0 0}
-  .pepmove .btn.sm{padding:4px 9px}
-  .pepmove .btn[disabled]{opacity:.35;pointer-events:none}
-  .substUp svg{transform:rotate(180deg)}
+  .pep.reord .pepdue{opacity:.5}
+  .pepgrip{display:flex;align-items:center;justify-content:center;border:0;background:none;
+    color:var(--muted);padding:10px 12px;margin-right:2px;cursor:grab;touch-action:none}
+  .pepgrip:active{cursor:grabbing}
+  .pepgrip svg{width:20px;height:20px}
+  .pepgrip:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;border-radius:8px}
+  /* the lifted row must track the finger exactly, so no transition on it */
+  .peplist.reord .pep{transition:transform .18s ease}
+  .pep.dragging{position:relative;z-index:2;transition:none;animation:none;
+    box-shadow:0 8px 22px rgba(0,0,0,.32);border-style:solid;border-color:var(--c)}
+  .pep.dragging .pepgrip{cursor:grabbing}
+  @keyframes pepJiggle{
+    0%,100%{transform:rotate(-.5deg)}
+    50%{transform:rotate(.5deg)}
+  }
+  @media(prefers-reduced-motion:no-preference){
+    .peplist.reord .pep{animation:pepJiggle .34s ease-in-out infinite}
+    .peplist.reord .pep:nth-child(2n){animation-delay:-.17s}
+    .peplist.reord .pep:nth-child(3n){animation-delay:-.09s}
+    .peplist.reord .pep.dragging{animation:none}
+  }
   .pepHead{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;
            color:var(--ink);text-align:left;font:inherit;padding:11px 12px;cursor:pointer}
   .pepHead:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
@@ -574,6 +593,7 @@ var I18N = (function(){
     "pep.pickClose":{pl:"Zamknij",en:"Close"},
     "pep.dupConfirm":{pl:"Masz już „{name}”. Użyć tego wpisu i zachować jego historię? Anuluj — utworzy nowy.",en:"You already have \u201c{name}\u201d. Use that entry and keep its history? Cancel creates a new one."},
     "inj.reorderDone":{pl:"Gotowe",en:"Done"},
+    "inj.dragHint":{pl:"Przeciągnij za uchwyt, aby zmienić kolejność.",en:"Drag by the handle to reorder."},
     "inj.pepNone":{pl:"Brak peptydów. Dodaj pierwszy, aby zacząć śledzić dawki.",en:"No peptides yet. Add one to start tracking doses."},
     "inj.pepNoShots":{pl:"brak wkłuć",en:"no shots yet"},
     "inj.pepColor":{pl:"Kolor",en:"Colour"},
@@ -693,8 +713,7 @@ var I18N = (function(){
     "set.sandbagging":{pl:"Sandbagging",en:"Sandbagging"},
     "set.sandbaggingSub":{pl:"Pozwala oznaczać zastrzyki (na razie TRT) jako sandbagging. Po wyłączeniu oznaczone wpisy znikają z historii, mapy brzucha i obliczeń — dane zostają zapisane.",en:"Lets you mark injections (TRT for now) as sandbagging. When switched off, marked entries disappear from the history, the belly map and all calculations — the data itself is kept."},
     "common.edit":{pl:"Edytuj",en:"Edit"},
-    "common.moveUp":{pl:"W górę",en:"Move up"},
-    "common.moveDown":{pl:"W dół",en:"Move down"},
+    "pep.dragHandle":{pl:"Przeciągnij, aby zmienić kolejność",en:"Drag to reorder"},
     "common.update":{pl:"Zaktualizuj",en:"Update"},
     "common.editing":{pl:"Edytujesz wpis — zmień i zaktualizuj.",en:"Editing an entry — change and update."},
 
@@ -2704,6 +2723,7 @@ var ICONS={
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   chevron:'<path d="m6 9 6 6 6-6"/>',
+  grip:'<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>',
   back:'<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
   check:'<path d="M20 6 9 17l-5-5"/>',
   fwd:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'
@@ -4406,6 +4426,104 @@ var UI = (function(){
     st.inj.order=rows;
     return true;
   }
+  function enterReorder(){
+    injReorder=true; injSeg="peptide"; pepSel=null; pepEditId=null;
+    syncInjectRoute(); viewInject();
+  }
+  // ---- hold to reorder, then drag ----------------------------------------
+  // Holding a row switches the list into edit mode and carries straight on into
+  // dragging that row, without lifting. The catch: entering edit mode re-renders
+  // the whole view, so the node under the finger is destroyed mid-gesture — the
+  // row is found again by data-row, and the move/up listeners live on `document`
+  // rather than on the element (pointer capture would die with it).
+  var HOLD_MS=450, SLOP=10, drag=null, holdT=null;
+  function bindRowGestures(st){
+    pressMoved=false;
+    $all(".peplist .pep").forEach(function(row){
+      row.addEventListener("pointerdown",function(ev){
+        if(ev.button) return;                                   // right-click etc.
+        if(ev.target.closest(".pepgrip")){ startDrag(st, row.getAttribute("data-row"), ev); return; }
+        if(injReorder) return;                                  // body is inert; drag from the handle
+        var id=row.getAttribute("data-row"), x0=ev.clientX, y0=ev.clientY;
+        clearTimeout(holdT);
+        holdT=setTimeout(function(){
+          holdT=null;
+          if(navigator.vibrate) try{ navigator.vibrate(12); }catch(e){}
+          enterReorder();                                        // re-renders
+          startDrag(st, id, { clientX:x0, clientY:y0, pointerId:ev.pointerId });
+        }, HOLD_MS);
+        function cancel(e){
+          if(e && e.type==="pointermove" &&
+             Math.abs(e.clientX-x0)<SLOP && Math.abs(e.clientY-y0)<SLOP) return;  // still a hold
+          clearTimeout(holdT); holdT=null;
+          document.removeEventListener("pointermove",cancel);
+          document.removeEventListener("pointerup",cancel);
+          document.removeEventListener("pointercancel",cancel);
+        }
+        document.addEventListener("pointermove",cancel);
+        document.addEventListener("pointerup",cancel);
+        document.addEventListener("pointercancel",cancel);
+      });
+    });
+    // keyboard path, since the arrows are gone: focus a handle and use up/down
+    $all(".pepgrip").forEach(function(g){ g.addEventListener("keydown",function(ev){
+      var d=(ev.key==="ArrowUp")?-1:(ev.key==="ArrowDown")?1:0;
+      if(!d) return;
+      ev.preventDefault();
+      if(moveSubst(st, g.getAttribute("data-id"), d)){
+        STORE.save(); viewInject();
+        var again=$('.pepgrip[data-id="'+g.getAttribute("data-id")+'"]');
+        if(again) again.focus();
+      }
+    });});
+  }
+  function startDrag(st, id, ev){
+    var list=$(".peplist"); if(!list) return;
+    var row=$('.pep[data-row="'+id+'"]'); if(!row) return;
+    var rows=$all(".peplist .pep");
+    drag={ st:st, id:id, row:row, y0:ev.clientY, from:rows.indexOf(row), to:rows.indexOf(row),
+           h:row.getBoundingClientRect().height+9, rows:rows, moved:false };
+    row.classList.add("dragging");
+    document.addEventListener("pointermove", onDragMove);
+    document.addEventListener("pointerup", endDrag);
+    document.addEventListener("pointercancel", endDrag);
+  }
+  function onDragMove(ev){
+    if(!drag) return;
+    ev.preventDefault();
+    var dy=ev.clientY-drag.y0;
+    if(Math.abs(dy)>3) drag.moved=true;
+    drag.row.style.transform="translateY("+dy+"px)";
+    // where would it land? one slot per row height crossed
+    var to=drag.from+Math.round(dy/drag.h);
+    to=Math.max(0, Math.min(drag.rows.length-1, to));
+    if(to!==drag.to){
+      drag.to=to;
+      drag.rows.forEach(function(r,i){
+        if(r===drag.row) return;
+        var shift=0;
+        if(drag.from<to && i>drag.from && i<=to) shift=-drag.h;
+        else if(drag.from>to && i>=to && i<drag.from) shift=drag.h;
+        r.style.transform=shift?("translateY("+shift+"px)"):"";
+      });
+    }
+  }
+  function endDrag(){
+    if(!drag) return;
+    var d=drag; drag=null;
+    document.removeEventListener("pointermove", onDragMove);
+    document.removeEventListener("pointerup", endDrag);
+    document.removeEventListener("pointercancel", endDrag);
+    d.row.classList.remove("dragging");
+    d.rows.forEach(function(r){ r.style.transform=""; });
+    pressMoved=d.moved;                       // swallow the click this press ends with
+    setTimeout(function(){ pressMoved=false; }, 0);
+    if(d.to===d.from) return;
+    var order=d.rows.map(function(r){ return r.getAttribute("data-row"); });
+    order.splice(d.to, 0, order.splice(d.from, 1)[0]);
+    if(d.st.inj){ d.st.inj.order=order; STORE.save(); }
+    viewInject();
+  }
   // One card per substance: colour rail, name, "dose · interval · cycle", and the
   // countdown on the right. The selected card is the one the form below acts on.
   // Everything resolves from a substance id, so the vial and cycle bits simply
@@ -4437,23 +4555,17 @@ var UI = (function(){
         +'<span class="pepdue"><span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span>'
         +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>';
     var head = injReorder
-      ? '<div class="pepHead">'+inner+'</div>'+moveColHTML(st, sub)
+      ? '<div class="pepHead">'+inner+'</div>'
+        +'<button type="button" class="pepgrip" data-id="'+esc(sub)+'" aria-label="'+esc(I18N.t("pep.dragHandle"))+'"'
+        +' title="'+esc(I18N.t("pep.dragHandle"))+'">'+icon("grip")+'</button>'
       : '<button type="button" class="pepHead" data-id="'+esc(sub)+'">'+inner+'</button>';
-    return '<div class="pep'+(on&&!injReorder?" on":"")+(injReorder?" reord":"")+(cd&&cd.overdue?" late":"")+'" style="--c:'+substColor(st,sub)+'">'
+    // data-row survives as the way back to this element: entering edit mode
+    // re-renders the view, so the node under the finger is replaced mid-gesture.
+    return '<div class="pep'+(on&&!injReorder?" on":"")+(injReorder?" reord":"")+(cd&&cd.overdue?" late":"")
+      +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)+'">'
       +head
       +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
-  }
-  // Up/down pair, disabled at the ends. `chevron` is the only caret in ICONS, so
-  // the up arrow is the same glyph rotated in CSS.
-  function moveColHTML(st, sub){
-    var rows=substRows(st), i=rows.indexOf(sub);
-    function b(cls, dir, key){
-      var off=(i+dir<0 || i+dir>=rows.length);
-      return '<button type="button" class="btn ghost sm '+cls+'" data-id="'+esc(sub)+'"'
-        +(off?' disabled':'')+' title="'+esc(I18N.t(key))+'" aria-label="'+esc(I18N.t(key))+'">'+icon("chevron")+'</button>';
-    }
-    return '<div class="pepmove">'+b("substUp",-1,"common.moveUp")+b("substDown",1,"common.moveDown")+'</div>';
   }
   // One row of the compound picker. `dim` marks a compound already on the list:
   // still choosable, it just opens that entry instead of making a second one.
@@ -4614,12 +4726,13 @@ var UI = (function(){
     // tapping a card selects it (and collapses it again on a second tap)
     $all(".pepHead").forEach(function(b){ b.addEventListener("click",function(){
       if(!b.getAttribute("data-id")) return;      // inert while reordering
+      if(pressMoved) return;                       // that press became a drag
       selectSubst(b.getAttribute("data-id"));
     });});
+    bindRowGestures(st);
     if($("#reordStart")) $("#reordStart").addEventListener("click",function(){
       // collapse whatever was open so the form does not jump under a moving list
-      injReorder=true; injSeg="peptide"; pepSel=null; pepEditId=null;
-      syncInjectRoute(); viewInject();
+      enterReorder();
     });
     if($("#reordDone")) $("#reordDone").addEventListener("click",function(){
       injReorder=false; viewInject();
@@ -5097,6 +5210,7 @@ var UI = (function(){
   var pepEditId=null;   // null | peptide id | "new" — the peptide config form
   var injReorder=false; // list is in reorder mode: rows inert, arrows shown
   var pepPickOpen=false;// the compound picker overlay is up
+  var pressMoved=false; // the press that is ending became a drag, so swallow its click
   var pepDraft={};      // colour/unit picks that must survive a re-render  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
   var injPage=0;  // history page (5 rows each)
   var injDraft={dose:"",name:"",when:"",sandbag:null}; // preserves typed dose/blend/time/flag across the site-pick re-render (sandbag null = untouched)
@@ -5304,7 +5418,8 @@ var UI = (function(){
 
     // ---- one list for everything; tapping a row opens it below ----
     html+='<div class="card">'
-      +'<div class="peplist">'+substRows(st).map(function(id){ return substCardHTML(st, id); }).join("")+'</div>';
+      +(injReorder?'<p class="sub" style="margin:0 0 8px">'+esc(I18N.t("inj.dragHint"))+'</p>':'')
+      +'<div class="peplist'+(injReorder?" reord":"")+'">'+substRows(st).map(function(id){ return substCardHTML(st, id); }).join("")+'</div>';
     if(injReorder){
       html+='<div class="row" style="margin-top:10px"><button class="btn" id="reordDone" style="width:100%">'
         +esc(I18N.t("inj.reorderDone"))+'</button></div>';
