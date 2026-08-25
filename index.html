@@ -259,7 +259,11 @@
     .peplist.reord .pep{animation:pepJiggle .34s ease-in-out infinite}
     .peplist.reord .pep:nth-child(2n){animation-delay:-.17s}
     .peplist.reord .pep:nth-child(3n){animation-delay:-.09s}
-    .peplist.reord .pep.dragging{animation:none}
+    /* An animation outranks an inline style, so a rocking row would ignore the
+       translate that opens a gap for the dragged one. Stand the rocking down
+       for the length of the drag — the dashed cards and handles still say the
+       list is editable, and the rows can slide properly. */
+    .peplist.reord.moving .pep{animation:none}
   }
   .pepHead{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;
            color:var(--ink);text-align:left;font:inherit;padding:11px 12px;cursor:pointer}
@@ -4481,9 +4485,10 @@ var UI = (function(){
     var list=$(".peplist"); if(!list) return;
     var row=$('.pep[data-row="'+id+'"]'); if(!row) return;
     var rows=$all(".peplist .pep");
-    drag={ st:st, id:id, row:row, y0:ev.clientY, from:rows.indexOf(row), to:rows.indexOf(row),
+    drag={ st:st, id:id, row:row, list:list, y0:ev.clientY, from:rows.indexOf(row), to:rows.indexOf(row),
            h:row.getBoundingClientRect().height+9, rows:rows, moved:false };
     row.classList.add("dragging");
+    list.classList.add("moving");
     document.addEventListener("pointermove", onDragMove);
     document.addEventListener("pointerup", endDrag);
     document.addEventListener("pointercancel", endDrag);
@@ -4515,6 +4520,7 @@ var UI = (function(){
     document.removeEventListener("pointerup", endDrag);
     document.removeEventListener("pointercancel", endDrag);
     d.row.classList.remove("dragging");
+    if(d.list) d.list.classList.remove("moving");
     d.rows.forEach(function(r){ r.style.transform=""; });
     pressMoved=d.moved;                       // swallow the click this press ends with
     setTimeout(function(){ pressMoved=false; }, 0);
