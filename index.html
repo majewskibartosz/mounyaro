@@ -1615,10 +1615,22 @@ var DOMAIN = (function(){
     }
     if(!doses.length) return null;
     doses.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
-    var cur=doses[0], since=cur.date, changed=false;
+    // Two things start a new regimen: a different mg, or a different cadence.
+    // A missing cadence is neither — it is unknown, and an unknown must not
+    // masquerade as a change. Doses picked up from the weight log can never
+    // carry an interval (they are weigh-ins, not shots), so comparing their
+    // null against a stamped one would split the run at every single weigh-in.
+    // `ev` therefore holds the newest cadence actually known, and only a known
+    // one that differs from it ends the run.
+    var cur=doses[0], since=cur.date, ev=cur.every, changed=false;
     for(var i=1;i<doses.length;i++){
-      if(doses[i].dose!==cur.dose || doses[i].every!==cur.every){ changed=true; break; }
-      since=doses[i].date;
+      var d=doses[i];
+      if(d.dose!==cur.dose){ changed=true; break; }
+      if(d.every!=null){
+        if(ev!=null && d.every!==ev){ changed=true; break; }
+        if(ev==null) ev=d.every;
+      }
+      since=d.date;
     }
     // Never changed? Then this dose has been running since the very first
     // shot — early entries (legacy jab.history) may simply lack a dose, and
@@ -1627,7 +1639,7 @@ var DOMAIN = (function(){
       var first=firstInjDateFor(state, substance);
       if(first && first<since) since=first;
     }
-    return { dose:cur.dose, unit:cur.unit, every:cur.every, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
+    return { dose:cur.dose, unit:cur.unit, every:ev, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
   }
   // ISO day of week for an ISO date: 1=Monday .. 7=Sunday (noon anchor dodges UTC drift).
   function dowIndex(dateISO){ return ((new Date(dateISO+"T12:00:00").getDay()+6)%7)+1; }

@@ -102,14 +102,52 @@ test("doseStreakAsOf: same mg but a new injection interval breaks the streak", f
   assert.strictEqual(s.weeks, 2);
 });
 
-test("doseStreakAsOf: first stamped entry after legacy unstamped ones starts a new streak", function () {
+// Supersedes "first stamped entry after legacy unstamped ones starts a new
+// streak". A stamp used to appear only where a schedule change had been marked
+// by hand, so the first one ended the previous run. Intervals are now frozen
+// onto past shots automatically, with the value that was already in force, so
+// an unstamped -> stamped step says nothing about the schedule any more.
+test("doseStreakAsOf: an unrecorded interval is unknown, not a change", function () {
   var log = [
     trt("a", "2026-07-01", 25),
     trt("b", "2026-07-03", 25),
     trt("c", "2026-07-10", 25, null, { every: 1 })
   ];
   var s = DOMAIN.doseStreakAsOf(mkState(false, log), "trt", "2026-07-12");
-  assert.strictEqual(s.sinceISO, "2026-07-10");
+  assert.strictEqual(s.sinceISO, "2026-07-01");
+  assert.strictEqual(s.every, 1);
+});
+
+// A weigh-in that recorded a dose joins the Mounjaro dose sequence but can
+// never carry an interval, so its null must not read as a schedule change —
+// otherwise the counter restarts at every weigh-in.
+test("doseStreakAsOf: a dose logged on a weigh-in does not break the streak", function () {
+  function mj(id, date, dose, every) {
+    return { id: id, ts: date + "T09:00:00.000Z", date: date, substance: "mounjaro",
+             dose: dose, unit: "mg", every: every };
+  }
+  var st = {
+    settings: { sandbagging: false },
+    injLog: [mj("a", "2026-07-29", 5, 7), mj("b", "2026-08-05", 5, 7), mj("c", "2026-08-12", 5, 7)],
+    weightLog: [{ id: "w", date: "2026-08-08", doseMg: 5 }]
+  };
+  var s = DOMAIN.doseStreakAsOf(st, "mounjaro", "2026-08-12");
+  assert.strictEqual(s.sinceISO, "2026-07-29");
+  assert.strictEqual(s.every, 7);
+  assert.strictEqual(s.weeks, 3);
+});
+
+// The user-facing rule, both halves of it: a different mg or a different
+// cadence each start a new regimen.
+test("doseStreakAsOf: a real cadence change still ends the run", function () {
+  var log = [
+    trt("a", "2026-07-01", 25, null, { every: 7 }),
+    trt("b", "2026-07-08", 25, null, { every: 7 }),
+    trt("c", "2026-07-15", 25, null, { every: 3.5 })
+  ];
+  var s = DOMAIN.doseStreakAsOf(mkState(false, log), "trt", "2026-07-15");
+  assert.strictEqual(s.sinceISO, "2026-07-15");
+  assert.strictEqual(s.every, 3.5);
 });
 
 test("doseStreakAsOf: unchanged interval keeps the streak running", function () {
