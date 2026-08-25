@@ -4254,30 +4254,60 @@ var UI = (function(){
     if(!p && (sub==="mounjaro" || sub==="trt")) return I18N.t("inj.seg."+sub);
     return p ? p.name : (sub==="peptide" ? I18N.t("inj.seg.peptide") : String(sub||""));
   }
-  // One card per peptide: colour rail, name, "dose · interval · cycle", and the
+  // The one substance the form and history act on. TRT and Mounjaro are segments
+  // of their own; a peptide rides in pepSel under the "peptide" segment. Null
+  // means nothing is open yet and the list is the whole screen.
+  function selectedSubst(){ return injSeg==="peptide" ? pepSel : injSeg; }
+  // Tapping a row only moves that same pair around — the segment/pepSel model is
+  // untouched, so the router, the save path and the pen tracker all still read
+  // exactly what they read before. Tapping the open row again collapses it.
+  function selectSubst(id){
+    if(selectedSubst()===id){ injSeg="peptide"; pepSel=null; }
+    else if(id==="trt" || (id==="mounjaro" && mjTabOn(s()))){ injSeg=id; pepSel=null; }
+    else { injSeg="peptide"; pepSel=id; }
+    injEdit=null; injSel=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
+    syncInjectRoute(); viewInject();
+  }
+  // Every substance in one list: Mounjaro first while its tab is on (Tirzepatyd
+  // then rides that row instead of doubling up as a peptide), then TRT, then the
+  // peptides — the same order and the same dedupe rule the dashboard uses.
+  function substRows(st){
+    var rows=[];
+    if(mjTabOn(st)) rows.push("mounjaro");
+    rows.push("trt");
+    peptideList(st).forEach(function(p){
+      if(p.id==="mounjaro" && mjTabOn(st)) return;
+      rows.push(p.id);
+    });
+    return rows;
+  }
+  // One card per substance: colour rail, name, "dose · interval · cycle", and the
   // countdown on the right. The selected card is the one the form below acts on.
-  function pepCardHTML(st, p){
-    var cd=DOMAIN.doseCountdown(lastInjTs(st,p.id), pepInterval(st,p), Date.now());
-    var cyc=(p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
-    var last=DOMAIN.lastDoseAsOf(st, p.id);
+  // Everything resolves from a substance id, so the vial and cycle bits simply
+  // fall away for TRT, which has neither.
+  function substCardHTML(st, sub){
+    var p=peptideById(st, sub);
+    var ev=substInterval(st, sub);
+    var cd=DOMAIN.doseCountdown(lastInjTs(st,sub), ev, Date.now());
+    var cyc=(p && p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
+    var last=DOMAIN.lastDoseAsOf(st, sub);
     var bits=[];
     if(last && last.dose!=null){
-      bits.push(esc(String(last.dose)+" "+(p.unit||"")));
-      var u=pepUnits(st, p, last.dose);
-      if(u!=null) bits.push('<b style="color:'+substColor(st,p.id)+'">'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
-    } else {
+      bits.push(esc(String(last.dose)+" "+((p?p.unit:last.unit)||"")));
+      var u=p?pepUnits(st, p, last.dose):null;
+      if(u!=null) bits.push('<b style="color:'+substColor(st,sub)+'">'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
+    } else if(p){
       // no shot yet: show the mix so the card is not blank
       var c0=pepConcAsOf(st, p);
       if(c0!=null) bits.push(esc(fmtConc(c0)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml"));
     }
-    var ev=pepInterval(st,p);
-    bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
+    if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
       +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
-    var on=(pepSel===p.id);
-    return '<div class="pep'+(on?" on":"")+(cd&&cd.overdue?" late":"")+'" style="--c:'+substColor(st,p.id)+'">'
-      +'<button type="button" class="pepHead" data-id="'+esc(p.id)+'">'
-        +'<span class="pepgrow"><span class="pepname">'+esc(p.name)+'</span>'
+    var on=(selectedSubst()===sub);
+    return '<div class="pep'+(on?" on":"")+(cd&&cd.overdue?" late":"")+'" style="--c:'+substColor(st,sub)+'">'
+      +'<button type="button" class="pepHead" data-id="'+esc(sub)+'">'
+        +'<span class="pepgrow"><span class="pepname">'+esc(substLabel(st,sub))+'</span>'
         +'<span class="pepsub">'+bits.join(" &middot; ")+'</span></span>'
         +'<span class="pepdue"><span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span>'
         +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>'
@@ -4402,10 +4432,7 @@ var UI = (function(){
   function bindPeptides(st){
     // tapping a card selects it (and collapses it again on a second tap)
     $all(".pepHead").forEach(function(b){ b.addEventListener("click",function(){
-      var id=b.getAttribute("data-id");
-      pepSel=(pepSel===id)?null:id;
-      injEdit=null; injSel=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
-      syncInjectRoute(); viewInject();
+      selectSubst(b.getAttribute("data-id"));
     });});
     if($("#pepAdd")) $("#pepAdd").addEventListener("click",function(){
       pepEditId="new"; pepDraft={}; viewInject();
@@ -4461,7 +4488,9 @@ var UI = (function(){
       if(isNew){
         if(!st.inj.peptides) st.inj.peptides=[];
         var np=Object.assign({ id:"pep_"+uid(), archived:false, vials:[] }, fields);
-        st.inj.peptides.push(np); pepSel=np.id; p=np;
+        // "add" is reachable with any row open now, so land on the new peptide
+        // rather than leaving whichever substance was open still selected
+        st.inj.peptides.push(np); injSeg="peptide"; pepSel=np.id; p=np;
       } else {
         Object.assign(p, fields);
         setPepInterval(st, p, fields.intervalDays);
@@ -4478,7 +4507,7 @@ var UI = (function(){
           }
         }
       }
-      pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); viewInject();
+      pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
     });
     if($("#pfDel")) $("#pfDel").addEventListener("click",function(){
       var p=peptideById(st, pepEditId); if(!p) return;
@@ -4489,7 +4518,7 @@ var UI = (function(){
       if(n) p.archived=true;
       else st.inj.peptides=st.inj.peptides.filter(function(x){ return x.id!==p.id; });
       if(pepSel===p.id) pepSel=null;
-      pepEditId=null; pepDraft={}; STORE.save(); viewInject();
+      pepEditId=null; pepDraft={}; STORE.save(); syncInjectRoute(); viewInject();
     });
   }
   // Tirzepatyd shares st.calc.intervalDays with the optimizer, so the card and
@@ -4782,7 +4811,9 @@ var UI = (function(){
     return I18N.t("inj.nextIn")+" "+fmtCountdown(cd);
   }
 
-  var injSeg="mounjaro", injSel=null, injEdit=null;
+  // "peptide" with no pepSel is the resting state: the bare substance list, the
+  // same thing the peptide tab used to open on.
+  var injSeg="peptide", injSel=null, injEdit=null;
   var pepSel=null;      // peptide the form/history act on (null = only the card list)
   var pepEditId=null;   // null | peptide id | "new" — the peptide config form
   var pepDraft={};      // colour/unit picks that must survive a re-render  // injSel: picked spot {x,y} in cm from navel (null=>suggested); injEdit: id being edited
@@ -4967,8 +4998,8 @@ var UI = (function(){
 
   function viewInject(){
     var st=s(), today=todayISO();
-    var segs = mjTabOn(st) ? ["mounjaro","trt","peptide"] : ["trt","peptide"];
-    if(segs.indexOf(injSeg)<0) injSeg=segs[0];
+    // tab off: Mounjaro is not a row of its own, Tirzepatyd is just a peptide
+    if(injSeg==="mounjaro" && !mjTabOn(st)) injSeg="peptide";
     var editing=null;
     if(injEdit){
       if(injEdit.indexOf("jab:")===0){   // legacy Mounjaro date with no injLog entry yet
@@ -4986,19 +5017,25 @@ var UI = (function(){
     // Everything below (form, history, save) acts on ONE substance. For peptides
     // that is the selected card, so `sub` is null until one is picked.
     if(injSeg==="peptide" && pepSel && !peptideById(st, pepSel)) pepSel=null;
-    var sub = injSeg==="peptide" ? pepSel : injSeg;
-    var color = sub ? substColor(st, sub) : PAL.subst.peptide;
+    var sub = selectedSubst();
 
     var html=pageHead("inj.title");
-    html+='<div class="seg" data-seg>'
-      +segs.map(function(k){
-          return '<button type="button" data-k="'+k+'" class="'+(injSeg===k?"on":"")+'">'+esc(I18N.t("inj.seg."+k))+'</button>';
-        }).join("")
-      +'</div>';
 
+    // ---- one list for everything; tapping a row opens it below ----
+    html+='<div class="card">'
+      +'<div class="peplist">'+substRows(st).map(function(id){ return substCardHTML(st, id); }).join("")+'</div>';
+    if(!pepEditId){
+      html+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="pepAdd" style="width:100%">+ '
+        +esc(I18N.t("inj.pepAdd"))+'</button></div>';
+    }
+    html+='</div>';
+
+    // ---- rhythm extras for whichever row is open ----
+    // Only TRT and Mounjaro have any: the card above already carries the bar and
+    // the countdown, so what is left is the cadence they let you edit in place.
+    // A peptide keeps its own settings behind "edit", exactly as before.
+    if(sub && !pepEditId && (injSeg==="mounjaro" || injSeg==="trt")) {
     html+='<div class="card">';
-
-    // ---- rhythm widget per substance ----
     if(injSeg==="mounjaro"){
       var every=parseEvery(st.calc.intervalDays,7);
       var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), every, Date.now());
@@ -5008,12 +5045,8 @@ var UI = (function(){
         html+='<div class="empty">'+esc(I18N.t("jab.firstHint"))+'</div>';
       }
       html+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
-    } else if(injSeg==="trt"){
-      var iv=parseEvery(st.inj.trt.intervalDays,3), lt=lastInjDate(st,"trt");
-      var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), iv, Date.now());
-      if(ip){
-        html+=progressBar(ip.overdue?1:ip.frac, color, lt, countdownText(ip));
-      } else { html+='<div class="empty">'+esc(I18N.t("inj.empty"))+'</div>'; }
+    } else {
+      var iv=parseEvery(st.inj.trt.intervalDays,3);
       html+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+iv+'"></div>';
       // retro-stamp a date range with its real interval: pre-stamping entries
       // show a bare dose, and the d counter can only reset where the data says
@@ -5032,21 +5065,10 @@ var UI = (function(){
           +'</div>'
           +'<button class="btn ghost sm" id="bfApply">'+esc(I18N.t("inj.backfillApply"))+'</button></details>';
       }
-    } else {
-      // one card per peptide; tapping one selects it for the form below
-      var peps=peptideList(st);
-      if(peps.length){
-        html+='<div class="peplist">'+peps.map(function(pp){ return pepCardHTML(st, pp); }).join("")+'</div>';
-      } else if(!pepEditId){
-        html+='<div class="empty">'+esc(I18N.t("inj.pepNone"))+'</div>';
-      }
-      if(!pepEditId){
-        html+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="pepAdd" style="width:100%">+ '
-          +esc(I18N.t("inj.pepAdd"))+'</button></div>';
-      }
+    }
+    html+='</div>';                    // close the extras card
     }
 
-    html+='</div>';                    // close the rhythm card
     if(pepEditId) html+=pepFormHTML(st);
     // The logging form and history act on one substance. With the peptide
     // settings open, or no peptide picked yet, the card list is the whole screen.
@@ -5139,11 +5161,6 @@ var UI = (function(){
       if($("#injDate")) injDraft.when=$("#injDate").value ? $("#injDate").value+"T"+($("#injTime").value||"12:00") : "";
       if($("#injSandbag")) injDraft.sandbag=$("#injSandbag").checked;
     }
-    // segment switch
-    $all('[data-seg] button').forEach(function(b){ b.addEventListener("click",function(){
-      injSeg=b.getAttribute("data-k"); injSel=null; injEdit=null; injPage=0; pepSel=null; pepEditId=null;
-      injDraft={dose:"",name:"",when:"",sandbag:null}; syncInjectRoute(); viewInject();
-    });});
     bindPager("injPg", function(){return injPage;}, function(v){injPage=v;}, viewInject);
     // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
     var bm=$("#bellyMap");
