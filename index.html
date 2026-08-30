@@ -4878,6 +4878,13 @@ var UI = (function(){
           if(!prev || prev.mg!==vmg || prev.ml!==vml){
             if(!p.vials) p.vials=[];
             p.vials.push({ id:"v_"+uid(), date:vd, mg:vmg, ml:vml });
+            // A vial dated back before shots that were logged without one fills
+            // in what they were drawn at. Only the blanks: a row that already
+            // carries its own snapshot is never rewritten.
+            var pid=p.id;
+            (st.injLog||[]).forEach(function(e){
+              if(e && e.substance===pid && e.dose!=null && e.units==null) stampDraw(st, e);
+            });
           }
         }
       }
@@ -4942,6 +4949,20 @@ var UI = (function(){
   function pepUnits(st, p, dose, dISO){
     if(!p) return null;
     return DOMAIN.unitsForDose(dose, p.unit, pepConcAsOf(st, p, dISO));
+  }
+  // Freeze onto the entry what was actually drawn, at the concentration of its
+  // own day. Every write of a dose or a date goes through here, so a later vial
+  // never rewrites an old row and an edited row never keeps a stale number. No
+  // vial covering that day means no figure at all — a missing value must not
+  // masquerade as a real one.
+  function stampDraw(st, entry){
+    if(!entry) return entry;
+    var p=peptideById(st, entry.substance);
+    var conc=p?pepConcAsOf(st, p, entry.date):null;
+    var u=p?DOMAIN.unitsForDose(entry.dose, p.unit, conc):null;
+    if(u!=null){ entry.units=Math.round(u*10)/10; entry.mgPerMl=Math.round(conc*1000)/1000; }
+    else { delete entry.units; delete entry.mgPerMl; }
+    return entry;
   }
   function fmtUnits(u){
     if(u==null) return "";
@@ -5708,6 +5729,9 @@ var UI = (function(){
         // interval backfill: re-saving a pre-stamping TRT entry adopts the
         // current interval; an already-stamped entry keeps its historical one
         if(injSeg==="trt" && editing.every==null) editing.every=parseEvery(st.inj.trt.intervalDays,3);
+        // the dose or the day may have moved, so the drawn units are re-read
+        // from the vial that was open on the (possibly new) date
+        stampDraw(st, editing);
         if(editing.substance==="mounjaro") mjDate=dateStr;
       } else {
         var pepE=peptideById(st, sub);
@@ -5720,10 +5744,7 @@ var UI = (function(){
         if(sb) entry.sandbag=true;
         if(pepE){
           entry.every=pepInterval(st, pepE);   // Tirzepatyd routes this through st.calc
-          // snapshot what was actually drawn, at the concentration of that day
-          var eConc=pepConcAsOf(st, pepE, dateStr);
-          var eU=DOMAIN.unitsForDose(dose, pepE.unit, eConc);
-          if(eU!=null){ entry.units=Math.round(eU*10)/10; entry.mgPerMl=Math.round(eConc*1000)/1000; }
+          stampDraw(st, entry);
         }
         // The tracker position derives from jab.history, so logging (and
         // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
