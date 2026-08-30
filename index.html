@@ -232,6 +232,8 @@
   .pickname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
   .picknote{flex:0 0 auto;font-size:11.5px;color:var(--muted);font-weight:600}
   .peplist{display:flex;flex-direction:column;gap:9px}
+  .archlist .pep{opacity:.66}
+  .archlist .pep.on{opacity:1}
   .pep{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
        border-radius:14px;overflow:hidden}
   .pep.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
@@ -607,6 +609,10 @@ var I18N = (function(){
     "inj.pepColor":{pl:"Kolor",en:"Colour"},
     "inj.pepUnit":{pl:"Jednostka",en:"Unit"},
     "inj.pepDelete":{pl:"Usuń peptyd",en:"Delete peptide"},
+    "inj.pepArchive":{pl:"Zakończ związek",en:"Finish compound"},
+    "inj.pepResume":{pl:"Wznów związek",en:"Resume compound"},
+    "inj.archivedTitle":{pl:"Zakończone ({n})",en:"Finished ({n})"},
+    "inj.archivedNote":{pl:"Zakończony — historia tylko do odczytu. Wznów, aby znowu zapisywać wkłucia.",en:"Finished — history is read-only. Resume it to log shots again."},
     "inj.pepConfirmDel":{pl:"Usunąć ten związek z listy? Wkłucia zostaną w historii, a związek w podpowiedziach — można go później przywrócić.",en:"Remove this compound from the list? Its injections stay in the history and the compound stays in the suggestions, so you can bring it back later."},
     "inj.pepEditTitle":{pl:"Peptyd",en:"Peptide"},
     "inj.pepEdit":{pl:"Edytuj peptyd",en:"Edit peptide"},
@@ -4442,6 +4448,16 @@ var UI = (function(){
       return nat[a]-nat[b];
     });
   }
+  // Finished compounds, kept out of the list above but never out of the file.
+  // Archiving deletes nothing: the record, its injections and its whole vial log
+  // stay, so a compound picked up again months later resumes the same history.
+  function archivedRows(st){
+    var out=[];
+    peptideList(st, true).forEach(function(p){
+      if(p.archived && !(p.id==="mounjaro" && mjTabOn(st))) out.push(p.id);
+    });
+    return out;
+  }
   // Moving a row writes back the WHOLE visible order, so a stale saved list
   // repairs itself the first time anything is moved.
   function moveSubst(st, id, dir){
@@ -4465,7 +4481,9 @@ var UI = (function(){
   var HOLD_MS=450, SLOP=10, drag=null, holdT=null;
   function bindRowGestures(st){
     pressMoved=false;
-    $all(".peplist .pep").forEach(function(row){
+    // Finished compounds are not part of the running order, so holding one must
+    // not drag the list about; a plain tap still opens it.
+    $all(".peplist:not(.archlist) .pep").forEach(function(row){
       row.addEventListener("pointerdown",function(ev){
         if(ev.button) return;                                   // right-click etc.
         if(ev.target.closest(".pepgrip")){ startDrag(st, row.getAttribute("data-row"), ev); return; }
@@ -4754,7 +4772,7 @@ var UI = (function(){
       +'</div>'
       +'<div class="row" style="margin-top:6px"><button class="btn" id="pfSave">'+esc(I18N.t("common.save"))+'</button>'
       +'<button class="btn ghost" id="pfCancel">'+esc(I18N.t("common.cancel"))+'</button>'
-      +(isNew?'':'<button class="btn danger" id="pfDel">'+icon("trash")+esc(I18N.t("inj.pepDelete"))+'</button>')
+      +(isNew?'':'<button class="btn ghost" id="pfDel">'+esc(I18N.t("inj.pepArchive"))+'</button>')
       +'</div></div>';
   }
   function bindPeptides(st){
@@ -4915,6 +4933,11 @@ var UI = (function(){
         }
       }
       pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
+    });
+    if($("#pepResume")) $("#pepResume").addEventListener("click",function(){
+      var p=peptideById(st, selectedSubst()); if(!p) return;
+      p.archived=false;
+      STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
     });
     if($("#pfDel")) $("#pfDel").addEventListener("click",function(){
       var p=peptideById(st, pepEditId); if(!p) return;
@@ -5487,6 +5510,18 @@ var UI = (function(){
     }
     html+='</div>';
 
+    // ---- finished compounds: folded away, one tap from their history ----
+    // Out of the reordered list on purpose, so dragging never has to reckon with
+    // rows that are not part of the running order.
+    var arch=archivedRows(st);
+    if(arch.length && !injReorder){
+      html+='<details class="card"'+(arch.indexOf(sub)>=0?' open':'')+'>'
+        +'<summary style="cursor:pointer;font-weight:700">'
+        +esc(I18N.t("inj.archivedTitle").replace("{n}", String(arch.length)))+'</summary>'
+        +'<div class="peplist archlist" style="margin-top:10px">'
+        +arch.map(function(id){ return substCardHTML(st, id); }).join("")+'</div></details>';
+    }
+
     // ---- rhythm extras for whichever row is open ----
     // The card above already carries the bar and the countdown, so what is left
     // is the cadence TRT and Mounjaro let you edit in place, plus the interval
@@ -5529,7 +5564,16 @@ var UI = (function(){
     // The logging form and history act on one substance. With the peptide
     // settings open, or no peptide picked yet, the card list is the whole screen.
     var showForm = !pepEditId && !!sub;
-    if(showForm){
+    var subP=peptideById(st, sub), subArch=!!(subP && subP.archived);
+    // A finished compound is a record to read, not a place to log: its history
+    // and the repair panel stay, the dose form steps out, and one button puts it
+    // back on the list.
+    if(showForm && subArch){
+      html+='<div class="card"><p class="sub" style="margin:0 0 10px">'+esc(I18N.t("inj.archivedNote"))+'</p>'
+        +'<div class="row"><button class="btn" id="pepResume">'+esc(I18N.t("inj.pepResume"))+'</button>'
+        +'<a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div></div>';
+    }
+    if(showForm && !subArch){
     html+='<div class="card">';
     // ---- dose + body map + log/update ----
     if(editing) html+='<div class="note" style="margin-bottom:10px">'+esc(I18N.t("inj.editing"))+'</div>';
@@ -5570,7 +5614,9 @@ var UI = (function(){
     // twin-tab link: from injections, jump to the daily symptom diary
     html+='<div class="rellinks" style="margin-top:12px"><a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div>';
     html+='</div>';
+    }   // end dose form
 
+    if(showForm){
     // ---- pen tracker: what to draw now (clicks / insulin syringe) ----
     if(injSeg==="mounjaro") html+=penTrackerHTML(st);
 
