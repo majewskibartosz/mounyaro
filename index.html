@@ -583,7 +583,8 @@ var I18N = (function(){
     "pep.conc":{pl:"stężenie",en:"concentration"},
     "pep.draw":{pl:"Nabierz",en:"Draw"},
     "pep.drawAt":{pl:"przy",en:"at"},
-    "pep.vialsPast":{pl:"Poprzednie fiolki",en:"Earlier vials"},
+    "pep.vialsPast":{pl:"Fiolki i st\u0119\u017cenia",en:"Vials and strengths"},
+    "pep.vialNow":{pl:"teraz",en:"now"},
     "pep.colorTaken":{pl:"Kolor zajęty przez inny środek",en:"Colour already used by another substance"},
     "pep.colorBrand":{pl:"Tirzepatyd nosi kolor wiodący motywu — zmienia się razem z nim.",en:"Tirzepatyd wears the theme's brand colour and changes with it."},
     "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
@@ -1194,9 +1195,27 @@ var DOMAIN = (function(){
     var best=null;
     (vials||[]).forEach(function(v){
       if(!v || !v.date || (dateISO && v.date>dateISO)) return;
-      if(!best || v.date>best.date) best=v;
+      // >= so a mix re-entered on a date already on file supersedes it: the
+      // later row is the correction, not the one being corrected.
+      if(!best || v.date>=best.date) best=v;
     });
     return best;
+  }
+  // The vial log read as periods, oldest first: each mix holds until the day
+  // before the next one is dissolved, and the newest holds open (until:null).
+  // A mix superseded on its own date covers no days at all and is left out,
+  // which is exactly the vial vialAsOf would skip.
+  function vialSpans(vials){
+    var list=(vials||[]).filter(function(v){ return v && v.date; })
+      .slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+    var out=[];
+    list.forEach(function(v,i){
+      var nxt=list[i+1];
+      if(nxt && nxt.date===v.date) return;               // corrected the same day
+      out.push({ id:v.id, date:v.date, mg:v.mg, ml:v.ml,
+                 until:nxt?addDaysISO(nxt.date,-1):null });
+    });
+    return out;
   }
   function totalMgPerPen(S){ return DOSES_PER_PEN*S; }
   function budgetClicks(golden){ return CLICKS_PER_PEN + (golden && golden.enabled ? GOLDEN_UNITS : 0); }
@@ -2008,7 +2027,7 @@ var DOMAIN = (function(){
     GOLDEN_UNITS:GOLDEN_UNITS,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     SYRINGE_UNITS_PER_ML:SYRINGE_UNITS_PER_ML, vialConc:vialConc, doseToMg:doseToMg,
-    unitsForDose:unitsForDose, vialAsOf:vialAsOf,
+    unitsForDose:unitsForDose, vialAsOf:vialAsOf, vialSpans:vialSpans,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory, bmiBand:bmiBand, BMI_BANDS:BMI_BANDS,
@@ -4637,14 +4656,21 @@ var UI = (function(){
       +'<div class="field"><label>'+esc(I18N.t("pep.vialDate"))+'</label>'
         +'<input type="date" id="pfVialDate" value="'+esc(todayISO())+'"></div>'
       +'<div id="pfConc" class="note" style="margin:-2px 0 10px">'+vialPreviewHTML(st, p, unit)+'</div>';
-    if(past.length){
+    // One record holds every mix it has ever had, each with the stretch of days
+    // it covers — so KLOW at 10 mg/ml and KLOW at 20 mg/ml sit here side by side
+    // and it is plain which shots were measured against which.
+    var spans=DOMAIN.vialSpans(past);
+    if(spans.length){
       html+='<div class="tiny muted" style="font-weight:700;margin:0 0 4px">'+esc(I18N.t("pep.vialsPast"))+'</div>';
-      past.slice().sort(function(a,b){ return a.date<b.date?1:-1; }).forEach(function(v){
+      spans.slice().reverse().forEach(function(v){
+        var span=fmtDate(v.date,true)+" \u2192 "+(v.until?fmtDate(v.until,true):I18N.t("pep.vialNow"));
         html+='<div class="row" style="justify-content:space-between;gap:6px;font-size:12px;padding:3px 0">'
-          +'<span>'+esc(fmtDate(v.date,true))+' &middot; '+esc(String(v.mg)+" "+vu)+' / '+esc(String(v.ml))+' ml'
-          +' <span class="muted">&middot; '+esc(fmtConc(DOMAIN.vialConc(v.mg,v.ml))+" "+vu+"/ml")+'</span></span>'
+          +'<span><b>'+esc(fmtConc(DOMAIN.vialConc(v.mg,v.ml))+" "+vu+"/ml")+'</b>'
+          +' <span class="muted">&middot; '+esc(String(v.mg)+" "+vu+" / "+String(v.ml)+" ml")+'</span>'
+          +'<br><span class="muted">'+esc(span)+'</span></span>'
           +'<button type="button" class="btn ghost sm pfVialDel" data-id="'+esc(v.id)+'">'+icon("trash")+'</button></div>';
       });
+      html+='<div style="height:8px"></div>';
     }
     return html+'</div>';
   }

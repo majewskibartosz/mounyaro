@@ -629,6 +629,45 @@ test("vialAsOf: a backdated shot uses the vial that was open then", function () 
   assert.strictEqual(DOMAIN.vialAsOf([], "2026-08-20"), null);
 });
 
+test("vialAsOf: a mix re-entered on a date already on file supersedes it", function () {
+  var vials = [{ id: "v1", date: "2026-07-01", mg: 10, ml: 2 },
+               { id: "v2", date: "2026-07-01", mg: 10, ml: 1 }];   // same day, corrected
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-07-05").id, "v2");
+});
+
+test("vialSpans: one record holds every mix with the days it covers", function () {
+  assert.deepStrictEqual(Array.from(DOMAIN.vialSpans([])), []);
+  assert.deepStrictEqual(Array.from(DOMAIN.vialSpans(null)), []);
+
+  // a lone vial holds open
+  var one = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-06-01", mg: 10, ml: 1 }]));
+  assert.strictEqual(one.length, 1);
+  assert.strictEqual(one[0].until, null);
+
+  // KLOW at 10 mg/ml, then at 20 mg/ml: the periods meet without a gap or overlap
+  var two = Array.from(DOMAIN.vialSpans([{ id: "v2", date: "2026-09-01", mg: 20, ml: 1 },
+                                         { id: "v1", date: "2026-06-01", mg: 10, ml: 1 }]));
+  assert.deepStrictEqual(pluck(two, "id"), ["v1", "v2"]);          // sorted oldest first
+  assert.deepStrictEqual(pluck(two, "until"), ["2026-08-31", null]);
+  assert.deepStrictEqual(pluck(two, "mg"), [10, 20]);
+
+  // three in a row, entered out of order
+  var three = Array.from(DOMAIN.vialSpans([{ id: "b", date: "2026-02-10", mg: 5, ml: 1 },
+                                           { id: "c", date: "2026-03-01", mg: 5, ml: 2 },
+                                           { id: "a", date: "2026-01-01", mg: 5, ml: 3 }]));
+  assert.deepStrictEqual(pluck(three, "id"), ["a", "b", "c"]);
+  assert.deepStrictEqual(pluck(three, "until"), ["2026-02-09", "2026-02-28", null]);
+
+  // a mix corrected on its own date covers no days, so it is not a period
+  var same = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-06-01", mg: 10, ml: 2 },
+                                          { id: "v2", date: "2026-06-01", mg: 10, ml: 1 }]));
+  assert.deepStrictEqual(pluck(same, "id"), ["v2"]);
+  assert.strictEqual(same[0].until, null);
+
+  // a vial with no date is not a period either
+  assert.deepStrictEqual(pluck(DOMAIN.vialSpans([{ id: "x", mg: 5, ml: 1 }]), "id"), []);
+});
+
 test("reconstitution end to end: 10 mg vial, 2 ml water, 2.5 mg dose", function () {
   var v = DOMAIN.vialAsOf([{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 }], "2026-08-05");
   var conc = DOMAIN.vialConc(v.mg, v.ml);
