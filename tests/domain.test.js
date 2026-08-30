@@ -619,6 +619,113 @@ test("doseToMg: mcg scales down, IU has no mg equivalent", function () {
   assert.strictEqual(DOMAIN.doseToMg(30, "j"), null);
 });
 
+test("normDays: a weekday set is cleaned, sorted and deduped", function () {
+  assert.deepStrictEqual(Array.from(DOMAIN.normDays([4, 2, 2])), [2, 4]);
+  assert.deepStrictEqual(Array.from(DOMAIN.normDays(["2", "4"])), [2, 4]);   // form values are strings
+  assert.strictEqual(DOMAIN.normDays([]), null);
+  assert.strictEqual(DOMAIN.normDays(null), null);
+  assert.strictEqual(DOMAIN.normDays([0, 8, 3.5, "x"]), null);               // nothing valid left
+  assert.deepStrictEqual(Array.from(DOMAIN.normDays([9, 3])), [3]);          // the valid half survives
+});
+
+test("cadenceKey: the two rhythms share one key space", function () {
+  assert.strictEqual(DOMAIN.cadenceKey({ days: [2, 4] }), "d:2,4");
+  assert.strictEqual(DOMAIN.cadenceKey({ days: [4, 2] }), "d:2,4");          // order does not matter
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 3.5 }), "e:3.5");
+  assert.strictEqual(DOMAIN.cadenceKey({}), null);                           // unknown, not a change
+  // days win: an entry carrying both is on a weekday plan
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 3.5, days: [2, 4] }), "d:2,4");
+});
+
+test("daysToNextDow: always looks forward, 1..7", function () {
+  // Tue/Thu plan: Tue -> Thu is 2 days, Thu -> Tue is 5
+  assert.strictEqual(DOMAIN.daysToNextDow(2, [2, 4]), 2);
+  assert.strictEqual(DOMAIN.daysToNextDow(4, [2, 4]), 5);
+  // a shot taken off-plan still points at the next planned day
+  assert.strictEqual(DOMAIN.daysToNextDow(3, [2, 4]), 1);   // Wed -> Thu
+  assert.strictEqual(DOMAIN.daysToNextDow(5, [2, 4]), 4);   // Fri -> Tue
+  // one day a week is a weekly rhythm, never "today again"
+  assert.strictEqual(DOMAIN.daysToNextDow(1, [1]), 7);
+  // every day
+  assert.strictEqual(DOMAIN.daysToNextDow(7, [1, 2, 3, 4, 5, 6, 7]), 1);
+  assert.strictEqual(DOMAIN.daysToNextDow(2, []), null);
+  assert.strictEqual(DOMAIN.daysToNextDow(null, [2, 4]), null);
+});
+
+test("doseCountdown: a weekday plan counts to the next planned day", function () {
+  // Tue 2026-08-04 08:00 local, plan Tue+Thu -> due Thu, i.e. 2 days on
+  var tue = new Date(2026, 7, 4, 8, 0, 0).getTime();
+  var cd = DOMAIN.doseCountdown(tue, 3.5, tue + 3600000, [2, 4]);
+  assert.strictEqual(cd.everyDays, 2);                       // the plan overrides the number
+  assert.strictEqual(cd.nextMs, tue + 2 * 86400000);
+  assert.strictEqual(cd.overdue, false);
+
+  // the same plan from Thursday is a five-day wait, not another two
+  var thu = new Date(2026, 7, 6, 8, 0, 0).getTime();
+  var cd2 = DOMAIN.doseCountdown(thu, 3.5, thu + 3600000, [2, 4]);
+  assert.strictEqual(cd2.everyDays, 5);
+  assert.strictEqual(cd2.nextMs, thu + 5 * 86400000);
+
+  // no plan -> the plain interval, exactly as before
+  var cd3 = DOMAIN.doseCountdown(tue, 3.5, tue, null);
+  assert.strictEqual(cd3.everyDays, 3.5);
+  assert.strictEqual(cd3.nextMs, tue + 3.5 * 86400000);
+  // an empty set is not a plan
+  assert.strictEqual(DOMAIN.doseCountdown(tue, 3.5, tue, []).everyDays, 3.5);
+  // a plan with no interval at all still counts down
+  assert.strictEqual(DOMAIN.doseCountdown(tue, null, tue, [2, 4]).everyDays, 2);
+  assert.strictEqual(DOMAIN.doseCountdown(null, 3.5, tue, [2, 4]), null);
+});
+
+test("doseStreakAsOf: switching rhythm ends the dose period", function () {
+  function shot(date, dose, extra) {
+    return Object.assign({ id: date, ts: date + "T10:00:00.000Z", date: date,
+                           substance: "trt", dose: dose, unit: "mg" }, extra || {});
+  }
+  // 25 mg every 2 days, then the same 25 mg on a Tue/Thu plan from 20.07
+  var st = mkState(false, [
+    shot("2026-07-06", 25, { every: 2 }),
+    shot("2026-07-08", 25, { every: 2 }),
+    shot("2026-07-21", 25, { days: [2, 4] }),
+    shot("2026-07-23", 25, { days: [2, 4] })
+  ]);
+  var s1 = DOMAIN.doseStreakAsOf(st, "trt", "2026-07-23");
+  assert.strictEqual(s1.sinceISO, "2026-07-21");            // the rhythm change starts a new period
+  assert.deepStrictEqual(Array.from(s1.days), [2, 4]);
+  assert.strictEqual(s1.every, null);
+
+  // changing WHICH days is a change too
+  var st2 = mkState(false, [
+    shot("2026-07-21", 25, { days: [2, 4] }),
+    shot("2026-07-27", 25, { days: [1, 4] })
+  ]);
+  assert.strictEqual(DOMAIN.doseStreakAsOf(st2, "trt", "2026-07-27").sinceISO, "2026-07-27");
+
+  // the same plan written in a different order is the same plan
+  var st3 = mkState(false, [
+    shot("2026-07-21", 25, { days: [2, 4] }),
+    shot("2026-07-23", 25, { days: [4, 2] })
+  ]);
+  assert.strictEqual(DOMAIN.doseStreakAsOf(st3, "trt", "2026-07-23").sinceISO, "2026-07-21");
+
+  // an unstamped shot is still unknown, not a change
+  var st4 = mkState(false, [
+    shot("2026-07-21", 25, { days: [2, 4] }),
+    shot("2026-07-23", 25)
+  ]);
+  assert.strictEqual(DOMAIN.doseStreakAsOf(st4, "trt", "2026-07-23").sinceISO, "2026-07-21");
+});
+
+test("lastDoseAsOf: carries the weekday plan the shot was stamped with", function () {
+  var st = mkState(false, [
+    { id: "a", ts: "2026-07-21T10:00:00.000Z", date: "2026-07-21", substance: "trt",
+      dose: 25, unit: "mg", days: [4, 2] }
+  ]);
+  var ld = DOMAIN.lastDoseAsOf(st, "trt", "2026-07-25");
+  assert.deepStrictEqual(Array.from(ld.days), [2, 4]);
+  assert.strictEqual(ld.every, null);
+});
+
 test("vialAsOf: a backdated shot uses the vial that was open then", function () {
   var vials = [{ id: "v1", date: "2026-07-01", mg: 10, ml: 2 },
                { id: "v2", date: "2026-08-10", mg: 10, ml: 1 }];

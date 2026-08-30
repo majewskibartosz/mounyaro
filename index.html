@@ -231,6 +231,10 @@
   .pickdot{flex:0 0 auto;width:10px;height:10px;border-radius:50%}
   .pickname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
   .picknote{flex:0 0 auto;font-size:11.5px;color:var(--muted);font-weight:600}
+  .dowpick{display:flex;gap:5px}
+  .dowchip{flex:1 1 0;min-width:0;padding:10px 0;border-radius:11px;border:1px solid var(--line);
+    background:var(--soft);color:var(--muted);font:inherit;font-weight:700;font-size:12px;cursor:pointer}
+  .dowchip.on{border-color:var(--brand);background:var(--brand-t14);color:var(--brand)}
   .peplist{display:flex;flex-direction:column;gap:9px}
   .archlist .pep{opacity:.66}
   .archlist .pep.on{opacity:1}
@@ -553,6 +557,11 @@ var I18N = (function(){
     "inj.history":{pl:"Historia",en:"History"},
     "inj.empty":{pl:"Brak zastrzyków tej substancji.",en:"No injections for this substance yet."},
     "inj.intervalSet":{pl:"Co ile dni",en:"Days between shots"},
+    "inj.schedMode":{pl:"Rytm",en:"Rhythm"},
+    "inj.schedEvery":{pl:"Co X dni",en:"Every X days"},
+    "inj.schedDays":{pl:"Wybrane dni",en:"Chosen weekdays"},
+    "inj.schedPick":{pl:"Dni zastrzyk\u00f3w",en:"Injection days"},
+    "inj.schedNone":{pl:"Zaznacz cho\u0107 jeden dzie\u0144 \u2014 inaczej nie ma czego odlicza\u0107.",en:"Pick at least one day \u2014 there is nothing to count down to otherwise."},
     "inj.backfillTitle":{pl:"Uzupełnij dawkowanie w historii",en:"Backfill dosing in history"},
     "inj.backfillSub":{pl:"Starsze wpisy nie mają zapisanego „co ile dni”, więc pigułka pokazuje samą dawkę. Oznacz zakres dat właściwym interwałem, aby historia odzwierciedlała realne dawkowanie (np. 25 mg/2d) i licznik d liczył się od faktycznej zmiany.",en:"Older entries carry no “every how many days”, so the pill shows the bare dose. Stamp a date range with the right interval so history reflects the real dosing (e.g. 25 mg/2d) and the d counter starts at the actual change."},
     "inj.backfillFrom":{pl:"Od",en:"From"},
@@ -1667,38 +1676,42 @@ var DOMAIN = (function(){
   // the entry predates interval stamping or the substance has no interval.
   function lastDoseAsOf(state, substance, uptoISO){
     var best=null;
-    function consider(date, dose, unit, every){
+    function consider(date, dose, unit, every, days){
       if(dose==null || !date || (uptoISO && date>uptoISO)) return;
-      if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg", every:every!=null?every:null};
+      if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg",
+                                        every:every!=null?every:null, days:normDays(days)};
     }
     visibleInjLog(state).forEach(function(e){
-      if(e && e.substance===substance) consider(e.date, e.dose, e.unit, e.every);
+      if(e && e.substance===substance) consider(e.date, e.dose, e.unit, e.every, e.days);
     });
     // Mounjaro dose is also logged alongside weight entries
     if(substance==="mounjaro"){
       ((state&&state.weightLog)||[]).forEach(function(e){
-        if(e) consider(e.date, e.doseMg, "mg", null);
+        if(e) consider(e.date, e.doseMg, "mg", null, null);
       });
     }
-    return best ? {dose:best.dose, unit:best.unit, every:best.every} : null;
+    return best ? {dose:best.dose, unit:best.unit, every:best.every, days:best.days} : null;
   }
   // How long the dose in effect on uptoISO has been running: walks back
   // through same-substance doses while they stay identical. The dosage is the
-  // pair (mg per shot, injection interval stamped on the entry) — switching
-  // e.g. from 25 mg every 2 days to 25 mg daily is a dosage change and breaks
-  // the streak even though the per-shot mg is the same. Returns
-  // {dose, unit, every, sinceISO, weeks} (weeks is 1-based like therapyWeek),
-  // or null when no dosed entry covers the date.
+  // pair (mg per shot, cadence stamped on the entry) — switching e.g. from
+  // 25 mg every 2 days to 25 mg daily is a dosage change and breaks the streak
+  // even though the per-shot mg is the same. The cadence may be stamped as a
+  // gap in days or as a set of weekdays; cadenceKey compares them in one space,
+  // so moving between the two forms is itself a change. Returns
+  // {dose, unit, every, days, sinceISO, weeks} (weeks is 1-based like
+  // therapyWeek), or null when no dosed entry covers the date.
   function doseStreakAsOf(state, substance, uptoISO){
     var doses=[];
     visibleInjLog(state).forEach(function(e){
       if(e && e.substance===substance && e.dose!=null && e.date && (!uptoISO || e.date<=uptoISO))
-        doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg", every:e.every!=null?e.every:null});
+        doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg",
+                    every:e.every!=null?e.every:null, days:normDays(e.days), cad:cadenceKey(e)});
     });
     if(substance==="mounjaro"){
       ((state&&state.weightLog)||[]).forEach(function(e){
         if(e && e.doseMg!=null && e.date && (!uptoISO || e.date<=uptoISO))
-          doses.push({date:e.date, dose:e.doseMg, unit:"mg", every:null});
+          doses.push({date:e.date, dose:e.doseMg, unit:"mg", every:null, days:null, cad:null});
       });
     }
     if(!doses.length) return null;
@@ -1710,13 +1723,13 @@ var DOMAIN = (function(){
     // null against a stamped one would split the run at every single weigh-in.
     // `ev` therefore holds the newest cadence actually known, and only a known
     // one that differs from it ends the run.
-    var cur=doses[0], since=cur.date, ev=cur.every, changed=false;
+    var cur=doses[0], since=cur.date, cad=cur.cad, ev=cur.every, dys=cur.days, changed=false;
     for(var i=1;i<doses.length;i++){
       var d=doses[i];
       if(d.dose!==cur.dose){ changed=true; break; }
-      if(d.every!=null){
-        if(ev!=null && d.every!==ev){ changed=true; break; }
-        if(ev==null) ev=d.every;
+      if(d.cad!=null){
+        if(cad!=null && d.cad!==cad){ changed=true; break; }
+        if(cad==null){ cad=d.cad; ev=d.every; dys=d.days; }
       }
       since=d.date;
     }
@@ -1727,10 +1740,54 @@ var DOMAIN = (function(){
       var first=firstInjDateFor(state, substance);
       if(first && first<since) since=first;
     }
-    return { dose:cur.dose, unit:cur.unit, every:ev, sinceISO:since, weeks:therapyWeek(since, uptoISO||cur.date) };
+    return { dose:cur.dose, unit:cur.unit, every:ev, days:dys, sinceISO:since,
+             weeks:therapyWeek(since, uptoISO||cur.date) };
   }
   // ISO day of week for an ISO date: 1=Monday .. 7=Sunday (noon anchor dodges UTC drift).
   function dowIndex(dateISO){ return ((new Date(dateISO+"T12:00:00").getDay()+6)%7)+1; }
+
+  /* ---- weekly schedule: fixed weekdays instead of a fixed gap ----
+     A cadence is EITHER a number of days ("every 3.5 d") OR a set of weekdays
+     ("Tue and Thu"). The weekday form has no single gap to quote: Tue->Thu is
+     two days and Thu->Tue is five, so anything that needs one number has to ask
+     the calendar instead. */
+  // Clean a weekday set to sorted, unique ISO days (1=Mon..7=Sun). Empty or
+  // nonsense gives null, which every reader treats as "not on a weekly plan".
+  function normDays(days){
+    if(!days || !days.length) return null;
+    var seen={}, out=[];
+    for(var i=0;i<days.length;i++){
+      var d=Number(days[i]);
+      if(!isFinite(d) || d<1 || d>7 || d!==Math.floor(d) || seen[d]) continue;
+      seen[d]=true; out.push(d);
+    }
+    if(!out.length) return null;
+    out.sort(function(a,b){ return a-b; });
+    return out;
+  }
+  function daysKey(days){ var n=normDays(days); return n?n.join(","):null; }
+  // One comparable cadence for a dosed entry, whichever form it is stamped in.
+  // Switching between the two forms is itself a change of regimen, which is why
+  // they share a key space rather than being compared field by field.
+  function cadenceKey(o){
+    if(!o) return null;
+    var dk=daysKey(o.days);
+    if(dk) return "d:"+dk;
+    return o.every!=null ? "e:"+o.every : null;
+  }
+  // Days from `fromDow` to the next scheduled weekday, always 1..7 — so a shot
+  // taken on a scheduled day points at the NEXT one, and a single scheduled day
+  // is simply a weekly rhythm. A shot taken off-plan (Wed on a Tue/Thu plan)
+  // still points at the next planned day, so the calendar never drifts.
+  function daysToNextDow(fromDow, days){
+    var n=normDays(days);
+    if(!n || !fromDow) return null;
+    for(var k=1;k<=7;k++){
+      var d=((fromDow-1+k)%7)+1;
+      if(n.indexOf(d)>=0) return k;
+    }
+    return null;
+  }
   // 1-based therapy week: week 1 = the first 7 days from the first shot.
   // null when there is no start date or the date precedes it.
   function therapyWeek(firstISO, dateISO){
@@ -1949,8 +2006,13 @@ var DOMAIN = (function(){
   // dates: 3.5 days always means 84 elapsed hours, DST week included. days/hours
   // split the remaining (or overdue) span the way a countdown reads it — floored,
   // so "1 day 8 h" holds until the hour actually turns over.
-  function doseCountdown(lastMs, everyDays, nowMs){
-    if(lastMs==null || !everyDays) return null;
+  function doseCountdown(lastMs, everyDays, nowMs, days){
+    if(lastMs==null) return null;
+    // On a weekday plan the gap is whatever the calendar says from the day of
+    // the last shot, so the same plan yields 2 days here and 5 days there.
+    var step=(lastMs!=null) ? daysToNextDow(((new Date(lastMs).getDay()+6)%7)+1, days) : null;
+    if(step!=null) everyDays=step;
+    if(!everyDays) return null;
     var every=Math.max(0.5, everyDays), span=every*86400000;
     var elapsed=nowMs-lastMs, remainingMs=span-elapsed, abs=Math.abs(remainingMs);
     return { remainingMs:remainingMs, everyDays:every, elapsed:elapsed,
@@ -2034,6 +2096,7 @@ var DOMAIN = (function(){
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     SYRINGE_UNITS_PER_ML:SYRINGE_UNITS_PER_ML, vialConc:vialConc, doseToMg:doseToMg,
     unitsForDose:unitsForDose, vialAsOf:vialAsOf, vialSpans:vialSpans,
+    normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory, bmiBand:bmiBand, BMI_BANDS:BMI_BANDS,
@@ -2082,12 +2145,12 @@ var STORE = (function(){
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
       conditions:[],        // illness episodes + chronic conditions/injuries: {id,type,start,end,label,severity,symptoms} (end:null = still running)
       inj:{ mounjaro:{ unit:"mg" },
-            trt:{ intervalDays:3, unit:"mg" },
+            trt:{ intervalDays:3, unit:"mg", days:null },   // days: weekday plan, null = fixed gap
             // the order the substance rows are shown in, by id. Optional and
             // never has to be complete: anything missing keeps its natural place.
             order:[],
             // every peptide/blend is tracked on its own:
-            // {id,name,color,unit,intervalDays,cycleDays,cycleStart,archived}
+            // {id,name,color,unit,intervalDays,days,cycleDays,cycleStart,archived}
             // Injections reference one by id in their `substance` field.
             peptides:[] }
     };
@@ -3787,7 +3850,7 @@ var UI = (function(){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+PAL.tintA+';color:'+t.color+'">'
         +esc(t.label)
-        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every)):'')
+        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every, t.dose.days)):'')
         +' '+esc(I18N.t("common.weekLetter"))+t.week
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
@@ -4577,7 +4640,7 @@ var UI = (function(){
   function substCardHTML(st, sub){
     var p=peptideById(st, sub);
     var ev=substInterval(st, sub);
-    var cd=DOMAIN.doseCountdown(lastInjTs(st,sub), ev, Date.now());
+    var cd=DOMAIN.doseCountdown(lastInjTs(st,sub), ev, Date.now(), substDays(st, sub));
     var cyc=(p && p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
     var last=DOMAIN.lastDoseAsOf(st, sub);
     var bits=[];
@@ -4590,7 +4653,9 @@ var UI = (function(){
       var c0=pepConcAsOf(st, p);
       if(c0!=null) bits.push(esc(fmtConc(c0)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml"));
     }
-    if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
+    var subDys=substDays(st, sub);
+    if(subDys) bits.push(esc(fmtDows(subDys)));
+    else if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
       +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
     var on=(selectedSubst()===sub);
@@ -4732,6 +4797,11 @@ var UI = (function(){
     var col=isBrand ? PAL.subst.mounjaro : (toneColor(tone)||(p&&p.color)||PAL.pep[0]);
     var unit=pepDraft.unit||(isNew?"mcg":(p.unit||"j"));
     var every=isNew?1:pepInterval(st,p);
+    // Tirzepatyd rides st.calc.intervalDays, which the optimizer plans pens and
+    // costs from, so it keeps the fixed-gap rhythm and never offers weekdays.
+    var daysOK=isNew || p.id!=="mounjaro";
+    var pfDays=(pepDraft.days!==undefined) ? DOMAIN.normDays(pepDraft.days)
+                                           : (isNew?null:pepDays(st,p));
     var cycOn=isNew?false:!!(p.cycleDays && p.cycleStart);
     // Colours worn by another substance are struck through, so two cards can
     // never end up the same colour on the abdomen map. Archived peptides count:
@@ -4758,9 +4828,17 @@ var UI = (function(){
         +'<div class="field"><label>'+esc(I18N.t("inj.pepUnit"))+'</label><select id="pfUnit">'
           +PEP_UNITS.map(function(u){ return '<option value="'+u+'"'+(u===unit?" selected":"")+'>'+u+'</option>'; }).join("")
         +'</select></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.intervalSet"))+'</label>'
-          +'<input type="number" inputmode="decimal" id="pfEvery" min="0.5" step="0.5" value="'+every+'"></div>'
+        +(daysOK?'<div class="field"><label>'+esc(I18N.t("inj.schedMode"))+'</label><select id="pfMode">'
+          +'<option value="every"'+(pfDays?"":" selected")+'>'+esc(I18N.t("inj.schedEvery"))+'</option>'
+          +'<option value="days"'+(pfDays?" selected":"")+'>'+esc(I18N.t("inj.schedDays"))+'</option>'
+        +'</select></div>':'')
       +'</div>'
+      // Either a gap or a set of days — never both at once, so there is only
+      // ever one answer to "when is the next shot".
+      +'<div class="field" id="pfEveryBox"'+(pfDays?' style="display:none"':'')+'><label>'+esc(I18N.t("inj.intervalSet"))+'</label>'
+        +'<input type="number" inputmode="decimal" id="pfEvery" min="0.5" step="0.5" value="'+every+'"></div>'
+      +(daysOK?'<div class="field" id="pfDaysBox"'+(pfDays?'':' style="display:none"')+'>'
+        +'<label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("pfDays", pfDays)+'</div>':'')
       +vialSectionHTML(st, isNew?null:p, unit)
       +'<label class="toggle" style="margin:2px 0 8px"><input type="checkbox" id="pfCycleOn"'+(cycOn?" checked":"")+'>'
         +'<span class="switch"></span><span>'+esc(I18N.t("inj.cycleOn"))+'</span></label>'
@@ -4874,6 +4952,13 @@ var UI = (function(){
         b.addEventListener("click",function(){ adoptCompound(b.getAttribute("data-id")); });
       });
     }
+    bindDowPick("pfDays", function(sel){ pepDraft.days=sel; });
+    if($("#pfMode")) $("#pfMode").addEventListener("change",function(){
+      var onDays=this.value==="days";
+      if($("#pfEveryBox")) $("#pfEveryBox").style.display=onDays?"none":"";
+      if($("#pfDaysBox")) $("#pfDaysBox").style.display=onDays?"":"none";
+      pepDraft.days=onDays?(readDowPick("pfDays")||[]):null;
+    });
     if($("#pfSave")) $("#pfSave").addEventListener("click",function(){
       var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
       var name=String($("#pfName").value||"").trim().slice(0,60);
@@ -4885,6 +4970,7 @@ var UI = (function(){
                    tone:pfTone, color:toneColor(pfTone) || (p&&p.color) || PAL.pep[0],
                    unit:$("#pfUnit").value||"mcg",
                    intervalDays:parseEvery($("#pfEvery").value,1),   // routed below for Tirzepatyd
+                   days:($("#pfMode")&&$("#pfMode").value==="days")?readDowPick("pfDays"):null,
                    // a cycle without a start date is no cycle at all (cycleProgress agrees)
                    cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
                    cycleStart:(cycOn&&cs)?cs:null };
@@ -4911,7 +4997,7 @@ var UI = (function(){
         st.inj.peptides.push(np); injSeg="peptide"; pepSel=np.id; p=np;
       } else {
         Object.assign(p, fields);
-        setSubstInterval(st, p.id, fields.intervalDays);
+        setSubstSchedule(st, p.id, fields.intervalDays, fields.days);
       }
       // A new vial entry only when the mix really differs — otherwise renaming
       // the peptide would pile up identical rows in its vial log.
@@ -4962,16 +5048,33 @@ var UI = (function(){
   function setPepInterval(st, p, v){
     if(p && p.id==="mounjaro") st.calc.intervalDays=v; else p.intervalDays=v;
   }
+  // A substance is on a weekday plan when it has a valid day set. Mounjaro is
+  // deliberately excluded: its interval is the same number the optimizer plans
+  // pens, clicks and costs from, and a weekday plan has no single number to give.
+  function pepDays(st, p){
+    if(!p || p.id==="mounjaro") return null;
+    return DOMAIN.normDays(p.days);
+  }
+  function substDays(st, sub){
+    var p=peptideById(st, sub);
+    if(p) return pepDays(st, p);
+    if(sub==="trt") return DOMAIN.normDays(st.inj.trt.days);
+    return null;
+  }
+  function canPickDays(st, sub){ return sub==="trt" || !!(peptideById(st, sub) && sub!=="mounjaro"); }
   // A cadence change must never rewrite what already happened. Shots logged
   // before intervals were stamped carry no `every` of their own, so stamp them
   // with the value that was in force right up to this moment — then the new one
   // applies from here on and history can no longer shift under them.
   function freezeInterval(st, sub){
-    var ev=substInterval(st, sub);
-    if(ev==null) return 0;
+    var dys=substDays(st, sub), ev=substInterval(st, sub);
+    if(!dys && ev==null) return 0;
     var n=0;
     (st.injLog||[]).forEach(function(e){
-      if(e && e.substance===sub && e.every==null){ e.every=ev; n++; }
+      if(!e || e.substance!==sub) return;
+      if(e.every!=null || DOMAIN.normDays(e.days)) return;   // already speaks for itself
+      if(dys) e.days=dys.slice(); else e.every=ev;
+      n++;
     });
     return n;
   }
@@ -4981,11 +5084,26 @@ var UI = (function(){
   // not stamp anything.
   function setSubstInterval(st, sub, v){
     if(v==null) return;
-    if(substInterval(st, sub)!==v) freezeInterval(st, sub);
+    setSubstSchedule(st, sub, v, null);
+  }
+  // Both halves of a cadence in one place. `days` non-empty puts the substance
+  // on a weekday plan and the number becomes a leftover the plan overrides;
+  // null days puts it back on a fixed gap. Freezes first, and only on a real
+  // change — re-saving the same rhythm must not stamp anything.
+  function setSubstSchedule(st, sub, v, days){
+    var want=DOMAIN.normDays(days);
+    var wantKey=want?("d:"+want.join(",")):(v!=null?("e:"+v):null);
+    var haveKey=DOMAIN.cadenceKey({ days:substDays(st, sub), every:substInterval(st, sub) });
+    if(wantKey!==haveKey) freezeInterval(st, sub);
     var p=peptideById(st, sub);
-    if(p) setPepInterval(st, p, v);
-    else if(sub==="trt") st.inj.trt.intervalDays=v;
-    else if(sub==="mounjaro") st.calc.intervalDays=v;
+    if(v!=null){
+      if(p) setPepInterval(st, p, v);
+      else if(sub==="trt") st.inj.trt.intervalDays=v;
+      else if(sub==="mounjaro") st.calc.intervalDays=v;
+    }
+    if(!canPickDays(st, sub)) return;
+    if(p) p.days=want?want.slice():null;
+    else if(sub==="trt") st.inj.trt.days=want?want.slice():null;
   }
   // ---- reconstitution: vials, concentration and units to draw ----
   function pepVials(st, p){ return (p && p.vials) || []; }
@@ -5037,7 +5155,46 @@ var UI = (function(){
   // dose shown only when no injection data covers the date.
   // dose text with the injection interval when the entry carries one:
   // "25 mg/2d" = 25 mg per shot, every 2 days (language-neutral notation)
-  function doseTxt(dose, unit, every){
+  // A weekday plan has no single gap to quote, so it names the days instead —
+  // the same short labels the weekday chips beside dates already use.
+  function fmtDows(days){
+    var n=DOMAIN.normDays(days);
+    if(!n) return "";
+    return n.map(function(d){ return I18N.t("common.dow"+d); }).join("\u00b7");
+  }
+  // Seven toggles, Monday first. The selection lives in the DOM (and in the
+  // caller's draft) so a re-render of the surrounding form cannot drop it.
+  function dowPickHTML(id, sel){
+    var n=DOMAIN.normDays(sel)||[], out='<div class="dowpick" id="'+esc(id)+'">';
+    for(var d=1;d<=7;d++){
+      var on=n.indexOf(d)>=0;
+      out+='<button type="button" class="dowchip'+(on?" on":"")+'" data-dow="'+d+'"'
+        +' aria-pressed="'+(on?"true":"false")+'">'+esc(I18N.t("common.dow"+d))+'</button>';
+    }
+    return out+'</div>';
+  }
+  function readDowPick(id){
+    var out=[];
+    $all("#"+id+" .dowchip.on").forEach(function(b){ out.push(Number(b.getAttribute("data-dow"))); });
+    return DOMAIN.normDays(out);
+  }
+  function bindDowPick(id, onChange){
+    var box=$("#"+id); if(!box) return;
+    $all("#"+id+" .dowchip").forEach(function(b){
+      b.addEventListener("click",function(){
+        var on=!b.classList.contains("on");
+        // A plan needs at least one day: turning off the last one would leave a
+        // rhythm with nothing to count down to, so it stays on and says why.
+        if(!on && (readDowPick(id)||[]).length<2){ toast(I18N.t("inj.schedNone")); return; }
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", on?"true":"false");
+        if(onChange) onChange(readDowPick(id));
+      });
+    });
+  }
+  function doseTxt(dose, unit, every, days){
+    var d=fmtDows(days);
+    if(d) return dose+" "+unit+" "+d;
     return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"");
   }
   function dosePill(label, txt, color, week, doseWeek){
@@ -5100,8 +5257,9 @@ var UI = (function(){
   function nowDosePill(st, sub, todayISOstr){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
+    var dys=ld.days || substDays(st, sub);
     var ev=(ld.every!=null)?ld.every:substInterval(st, sub);
-    return dosePill("", doseTxt(ld.dose, ld.unit, ev), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
+    return dosePill("", doseTxt(ld.dose, ld.unit, ev, dys), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
   }
   // week on the current dose, only when the setting is on
   function doseWeekAsOf(st, sub, dISO){
@@ -5125,8 +5283,8 @@ var UI = (function(){
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every), PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
-    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every), PAL.subst.trt, wt, doseWeekAsOf(st,"trt",dISO)));
+    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every, mj.days), PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
+    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every, trt.days), PAL.subst.trt, wt, doseWeekAsOf(st,"trt",dISO)));
     if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
@@ -5537,7 +5695,13 @@ var UI = (function(){
       }
       extras+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
     } else if(injSeg==="trt"){
-      extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+parseEvery(st.inj.trt.intervalDays,3)+'"></div>';
+      var trtDys=substDays(st,"trt");
+      extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.schedMode"))+'</label><select id="trtMode">'
+        +'<option value="every"'+(trtDys?"":" selected")+'>'+esc(I18N.t("inj.schedEvery"))+'</option>'
+        +'<option value="days"'+(trtDys?" selected":"")+'>'+esc(I18N.t("inj.schedDays"))+'</option>'
+        +'</select></div>';
+      if(trtDys) extras+='<div class="field"><label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("trtDays", trtDys)+'</div>';
+      else extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+parseEvery(st.inj.trt.intervalDays,3)+'"></div>';
     }
     // retro-stamp a date range with its real interval: a shot logged before
     // cadences were stamped carries none of its own and shows a bare dose, and
@@ -5645,7 +5809,7 @@ var UI = (function(){
              +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""))+'</span>':'')+'</td>'
           +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
           +'<td class="num">'+(e.dose!=null
-            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every), substColor(st, e.substance),
+            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days), substColor(st, e.substance),
                 DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             : "—")+'</td>'
           +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
@@ -5748,6 +5912,18 @@ var UI = (function(){
     // config inputs
     if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ setSubstInterval(st,"mounjaro",parseEvery(this.value,7)); STORE.save(); viewInject(); });
     if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ setSubstInterval(st,"trt",parseEvery(this.value,3)); STORE.save(); viewInject(); });
+    if($("#trtMode")) $("#trtMode").addEventListener("change",function(){
+      // Switching to weekdays with nothing picked yet seeds today, so the card
+      // never sits in a state with a plan that counts down to nothing.
+      var toDays=this.value==="days";
+      setSubstSchedule(st, "trt", parseEvery(st.inj.trt.intervalDays,3),
+                       toDays?(substDays(st,"trt")||[DOMAIN.dowIndex(todayISO())]):null);
+      STORE.save(); viewInject();
+    });
+    bindDowPick("trtDays", function(sel){
+      setSubstSchedule(st, "trt", parseEvery(st.inj.trt.intervalDays,3), sel);
+      STORE.save(); viewInject();
+    });
     // stamp the chosen interval onto every entry of the open substance in the
     // date range (sandbag-hidden ones included — the schedule was a fact either
     // way). Never touches another substance's shots.
@@ -5759,7 +5935,9 @@ var UI = (function(){
       });
       if(!hits.length){ toast(I18N.t("inj.backfillNone")); return; }
       if(!confirm(I18N.t("inj.backfillConfirm")+" "+hits.length)) return;
-      hits.forEach(function(e){ e.every=bev; });
+      // Saying "this range ran every N days" also says it was not on a weekday
+      // plan, so a leftover day set from a later rhythm must not outrank it.
+      hits.forEach(function(e){ e.every=bev; delete e.days; });
       STORE.save(); toast(I18N.t("inj.backfillDone")+" "+hits.length); viewInject();
     });
     if($("#injDose") && $("#pepDraw")){
@@ -5800,7 +5978,8 @@ var UI = (function(){
         if(sb!==null){ if(sb) editing.sandbag=true; else delete editing.sandbag; }
         // interval backfill: re-saving a pre-stamping TRT entry adopts the
         // current interval; an already-stamped entry keeps its historical one
-        if(injSeg==="trt" && editing.every==null) editing.every=parseEvery(st.inj.trt.intervalDays,3);
+        if(injSeg==="trt" && editing.every==null && !DOMAIN.normDays(editing.days))
+          editing.every=parseEvery(st.inj.trt.intervalDays,3);
         // the dose or the day may have moved, so the drawn units are re-read
         // from the vial that was open on the (possibly new) date
         stampDraw(st, editing);
@@ -5818,6 +5997,11 @@ var UI = (function(){
           entry.every=pepInterval(st, pepE);   // Tirzepatyd routes this through st.calc
           stampDraw(st, entry);
         }
+        // Last word on the cadence, after every branch that sets a number: on a
+        // weekday plan the days ARE the cadence, and a single gap would be a
+        // fiction (Tue->Thu is two days, Thu->Tue is five).
+        var subDays=substDays(st, sub);
+        if(subDays){ entry.days=subDays.slice(); delete entry.every; }
         // The tracker position derives from jab.history, so logging (and
         // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
         // a day — one new dose — is stamped with the planned breakdown so
@@ -5920,7 +6104,7 @@ var UI = (function(){
       } else { html+=rhythmRow("Mounjaro", PAL.subst.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today), null, "#inject/mounjaro"); }
     }
     // TRT
-    var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now());
+    var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now(), substDays(st,"trt"));
     if(ip){ html+=rhythmRow("TRT", PAL.subst.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today), fmtNextShot(ip.nextMs), "#inject/trt"); }
     else { html+=rhythmRow("TRT", PAL.subst.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today), null, "#inject/trt"); }
     // Peptide cycle
@@ -5929,7 +6113,7 @@ var UI = (function(){
     var pepRows=[];
     peptideList(st).forEach(function(pp){
       if(pp.id==="mounjaro" && mjTabOn(st)) return;   // already shown as the Mounjaro row
-      var cd=DOMAIN.doseCountdown(lastInjTs(st,pp.id), pepInterval(st,pp), Date.now());
+      var cd=DOMAIN.doseCountdown(lastInjTs(st,pp.id), pepInterval(st,pp), Date.now(), pepDays(st,pp));
       if(cd) pepRows.push({ p:pp, cd:cd });
     });
     pepRows.sort(function(a,b){ return a.cd.remainingMs-b.cd.remainingMs; });
