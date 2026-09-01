@@ -726,6 +726,89 @@ test("lastDoseAsOf: carries the weekday plan the shot was stamped with", functio
   assert.strictEqual(ld.every, null);
 });
 
+test("normTimes: hours of the day are cleaned, sorted and deduped", function () {
+  assert.deepStrictEqual(Array.from(DOMAIN.normTimes(["20:00", "8:00"])), ["08:00", "20:00"]);
+  assert.deepStrictEqual(Array.from(DOMAIN.normTimes(["08:00", "08:00"])), ["08:00"]);
+  assert.strictEqual(DOMAIN.normTimes([]), null);
+  assert.strictEqual(DOMAIN.normTimes(null), null);
+  assert.strictEqual(DOMAIN.normTimes(["24:00", "8:60", "nope", ""]), null);
+  assert.deepStrictEqual(Array.from(DOMAIN.normTimes(["23:59", "bad"])), ["23:59"]);
+});
+
+test("cadenceKey: the hours are part of the regimen", function () {
+  assert.strictEqual(DOMAIN.cadenceKey({ days: [1, 3, 5], times: ["20:00", "08:00"] }), "d:1,3,5@08:00,20:00");
+  // twice a day is not the same regimen as once a day
+  assert.notStrictEqual(DOMAIN.cadenceKey({ days: [1], times: ["08:00", "20:00"] }),
+                        DOMAIN.cadenceKey({ days: [1], times: ["08:00"] }));
+  // hours without days are not a plan, so they do not enter the key
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 2, times: ["08:00"] }), "e:2");
+});
+
+test("nextSlotMs: twice a day lands on the evening, then on tomorrow morning", function () {
+  var T = ["08:00", "20:00"], EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+  // Monday 08:05 -> the same evening
+  var monMorning = new Date(2026, 8, 7, 8, 5, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(monMorning, EVERY_DAY, T),
+                     new Date(2026, 8, 7, 20, 0, 0).getTime());
+  // Monday 20:05 -> Tuesday morning
+  var monEvening = new Date(2026, 8, 7, 20, 5, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(monEvening, EVERY_DAY, T),
+                     new Date(2026, 8, 8, 8, 0, 0).getTime());
+  // exactly on the hour still moves on: the slot must be strictly ahead
+  var onTheDot = new Date(2026, 8, 7, 8, 0, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(onTheDot, EVERY_DAY, T),
+                     new Date(2026, 8, 7, 20, 0, 0).getTime());
+  // twice a day but only Mon/Wed/Fri: Monday evening -> Wednesday morning
+  assert.strictEqual(DOMAIN.nextSlotMs(monEvening, [1, 3, 5], T),
+                     new Date(2026, 8, 9, 8, 0, 0).getTime());
+  // no hours, or no days, is not a slot plan
+  assert.strictEqual(DOMAIN.nextSlotMs(monMorning, EVERY_DAY, null), null);
+  assert.strictEqual(DOMAIN.nextSlotMs(monMorning, null, T), null);
+});
+
+test("doseCountdown: hours pin the next shot to the clock, not to an offset", function () {
+  var T = ["08:00", "20:00"], EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+  // a late morning shot (09:30) still points at 20:00 the same day, so being
+  // late does not drag the evening along with it
+  var late = new Date(2026, 8, 7, 9, 30, 0).getTime();
+  var cd = DOMAIN.doseCountdown(late, 1, late + 60000, EVERY_DAY, T);
+  assert.strictEqual(cd.nextMs, new Date(2026, 8, 7, 20, 0, 0).getTime());
+  assert.strictEqual(cd.overdue, false);
+  assert.strictEqual(cd.hours, 10);          // 10 h 29 min to go, floored
+
+  // and the evening shot points at tomorrow morning, 12 h on
+  var eve = new Date(2026, 8, 7, 20, 0, 0).getTime();
+  var cd2 = DOMAIN.doseCountdown(eve, 1, eve, EVERY_DAY, T);
+  assert.strictEqual(cd2.nextMs, new Date(2026, 8, 8, 8, 0, 0).getTime());
+  assert.strictEqual(cd2.everyDays, 0.5);
+
+  // hours with no weekday plan fall back to the plain interval
+  assert.strictEqual(DOMAIN.doseCountdown(late, 3, late, null, T).everyDays, 3);
+});
+
+test("doseStreakAsOf: dropping from twice a day to once starts a new period", function () {
+  function shot(date, extra) {
+    return Object.assign({ id: date, ts: date + "T10:00:00.000Z", date: date,
+                           substance: "trt", dose: 25, unit: "mg" }, extra || {});
+  }
+  var EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+  var st = mkState(false, [
+    shot("2026-09-01", { days: EVERY_DAY, times: ["08:00", "20:00"] }),
+    shot("2026-09-02", { days: EVERY_DAY, times: ["08:00", "20:00"] }),
+    shot("2026-09-03", { days: EVERY_DAY, times: ["08:00"] })
+  ]);
+  var s1 = DOMAIN.doseStreakAsOf(st, "trt", "2026-09-03");
+  assert.strictEqual(s1.sinceISO, "2026-09-03");
+  assert.deepStrictEqual(Array.from(s1.times), ["08:00"]);
+
+  // the same two hours written in the other order is the same regimen
+  var st2 = mkState(false, [
+    shot("2026-09-01", { days: EVERY_DAY, times: ["08:00", "20:00"] }),
+    shot("2026-09-02", { days: EVERY_DAY, times: ["20:00", "08:00"] })
+  ]);
+  assert.strictEqual(DOMAIN.doseStreakAsOf(st2, "trt", "2026-09-02").sinceISO, "2026-09-01");
+});
+
 test("vialAsOf: a backdated shot uses the vial that was open then", function () {
   var vials = [{ id: "v1", date: "2026-07-01", mg: 10, ml: 2 },
                { id: "v2", date: "2026-08-10", mg: 10, ml: 1 }];
