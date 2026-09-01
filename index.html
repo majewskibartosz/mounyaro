@@ -289,6 +289,23 @@
   .pep.late .pepbig{color:var(--bad)}
   .pepwhen{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .wbar.flush{height:12px;border:0;border-radius:0;margin:0}
+  .wbar.slim{height:8px;border:0;margin:5px 0 0;background:var(--soft)}
+  /* the wave mask is 26x12; scale its width with the height or the squiggle
+     flattens into disconnected dashes */
+  .wbar.slim>span{-webkit-mask-size:17px 100%;mask-size:17px 100%}
+  @keyframes wbarflowslim{
+    from{-webkit-mask-position:0 center; mask-position:0 center}
+    to  {-webkit-mask-position:-17px center; mask-position:-17px center}
+  }
+  .wbar.slim>span{animation-name:wbarflowslim}
+  .rrhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px;font-weight:700}
+  .rrname{min-width:0;display:flex;align-items:baseline;gap:7px;overflow:hidden}
+  .rrdot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;align-self:center}
+  .rrlbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rrwhen{flex:0 0 auto;display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-weight:600}
+  .rrin{font-size:12.5px;color:var(--muted)}
+  .rrin.late{color:var(--bad)}
+  .rrat{font-size:11px;color:var(--muted);opacity:.75;font-variant-numeric:tabular-nums}
   .wbar.flush>span{border-radius:0}
   .pep .wbar>span{background:var(--c)}
   /* past due: full, alarm-coloured and still, so it reads differently from
@@ -6204,15 +6221,27 @@ var UI = (function(){
   // Two stacked columns: what it is on the left, when it is due on the right.
   // The exact moment sits under the countdown, so a half-day cadence tells you
   // straight away whether the next shot is a morning or an evening one.
-  function rhythmRow(label, color, frac, right, pill, foot, href){
+  // One substance, one line: a coloured dot, its name, and when the next shot is
+  // due. The dashboard answers only that — dose, rhythm and the period counters
+  // live one tap away in Injections, where they are also edited. The wave stays
+  // as a hairline under the row: still a glance at how much of the wait has run
+  // down, without a third level of text. progressBar is deliberately not reused
+  // here — it appends a label row that would be two empty spans on every row.
+  function rhythmRow(label, color, frac, right, foot, href, overdue){
     var tag=href?'a class="rrow" href="'+esc(href)+'"':'div';
-    return '<'+tag+' style="margin-bottom:10px"><div class="slhead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:nowrap;font-size:14px;font-weight:700">'
-      +'<span style="min-width:0;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap"><span class="nowrap">'+esc(label)+'</span>'+(pill||'')+'</span>'
-      +'<span style="flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.3">'
-        +'<span class="muted tiny" style="white-space:nowrap">'+esc(right||"")+'</span>'
-        +(foot?'<span class="muted" style="font-size:10.5px;white-space:nowrap;opacity:.8;font-variant-numeric:tabular-nums">'+esc(foot)+'</span>':'')
-      +'</span></div>'
-      + progressBar(frac, color, "", "") + (href?'</a>':'</div>');
+    var pct=Math.max(0,Math.min(1,frac||0))*100;
+    return '<'+tag+' style="margin-bottom:9px">'
+      +'<div class="rrhead">'
+        +'<span class="rrname"><span class="rrdot" style="background:'+color+'"></span>'
+          +'<span class="rrlbl">'+esc(label)+'</span></span>'
+        +'<span class="rrwhen">'
+          +'<span class="rrin'+(overdue?" late":"")+'">'+esc(right||"")+'</span>'
+          +(foot?'<span class="rrat">'+esc(foot)+'</span>':'')
+        +'</span>'
+      +'</div>'
+      +'<div class="wbar slim"><span class="'+(overdue?"late":"")+'" style="width:'+pct.toFixed(1)+'%;background:'
+        +(overdue?PAL.bad:color)+'"></span></div>'
+      + (href?'</a>':'</div>');
   }
   // Every view opens with this: the title plus the two history arrows. In an
   // installed PWA there is no browser chrome to go back with, so without them the
@@ -6248,36 +6277,32 @@ var UI = (function(){
 
     // --- rhythm widgets ---
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.rhythm"))+'</h2>';
-    // Mounjaro
-    // With the tab switched off the same shot still appears, as a Tirzepatyd row below.
-    if(mjTabOn(st)){
-      var mjCd=DOMAIN.doseCountdown(lastInjTs(st,"mounjaro"), parseEvery(st.calc.intervalDays,7), Date.now());
-      if(mjCd){
-        html+=rhythmRow("Mounjaro", PAL.subst.mounjaro, mjCd.overdue?1:mjCd.frac, countdownText(mjCd), nowDosePill(st,"mounjaro",today), fmtNextShot(mjCd.nextMs), "#inject/mounjaro");
-      } else { html+=rhythmRow("Mounjaro", PAL.subst.mounjaro, 0, I18N.t("pulpit.todo"), nowDosePill(st,"mounjaro",today), null, "#inject/mounjaro"); }
-    }
-    // TRT
-    var ip=DOMAIN.doseCountdown(lastInjTs(st,"trt"), parseEvery(st.inj.trt.intervalDays,3), Date.now(), substDays(st,"trt"), substTimes(st,"trt"));
-    if(ip){ html+=rhythmRow("TRT", PAL.subst.trt, ip.overdue?1:ip.frac, countdownText(ip), nowDosePill(st,"trt",today), fmtNextShot(ip.nextMs), "#inject/trt"); }
-    else { html+=rhythmRow("TRT", PAL.subst.trt, 0, I18N.t("pulpit.todo"), nowDosePill(st,"trt",today), null, "#inject/trt"); }
-    // Peptide cycle
-    // Peptides: only those actually being injected, soonest first, capped at three
-    // — one row per peptide would push Mounjaro and TRT off the fold.
-    var pepRows=[];
-    peptideList(st).forEach(function(pp){
-      if(pp.id==="mounjaro" && mjTabOn(st)) return;   // already shown as the Mounjaro row
-      var cd=DOMAIN.doseCountdown(lastInjTs(st,pp.id), pepInterval(st,pp), Date.now(), pepDays(st,pp), pepTimes(st,pp));
-      if(cd) pepRows.push({ p:pp, cd:cd });
+    // Every substance, never a truncated list: substRows already settles which
+    // ones exist (the Mounjaro/Tirzepatyd dedupe, the tab switch, archived ones
+    // left out), so the dashboard and Injections can never disagree about that.
+    // Soonest first, which puts anything overdue at the top; a substance with no
+    // shots yet has nothing to count down and sits at the bottom rather than
+    // vanishing, which is how one could go missing entirely before.
+    var rhythm=[];
+    substRows(st).forEach(function(id){
+      rhythm.push({ id:id,
+        cd:DOMAIN.doseCountdown(lastInjTs(st,id), substInterval(st,id), Date.now(),
+                                substDays(st,id), substTimes(st,id)) });
     });
-    pepRows.sort(function(a,b){ return a.cd.remainingMs-b.cd.remainingMs; });
-    pepRows.slice(0,3).forEach(function(x){
-      html+=rhythmRow(x.p.name, substColor(st,x.p.id), x.cd.overdue?1:x.cd.frac,
-                      countdownText(x.cd), nowDosePill(st,x.p.id,today), fmtNextShot(x.cd.nextMs),
-                      DOMAIN.buildRoute("inject", x.p.id));
+    rhythm.sort(function(a,b){
+      if(!a.cd || !b.cd) return (a.cd?0:1)-(b.cd?0:1);
+      return a.cd.remainingMs-b.cd.remainingMs;
     });
-    if(pepRows.length>3){
-      html+='<a class="muted tiny" href="#inject/peptides" style="display:inline-block;margin:-4px 0 6px;color:inherit">+'+(pepRows.length-3)+'</a>';
-    }
+    rhythm.forEach(function(x){
+      var c=substColor(st, x.id), href=DOMAIN.buildRoute("inject", x.id);
+      // Just the figure, not "next in ..." / "... overdue": the exact moment sits
+      // right beside it and the red minus already says which side of due it is.
+      // The words were costing more width than the substance name had.
+      if(x.cd) html+=rhythmRow(substLabel(st,x.id), c, x.cd.overdue?1:x.cd.frac,
+                               (x.cd.overdue?"\u2212":"")+fmtCountdown(x.cd),
+                               fmtNextShot(x.cd.nextMs), href, x.cd.overdue);
+      else html+=rhythmRow(substLabel(st,x.id), c, 0, I18N.t("inj.pepNoShots"), null, href, false);
+    });
     html+='</div>';
 
     // --- latest readings: BP, weight + delta, BMI --- (each dated: values come from different days)
