@@ -726,6 +726,36 @@ test("lastDoseAsOf: carries the weekday plan the shot was stamped with", functio
   assert.strictEqual(ld.every, null);
 });
 
+test("dueNow: an hour before the moment, and everything past it", function () {
+  var cd = function (remainingMs) { return { remainingMs: remainingMs }; };
+  assert.strictEqual(DOMAIN.DUE_SOON_MS, 3600000);
+  assert.strictEqual(DOMAIN.dueNow(cd(59 * 60000)), true);
+  assert.strictEqual(DOMAIN.dueNow(cd(3600000)), true);      // exactly on the edge
+  assert.strictEqual(DOMAIN.dueNow(cd(61 * 60000)), false);
+  assert.strictEqual(DOMAIN.dueNow(cd(5 * 3600000)), false);
+  // past due stays "take it now" however long it has been — not an abs() window
+  assert.strictEqual(DOMAIN.dueNow(cd(-60000)), true);
+  assert.strictEqual(DOMAIN.dueNow(cd(-3 * 86400000)), true);
+  // a substance with no shots has no countdown, so it is never due
+  assert.strictEqual(DOMAIN.dueNow(null), false);
+  assert.strictEqual(DOMAIN.dueNow(undefined), false);
+});
+
+test("dueNow: reads a real countdown, weekday plans included", function () {
+  var T = ["08:00", "20:00"], EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+  var shot = new Date(2026, 8, 7, 8, 0, 0).getTime();       // Mon 08:00, next slot 20:00
+  // 19:30 the same day: half an hour to go
+  var near = DOMAIN.doseCountdown(shot, 1, new Date(2026, 8, 7, 19, 30, 0).getTime(), EVERY_DAY, T);
+  assert.strictEqual(DOMAIN.dueNow(near), true);
+  // 17:00: three hours to go
+  var far = DOMAIN.doseCountdown(shot, 1, new Date(2026, 8, 7, 17, 0, 0).getTime(), EVERY_DAY, T);
+  assert.strictEqual(DOMAIN.dueNow(far), false);
+  // 21:00: the slot has passed
+  var past = DOMAIN.doseCountdown(shot, 1, new Date(2026, 8, 7, 21, 0, 0).getTime(), EVERY_DAY, T);
+  assert.strictEqual(past.overdue, true);
+  assert.strictEqual(DOMAIN.dueNow(past), true);
+});
+
 test("normTimes: hours of the day are cleaned, sorted and deduped", function () {
   assert.deepStrictEqual(Array.from(DOMAIN.normTimes(["20:00", "8:00"])), ["08:00", "20:00"]);
   assert.deepStrictEqual(Array.from(DOMAIN.normTimes(["08:00", "08:00"])), ["08:00"]);

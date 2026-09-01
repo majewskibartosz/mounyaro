@@ -306,6 +306,22 @@
   .rrin{font-size:12.5px;color:var(--muted)}
   .rrin.late{color:var(--bad)}
   .rrat{font-size:11px;color:var(--muted);opacity:.75;font-variant-numeric:tabular-nums}
+  /* due now: an hour out, or already past. Tinted in the substance's own colour
+     so it reads as "this one, now" at a glance, and in the alarm colour once the
+     moment has passed — late still looks different from nearly-there. */
+  .duebadge{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+    padding:2px 6px;border-radius:999px;background:var(--c);color:var(--on-brand);
+    line-height:1.4;align-self:center}
+  .late .duebadge,.pep.late .duebadge{background:var(--bad)}
+  a.rrow.due,.rrow.due{background:var(--ct);border-left:3px solid var(--c);
+    border-radius:10px;margin-left:-9px;padding:6px 7px 4px 7px}
+  /* reorder mode owns the row's look (dashed, soft, no bar); the due tint must
+     not fight it, so it is scoped out rather than racing on specificity */
+  /* .pep already wears a 4px stripe in its own colour, so due thickens it rather
+     than replacing it — and keeps --c as the substance colour, which the bar and
+     the big number both read, setting the alarm edge here instead */
+  .pep.due:not(.reord){background:var(--ct);border-left-width:7px}
+  .pep.due.late:not(.reord){border-left-color:var(--bad)}
   .wbar.flush>span{border-radius:0}
   .pep .wbar>span{background:var(--c)}
   /* past due: full, alarm-coloured and still, so it reads differently from
@@ -602,6 +618,7 @@ var I18N = (function(){
     "inj.dayOne":{pl:"dzień",en:"day"},
     "inj.hoursShort":{pl:"godz.",en:"h"},
     "inj.dueNow":{pl:"termin teraz",en:"due now"},
+    "inj.dueBadge":{pl:"TERAZ",en:"NOW"},
     "inj.cycleLen":{pl:"Długość cyklu (dni)",en:"Cycle length (days)"},
     "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
     "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
@@ -2098,6 +2115,13 @@ var DOMAIN = (function(){
              nextMs:lastMs+span };
   }
 
+  // "Time to take it" as one rule, so the dashboard and the substance list can
+  // never disagree about which shots are calling for attention. An hour before
+  // the moment, and everything past it: deliberately not Math.abs — a shot three
+  // days overdue is still one to take now, and its remainingMs is negative.
+  var DUE_SOON_MS = 3600000;
+  function dueNow(cd){ return !!cd && cd.remainingMs <= DUE_SOON_MS; }
+
   // Hash route -> {tab, sub}. The sub-state segment is what lets a dashboard
   // tile point at one substance ("#inject/trt") instead of just the tab. Pure
   // string work: this knows nothing about which tabs exist — the router keeps
@@ -2173,6 +2197,7 @@ var DOMAIN = (function(){
     unitsForDose:unitsForDose, vialAsOf:vialAsOf, vialSpans:vialSpans,
     normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     normTimes:normTimes, timesKey:timesKey, nextSlotMs:nextSlotMs,
+    DUE_SOON_MS:DUE_SOON_MS, dueNow:dueNow,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory, bmiBand:bmiBand, BMI_BANDS:BMI_BANDS,
@@ -4737,7 +4762,9 @@ var UI = (function(){
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
     // inert row means the list cannot scroll out from under the arrows.
-    var inner='<span class="pepgrow"><span class="pepname">'+esc(substLabel(st,sub))+'</span>'
+    var dueSoon=DOMAIN.dueNow(cd);
+    var inner='<span class="pepgrow"><span class="pepname">'+esc(substLabel(st,sub))
+        +(dueSoon&&!injReorder?' <span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>':'')+'</span>'
         +'<span class="pepsub">'+bits.join(" &middot; ")+'</span></span>'
         +'<span class="pepdue"><span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span>'
         +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>';
@@ -4749,7 +4776,9 @@ var UI = (function(){
     // data-row survives as the way back to this element: entering edit mode
     // re-renders the view, so the node under the finger is replaced mid-gesture.
     return '<div class="pep'+(on&&!injReorder?" on":"")+(injReorder?" reord":"")+(cd&&cd.overdue?" late":"")
-      +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)+'">'
+      +(dueSoon?" due":"")
+      +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)
+      +';--ct:'+(cd&&cd.overdue?PAL.bad:substColor(st,sub))+PAL.tintA+'">'
       +head
       +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
@@ -6227,13 +6256,16 @@ var UI = (function(){
   // as a hairline under the row: still a glance at how much of the wait has run
   // down, without a third level of text. progressBar is deliberately not reused
   // here — it appends a label row that would be two empty spans on every row.
-  function rhythmRow(label, color, frac, right, foot, href, overdue){
-    var tag=href?'a class="rrow" href="'+esc(href)+'"':'div';
+  function rhythmRow(label, color, frac, right, foot, href, overdue, due){
+    var tag=href?'a class="rrow'+(due?" due":"")+(overdue?" late":"")+'" href="'+esc(href)+'"'
+                :'div class="'+(due?"due":"")+(overdue?" late":"")+'"';
     var pct=Math.max(0,Math.min(1,frac||0))*100;
-    return '<'+tag+' style="margin-bottom:9px">'
+    var edge=overdue?PAL.bad:color;
+    return '<'+tag+' style="margin-bottom:9px;--c:'+edge+';--ct:'+edge+PAL.tintA+'">'
       +'<div class="rrhead">'
         +'<span class="rrname"><span class="rrdot" style="background:'+color+'"></span>'
-          +'<span class="rrlbl">'+esc(label)+'</span></span>'
+          +'<span class="rrlbl">'+esc(label)+'</span>'
+          +(due?'<span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>':'')+'</span>'
         +'<span class="rrwhen">'
           +'<span class="rrin'+(overdue?" late":"")+'">'+esc(right||"")+'</span>'
           +(foot?'<span class="rrat">'+esc(foot)+'</span>':'')
@@ -6300,8 +6332,8 @@ var UI = (function(){
       // The words were costing more width than the substance name had.
       if(x.cd) html+=rhythmRow(substLabel(st,x.id), c, x.cd.overdue?1:x.cd.frac,
                                (x.cd.overdue?"\u2212":"")+fmtCountdown(x.cd),
-                               fmtNextShot(x.cd.nextMs), href, x.cd.overdue);
-      else html+=rhythmRow(substLabel(st,x.id), c, 0, I18N.t("inj.pepNoShots"), null, href, false);
+                               fmtNextShot(x.cd.nextMs), href, x.cd.overdue, DOMAIN.dueNow(x.cd));
+      else html+=rhythmRow(substLabel(st,x.id), c, 0, I18N.t("inj.pepNoShots"), null, href, false, false);
     });
     html+='</div>';
 
