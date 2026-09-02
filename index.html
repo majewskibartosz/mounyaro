@@ -312,21 +312,19 @@
   .duebadge{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.06em;
     padding:2px 6px;border-radius:999px;background:var(--c);color:var(--on-brand);
     line-height:1.4;align-self:center}
-  .late .duebadge,.pep.late .duebadge{background:var(--bad)}
   a.rrow.due,.rrow.due{background:var(--ct);border-left:3px solid var(--c);
     border-radius:10px;margin-left:-9px;padding:6px 7px 4px 7px}
   /* reorder mode owns the row's look (dashed, soft, no bar); the due tint must
      not fight it, so it is scoped out rather than racing on specificity */
   /* .pep already wears a 4px stripe in its own colour, so due thickens it rather
-     than replacing it — and keeps --c as the substance colour, which the bar and
-     the big number both read, setting the alarm edge here instead */
+     than replacing it. Past due changes nothing about the colour: a row must stay
+     recognisable as ITS substance exactly when it is asking to be dealt with. */
   .pep.due:not(.reord){background:var(--ct);border-left-width:7px}
-  .pep.due.late:not(.reord){border-left-color:var(--bad)}
   .wbar.flush>span{border-radius:0}
   .pep .wbar>span{background:var(--c)}
-  /* past due: full, alarm-coloured and still, so it reads differently from
-     "nearly there" without reading the caption */
-  .pep.late .wbar>span{background:var(--bad);animation:none}
+  /* past due: full and still — a bar with nothing left to run down. It keeps the
+     substance's colour; the countdown figure is the one thing that turns red. */
+  .pep.late .wbar>span{animation:none}
   /* theme picker: each tile previews its own preset, not the active one */
   .themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}
   .themecard{display:block;width:100%;text-align:left;cursor:pointer;padding:9px;
@@ -362,7 +360,6 @@
     to  {-webkit-mask-position:-26px center; mask-position:-26px center}
   }
   @media(prefers-reduced-motion:reduce){ .wbar>span{animation:none} }
-  .pbwrap .pblabels{display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:2px}
   /* body map */
   .bodymap{max-width:280px;margin:6px auto 2px;display:block}
   .bodymap .site{cursor:pointer}
@@ -4793,7 +4790,7 @@ var UI = (function(){
     return '<div class="pep'+(on&&!injReorder?" on":"")+(injReorder?" reord":"")+(cd&&cd.overdue?" late":"")
       +(dueSoon?" due":"")
       +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)
-      +';--ct:'+(cd&&cd.overdue?PAL.bad:substColor(st,sub))+PAL.tintA+'">'
+      +';--ct:'+substColor(st,sub)+PAL.tintA+'">'
       +head
       +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
@@ -5581,12 +5578,6 @@ var UI = (function(){
       +'</div>';
     return svg+leg;
   }
-  function progressBar(frac, color, leftLabel, rightLabel){
-    frac=Math.max(0,Math.min(1,frac||0));
-    var done=frac>=1;
-    return '<div class="pbwrap"><div class="wbar"><span class="'+(done?"late":"")+'" style="width:'+(frac*100).toFixed(1)+'%;background:'+(done?PAL.bad:color)+'"></span></div>'
-      +'<div class="pblabels"><span>'+esc(leftLabel||"")+'</span><span>'+esc(rightLabel||"")+'</span></div></div>';
-  }
   function lastInjDate(st, substance){
     var d=null;
     DOMAIN.visibleInjLog(st).forEach(function(e){ if(e.substance===substance && (!d || e.date>d)) d=e.date; });
@@ -6275,8 +6266,11 @@ var UI = (function(){
     var tag=href?'a class="rrow'+(due?" due":"")+(overdue?" late":"")+'" href="'+esc(href)+'"'
                 :'div class="'+(due?"due":"")+(overdue?" late":"")+'"';
     var pct=Math.max(0,Math.min(1,frac||0))*100;
-    var edge=overdue?PAL.bad:color;
-    return '<'+tag+' style="margin-bottom:9px;--c:'+edge+';--ct:'+edge+PAL.tintA+'">'
+    // Past due, `overdue` now decides only two things: the red countdown figure
+    // (via the `late` class) and a full bar. Everything that carries colour —
+    // tint, edge, badge, bar — stays the substance's own, so a row asking to be
+    // dealt with is still recognisably itself.
+    return '<'+tag+' style="margin-bottom:9px;--c:'+color+';--ct:'+color+PAL.tintA+'">'
       +'<div class="rrhead">'
         +'<span class="rrname"><span class="rrdot" style="background:'+color+'"></span>'
           +'<span class="rrlbl">'+esc(label)+'</span>'
@@ -6286,8 +6280,8 @@ var UI = (function(){
           +(foot?'<span class="rrat">'+esc(foot)+'</span>':'')
         +'</span>'
       +'</div>'
-      +'<div class="wbar slim"><span class="'+(overdue?"late":"")+'" style="width:'+pct.toFixed(1)+'%;background:'
-        +(overdue?PAL.bad:color)+'"></span></div>'
+      +'<div class="wbar slim"><span class="'+(overdue?"late":"")+'" style="width:'+pct.toFixed(1)
+        +'%;background:'+color+'"></span></div>'
       + (href?'</a>':'</div>');
   }
   // Every view opens with this: the title plus the two history arrows. In an
