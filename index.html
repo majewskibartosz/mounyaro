@@ -290,7 +290,11 @@
   .pepgrow{flex:1;min-width:0}
   .pepname{display:block;font-weight:700;font-size:14.5px;line-height:1.25;
            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pepsub{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+  /* one line, always: the width left over depends on how long the countdown
+     beside it happens to be, so a subtitle that wraps makes the row jump about.
+     Clipped the same way .pepname already is. */
+  .pepsub{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pepdue{flex:0 0 auto;text-align:right;white-space:nowrap;line-height:1.2}
   .pepbig{display:block;font-weight:800;font-size:15px;color:var(--c);font-variant-numeric:tabular-nums}
   .pep.late .pepbig{color:var(--bad)}
@@ -4825,8 +4829,11 @@ var UI = (function(){
     var subDys=substDays(st, sub), subTms=substTimes(st, sub), subPd=substPerDay(st, sub);
     var pdTxt=(subPd>1 && !subTms)?" "+subPd+"\u00d7":"";
     if(subDys) bits.push(esc(fmtDows(subDys)+(subTms?" "+fmtTimes(subTms):pdTxt)));
+    // A one-day gap is simply "daily" — the same word the weekday plan uses for
+    // all seven, and short enough that "2x" beside it no longer wraps the line.
+    else if(ev===1) bits.push(esc(I18N.t("inj.schedAllDays")+pdTxt));
     else if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
-      +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))+pdTxt));
+      +I18N.t(ev%1?"inj.dayGen":"inj.daysShort")+pdTxt));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
@@ -5029,7 +5036,6 @@ var UI = (function(){
           +'<option value="days"'+(pfDays?" selected":"")+'>'+esc(I18N.t("inj.schedDays"))+'</option>'
         +'</select></div>':'')
       +'</div>'
-      +(daysOK?'<div class="field"><label>'+esc(I18N.t("inj.perDay"))+'</label>'+perDayHTML("pfPerDay", pfPerDay)+'</div>':'')
       // Either a gap or a set of days — never both at once, so there is only
       // ever one answer to "when is the next shot".
       +'<div class="field" id="pfEveryBox"'+(pfDays?' style="display:none"':'')+'><label>'+esc(I18N.t("inj.intervalSet"))+'</label>'
@@ -5040,6 +5046,10 @@ var UI = (function(){
           +esc(I18N.t("inj.schedEveryDay"))+'</button></div>'
         +'<div class="field"><label>'+esc(I18N.t("inj.schedTimes"))+'</label>'+timePickHTML("pfTimes", pfTimes)+'</div>'
         +'</div>':'')
+      // Under the rhythm, because it modifies whichever one is chosen: how many
+      // doses land on each of the days that rhythm already picked out.
+      +(daysOK?'<div class="field"><label>'+esc(I18N.t("inj.perDay"))+'</label>'+perDayHTML("pfPerDay", pfPerDay)
+        +'<p class="tiny muted" style="margin:4px 0 0">'+esc(I18N.t("inj.perDayHint"))+'</p></div>':'')
       +vialSectionHTML(st, isNew?null:p, unit)
       +'<label class="toggle" style="margin:2px 0 8px"><input type="checkbox" id="pfCycleOn"'+(cycOn?" checked":"")+'>'
         +'<span class="switch"></span><span>'+esc(I18N.t("inj.cycleOn"))+'</span></label>'
