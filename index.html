@@ -642,6 +642,10 @@ var I18N = (function(){
     "pep.drawAt":{pl:"przy",en:"at"},
     "pep.vialsPast":{pl:"Fiolki i st\u0119\u017cenia",en:"Vials and strengths"},
     "pep.vialNow":{pl:"teraz",en:"now"},
+    "pep.vialCur":{pl:"W użyciu",en:"In use"},
+    "pep.vialFrom":{pl:"od",en:"since"},
+    "pep.vialFix":{pl:"Popraw",en:"Correct it"},
+    "pep.vialNew":{pl:"+ Nowa fiolka",en:"+ New vial"},
     "pep.colorTaken":{pl:"Kolor zajęty przez inny środek",en:"Colour already used by another substance"},
     "pep.colorBrand":{pl:"Tirzepatyd nosi kolor wiodący motywu — zmienia się razem z nim.",en:"Tirzepatyd wears the theme's brand colour and changes with it."},
     "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
@@ -4851,18 +4855,36 @@ var UI = (function(){
     // weight-based dose, the dose's own unit otherwise (an HCG vial says IU).
     var vu=DOMAIN.vialUnitFor(unit);
     var cur=p?pepVialAsOf(st,p):null, past=pepVials(st,p);
+    // Three open fields with TODAY sitting in "mixed on" made every save look
+    // like it would record a reconstitution — enough to make someone afraid to
+    // change their injection days mid-cycle. So the vial is a summary until it
+    // is deliberately opened, and `mode` says which of the two things is meant:
+    // correcting the mix on file, or recording a new one.
+    var mode=cur?(pepDraft.vialMode||null):"new";       // no vial yet = this is the first
     var mg=cur?cur.mg:"", ml=cur?cur.ml:"";
+    var vDate=(mode==="edit"&&cur)?cur.date:todayISO();
     var html='<div id="pfVialBox">'
-      +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>'
-      +'<div class="grid g2">'
+      +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>';
+    if(!mode){
+      html+='<div class="row" style="justify-content:space-between;gap:8px;align-items:center;margin:-4px 0 10px">'
+        +'<span style="min-width:0"><b>'+esc(fmtConc(DOMAIN.vialConc(cur.mg,cur.ml))+" "+vu+"/ml")+'</b>'
+        +' <span class="muted">&middot; '+esc(String(cur.mg)+" "+vu+" / "+String(cur.ml)+" ml")+'</span>'
+        +'<br><span class="muted tiny">'+esc(I18N.t("pep.vialCur")+" \u00b7 "+I18N.t("pep.vialFrom")+" "+fmtDate(cur.date,true))+'</span></span>'
+        +'<span class="row" style="flex:0 0 auto;gap:6px">'
+          +'<button type="button" class="btn ghost sm" id="pfVialFix">'+esc(I18N.t("pep.vialFix"))+'</button>'
+          +'<button type="button" class="btn ghost sm" id="pfVialAdd">'+esc(I18N.t("pep.vialNew"))+'</button>'
+        +'</span></div>';
+    } else {
+      html+='<div class="grid g2">'
         +'<div class="field"><label><span id="pfVialUnitLbl">'+esc(I18N.t("pep.vialMg").replace("mg",vu))+'</span></label>'
           +'<input type="number" inputmode="decimal" step="0.5" min="0" id="pfVialMg" value="'+esc(String(mg))+'" placeholder="10"></div>'
         +'<div class="field"><label>'+esc(I18N.t("pep.vialMl"))+'</label>'
           +'<input type="number" inputmode="decimal" step="0.1" min="0" id="pfVialMl" value="'+esc(String(ml))+'" placeholder="2"></div>'
       +'</div>'
       +'<div class="field"><label>'+esc(I18N.t("pep.vialDate"))+'</label>'
-        +'<input type="date" id="pfVialDate" value="'+esc(todayISO())+'"></div>'
+        +'<input type="date" id="pfVialDate" value="'+esc(vDate)+'"></div>'
       +'<div id="pfConc" class="note" style="margin:-2px 0 10px">'+vialPreviewHTML(st, p, unit)+'</div>';
+    }
     // One record holds every mix it has ever had, each with the stretch of days
     // it covers — so KLOW at 10 mg/ml and KLOW at 20 mg/ml sit here side by side
     // and it is plain which shots were measured against which.
@@ -5082,6 +5104,14 @@ var UI = (function(){
         b.addEventListener("click",function(){ adoptCompound(b.getAttribute("data-id")); });
       });
     }
+    // Opening the vial editor is the ONLY way a save reaches the vial log, so
+    // which button was pressed is remembered rather than guessed from the fields.
+    if($("#pfVialFix")) $("#pfVialFix").addEventListener("click",function(){
+      pepDraft.vialMode="edit"; viewInject();
+    });
+    if($("#pfVialAdd")) $("#pfVialAdd").addEventListener("click",function(){
+      pepDraft.vialMode="new"; viewInject();
+    });
     bindDowPick("pfDays", function(sel){ pepDraft.days=sel; });
     bindTimePick("pfTimes", function(sel){ pepDraft.times=sel; });
     if($("#pfAllDays")) $("#pfAllDays").addEventListener("click",function(){
@@ -5135,22 +5165,36 @@ var UI = (function(){
         Object.assign(p, fields);
         setSubstSchedule(st, p.id, fields.intervalDays, fields.days, fields.times);
       }
-      // A new vial entry only when the mix really differs — otherwise renaming
-      // the peptide would pile up identical rows in its vial log.
-      if($("#pfVialMg") && $("#pfVialMl")){
+      // The vial log is reachable only from a deliberately opened editor. Nothing
+      // else in this form — days, times, dose, name, colour — has a path to it,
+      // so changing a schedule mid-cycle cannot record a reconstitution.
+      // Same rule the form renders by: with no vial on file the open fields ARE
+      // the first one. Keying this off `isNew` instead missed an existing
+      // peptide that simply had no vial yet — its first save recorded nothing.
+      var vialMode=pepDraft.vialMode || (pepVialAsOf(st, p) ? null : "new");
+      if(vialMode && $("#pfVialMg") && $("#pfVialMl")){
         var vmg=parseFloat($("#pfVialMg").value), vml=parseFloat($("#pfVialMl").value);
         if(DOMAIN.vialConc(vmg, vml)!=null){
-          var vd=$("#pfVialDate").value||todayISO(), prev=pepVialAsOf(st, p, vd);
-          if(!prev || prev.mg!==vmg || prev.ml!==vml){
-            if(!p.vials) p.vials=[];
-            p.vials.push({ id:"v_"+uid(), date:vd, mg:vmg, ml:vml });
-            // A vial dated back before shots that were logged without one fills
-            // in what they were drawn at. Only the blanks: a row that already
-            // carries its own snapshot is never rewritten.
-            var pid=p.id;
-            (st.injLog||[]).forEach(function(e){
-              if(e && e.substance===pid && e.dose!=null && e.units==null) stampDraw(st, e);
-            });
+          var vd=$("#pfVialDate").value||todayISO();
+          if(!p.vials) p.vials=[];
+          var curV=pepVialAsOf(st, p);
+          if(vialMode==="edit" && curV){
+            // Correcting what is on file, not mixing again: the row keeps its id
+            // and its place in the log. Shots already logged keep the units they
+            // were drawn at — a reading once written is never rewritten.
+            curV.date=vd; curV.mg=vmg; curV.ml=vml;
+          } else {
+            var prev=pepVialAsOf(st, p, vd);
+            if(!prev || prev.mg!==vmg || prev.ml!==vml){
+              p.vials.push({ id:"v_"+uid(), date:vd, mg:vmg, ml:vml });
+              // A vial dated back before shots that were logged without one fills
+              // in what they were drawn at. Only the blanks: a row that already
+              // carries its own snapshot is never rewritten.
+              var pid=p.id;
+              (st.injLog||[]).forEach(function(e){
+                if(e && e.substance===pid && e.dose!=null && e.units==null) stampDraw(st, e);
+              });
+            }
           }
         }
       }
