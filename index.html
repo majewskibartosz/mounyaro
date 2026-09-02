@@ -6315,25 +6315,22 @@ var UI = (function(){
     // Soonest first, which puts anything overdue at the top; a substance with no
     // shots yet has nothing to count down and sits at the bottom rather than
     // vanishing, which is how one could go missing entirely before.
-    var rhythm=[];
+    // substRows is the ONE source of order, exactly as in Injections, so the list
+    // a row was dragged into is the list seen here. Deliberately not re-sorted by
+    // time: an overdue substance may therefore sit at the bottom, and the "due
+    // now" highlight is what surfaces it — the two decisions go together, so
+    // putting a sort back here would quietly undo the order the user set.
     substRows(st).forEach(function(id){
-      rhythm.push({ id:id,
-        cd:DOMAIN.doseCountdown(lastInjTs(st,id), substInterval(st,id), Date.now(),
-                                substDays(st,id), substTimes(st,id)) });
-    });
-    rhythm.sort(function(a,b){
-      if(!a.cd || !b.cd) return (a.cd?0:1)-(b.cd?0:1);
-      return a.cd.remainingMs-b.cd.remainingMs;
-    });
-    rhythm.forEach(function(x){
-      var c=substColor(st, x.id), href=DOMAIN.buildRoute("inject", x.id);
+      var cd=DOMAIN.doseCountdown(lastInjTs(st,id), substInterval(st,id), Date.now(),
+                                  substDays(st,id), substTimes(st,id));
+      var c=substColor(st, id), href=DOMAIN.buildRoute("inject", id);
       // Just the figure, not "next in ..." / "... overdue": the exact moment sits
       // right beside it and the red minus already says which side of due it is.
       // The words were costing more width than the substance name had.
-      if(x.cd) html+=rhythmRow(substLabel(st,x.id), c, x.cd.overdue?1:x.cd.frac,
-                               (x.cd.overdue?"\u2212":"")+fmtCountdown(x.cd),
-                               fmtNextShot(x.cd.nextMs), href, x.cd.overdue, DOMAIN.dueNow(x.cd));
-      else html+=rhythmRow(substLabel(st,x.id), c, 0, I18N.t("inj.pepNoShots"), null, href, false, false);
+      if(cd) html+=rhythmRow(substLabel(st,id), c, cd.overdue?1:cd.frac,
+                             (cd.overdue?"\u2212":"")+fmtCountdown(cd),
+                             fmtNextShot(cd.nextMs), href, cd.overdue, DOMAIN.dueNow(cd));
+      else html+=rhythmRow(substLabel(st,id), c, 0, I18N.t("inj.pepNoShots"), null, href, false, false);
     });
     html+='</div>';
 
