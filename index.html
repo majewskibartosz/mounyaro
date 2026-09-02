@@ -255,7 +255,9 @@
   .pep.reord{display:grid;grid-template-columns:1fr auto;align-items:center;
     border-style:dashed;background:var(--soft);touch-action:none;user-select:none;-webkit-user-select:none}
   .pep.reord .wbar{display:none}
-  .pep.reord .pepHead{cursor:default}
+  /* the content column of the reorder grid must be free to shrink, so the handle
+     column keeps the same position whatever the row happens to say */
+  .pep.reord .pepHead{cursor:default;min-width:0}
   .pep.reord .pepbig,.pep.reord .pepwhen{opacity:.5}
   .pepgrip{display:flex;align-items:center;justify-content:center;border:0;background:none;
     color:var(--muted);padding:10px 12px;margin-right:2px;cursor:grab;touch-action:none}
@@ -290,10 +292,11 @@
   .peptop,.pepbot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
   .pepname{flex:1;min-width:0;font-weight:700;font-size:14.5px;line-height:1.25;
            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  /* one line, always: the width left over depends on how long the countdown
-     beside it happens to be, so a subtitle that wraps makes the row jump about.
-     Clipped the same way .pepname already is. */
-  .pepsub{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;
+  /* one line, always, and — like .pepname above it — able to SHRINK. Without
+     flex:1;min-width:0 a nowrap subtitle reports its whole width as its minimum,
+     which pushes .pepHead wide; in reorder mode that shoves the drag handle out
+     of its column, and everywhere else it means the ellipsis can never fire. */
+  .pepsub{flex:1;min-width:0;font-size:11.5px;color:var(--muted);margin-top:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pepbig{flex:0 0 auto;font-weight:800;font-size:15px;color:var(--c);white-space:nowrap;
           font-variant-numeric:tabular-nums}
