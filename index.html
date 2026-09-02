@@ -238,6 +238,13 @@
   .timepick{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
   .timerow{display:flex;gap:6px;align-items:center;width:100%}
   .timerow input[type=time]{flex:1 1 auto;min-width:0}
+  .ihrow{padding:11px 0;border-top:1px solid var(--line)}
+  .ihrow:first-child{border-top:0;padding-top:2px}
+  .ihtop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ihwhen{min-width:0;font-weight:700;font-size:13.5px}
+  .ihact{flex:0 0 auto;display:flex;gap:4px}
+  .ihpill{margin:7px 0 5px}
+  .ihmeta{font-size:11.5px;color:var(--muted);line-height:1.45}
   .peplist{display:flex;flex-direction:column;gap:9px}
   .archlist .pep{opacity:.66}
   .archlist .pep.on{opacity:1}
@@ -5513,6 +5520,18 @@ var UI = (function(){
     if(Math.abs(p.y)>=0.3) parts.push(n(p.y)+" cm "+I18N.t(p.y<0?"inj.cmUp":"inj.cmDown"));
     return parts.length ? parts.join(" · ")+" "+I18N.t("inj.fromNavel") : I18N.t("inj.navel");
   }
+  // History rows get the numbers without the scaffolding: the navel is the only
+  // reference point there is, and it is spelled out under the abdomen map, so
+  // repeating "from the navel" on every entry only costs lines. The full form
+  // stays on the "selected spot" line, where it is the whole sentence.
+  function posLabelShort(p){
+    if(!p) return "";
+    function n(v){ v=Math.abs(v); return (Math.round(v*10)/10).toString().replace(/\.0$/,""); }
+    var parts=[];
+    if(Math.abs(p.x)>=0.3) parts.push(n(p.x)+" cm "+I18N.t(p.x<0?"inj.cmLeft":"inj.cmRight"));
+    if(Math.abs(p.y)>=0.3) parts.push(n(p.y)+" "+I18N.t(p.y<0?"inj.cmUp":"inj.cmDown"));
+    return parts.length ? parts.join(", ") : I18N.t("inj.navel");
+  }
   function recentSpots(st){ return DOMAIN.recentInjPos(st, todayISO(), 14, LEGACY_SITE_CM); }
   function bellyMapSVG(st, selPos, withSuggest){
     var recent=recentSpots(st);
@@ -5989,27 +6008,38 @@ var UI = (function(){
     }
     hlist.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
     if(hlist.length){
-      html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="scroll"><table><tbody>';
+      // One block per entry, not a four-column table: on a phone those columns
+      // left the site a strip one word wide, so "Brzuch — góra lewa 1.4 cm w
+      // lewo · 7.8 cm w górę od pępka" broke across eight lines. Read top to
+      // bottom instead: when it was, what went in, where, and what was drawn.
+      html+='<div class="card"><h2>'+esc(I18N.t("inj.history"))+'</h2><div class="ihist">';
       injPage=pageClamp(injPage, hlist.length);
       pageSlice(hlist, injPage).forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
-        html+='<tr><td>'+esc(whenLbl)
-          +' <span class="nowrap">'+dowBadge(e.date)
-          +(e.sandbag?' <span class="pill minipill sb" title="'+esc(I18N.t("inj.sandbag"))+'">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')+'</span>'
-          +(e.name?'<br><span class="muted tiny">'+esc(e.name)+'</span>':'')
-          +(e.penDraw?'<br><span class="muted tiny">'+esc(penDrawLabel(e.penDraw))+'</span>':'')
-          +(e.units!=null?'<br><span class="muted tiny">'+esc(fmtUnits(e.units)+" "+I18N.t("sch.units")
-             +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""))+'</span>':'')+'</td>'
-          +'<td>'+esc(siteLbl)+(e.pos?'<br><span class="muted tiny">'+esc(posLabel(e.pos))+'</span>':'')+'</td>'
-          +'<td class="num">'+(e.dose!=null
-            ? dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days, e.times), substColor(st, e.substance),
-                DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
-            : "—")+'</td>'
-          +'<td class="num"><button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
-          +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
+        var where=e.pos ? siteLbl+" · "+posLabelShort(e.pos) : siteLbl;
+        var meta=[];
+        if(e.name) meta.push(e.name);
+        if(e.penDraw) meta.push(penDrawLabel(e.penDraw));
+        if(e.units!=null) meta.push(fmtUnits(e.units)+" "+I18N.t("sch.units")
+          +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""));
+        html+='<div class="ihrow">'
+          +'<div class="ihtop"><span class="ihwhen">'+esc(whenLbl)+' '+dowBadge(e.date)
+            +(e.sandbag?' <span class="pill minipill sb" title="'+esc(I18N.t("inj.sandbag"))+'">'+esc(I18N.t("inj.sandbagBadge"))+'</span>':'')
+          +'</span>'
+          +'<span class="ihact">'
+            +'<button class="btn ghost sm injEdit" title="'+esc(I18N.t("inj.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button>'
+            +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
+          +'</span></div>'
+          +(e.dose!=null?'<div class="ihpill">'
+            +dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days, e.times), substColor(st, e.substance),
+                      DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
+            +'</div>':'')
+          +'<div class="ihmeta">'+esc(where)+'</div>'
+          +(meta.length?'<div class="ihmeta">'+esc(meta.join(" · "))+'</div>':'')
+          +'</div>';
       });
-      html+='</tbody></table></div>'+pagerHTML("injPg", injPage, hlist.length)+'</div>';
+      html+='</div>'+pagerHTML("injPg", injPage, hlist.length)+'</div>';
     }
 
     }   // end showForm
