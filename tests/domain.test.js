@@ -796,6 +796,46 @@ test("nextSlotMs: twice a day lands on the evening, then on tomorrow morning", f
   assert.strictEqual(DOMAIN.nextSlotMs(monMorning, null, T), null);
 });
 
+test("nextSlotMs: a shot taken early settles THAT dose, not the one before it", function () {
+  var EVERY_DAY = [1, 2, 3, 4, 5, 6, 7], T = ["10:00", "22:00"];
+  // The reported case: the 22:00 dose logged at 21:31. It used to leave 22:00
+  // looking untaken, so by morning the row was seven hours overdue.
+  var early = new Date(2026, 8, 1, 21, 31, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(early, EVERY_DAY, T),
+                     new Date(2026, 8, 2, 10, 0, 0).getTime());
+  // and the morning dose logged at 10:19 must NOT swallow the evening one
+  var morning = new Date(2026, 8, 1, 10, 19, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(morning, EVERY_DAY, T),
+                     new Date(2026, 8, 1, 22, 0, 0).getTime());
+
+  // One dose a day at 22:00, taken at noon: that WAS today's dose, so the next
+  // is tomorrow. Pointing at 22:00 today would send the user for a second one.
+  var noon = new Date(2026, 8, 1, 12, 0, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(noon, EVERY_DAY, ["22:00"]),
+                     new Date(2026, 8, 2, 22, 0, 0).getTime());
+
+  // a tie goes to the earlier slot, so an ambiguous shot never swallows a dose
+  // still ahead: 16:00 is exactly between 10:00 and 22:00
+  var tie = new Date(2026, 8, 1, 16, 0, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(tie, EVERY_DAY, T),
+                     new Date(2026, 8, 1, 22, 0, 0).getTime());
+
+  // a genuinely missed dose is still missed: three days back, one a day
+  var stale = new Date(2026, 7, 29, 22, 0, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(stale, EVERY_DAY, ["22:00"]),
+                     new Date(2026, 7, 30, 22, 0, 0).getTime());
+});
+
+test("doseCountdown: the reported KPV morning is neither overdue nor shouting", function () {
+  var EVERY_DAY = [1, 2, 3, 4, 5, 6, 7], T = ["10:00", "22:00"];
+  var shot = new Date(2026, 8, 1, 21, 31, 0).getTime();   // Tue 21:31
+  var now = new Date(2026, 8, 2, 5, 33, 0).getTime();     // Wed 05:33
+  var cd = DOMAIN.doseCountdown(shot, 1, now, EVERY_DAY, T);
+  assert.strictEqual(cd.nextMs, new Date(2026, 8, 2, 10, 0, 0).getTime());
+  assert.strictEqual(cd.overdue, false);
+  assert.strictEqual(DOMAIN.dueNow(cd), false);
+});
+
 test("doseCountdown: hours pin the next shot to the clock, not to an offset", function () {
   var T = ["08:00", "20:00"], EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
   // a late morning shot (09:30) still points at 20:00 the same day, so being

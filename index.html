@@ -1830,25 +1830,40 @@ var DOMAIN = (function(){
     return out;
   }
   function timesKey(times){ var n=normTimes(times); return n?n.join(","):null; }
-  // The first scheduled moment strictly after `lastMs`: walk forward day by day
-  // over the planned weekdays and take the earliest hour that has not passed.
-  // Strictly after is what makes twice a day work — a shot logged at 08:05 on a
-  // 08:00/20:00 plan points at 20:00 the same evening, not at tomorrow.
+  // The scheduled moment after the one the last shot belongs to. A shot belongs
+  // to the scheduled time it landed NEAREST to, not merely to the last one that
+  // had passed: taking a dose half an hour early is still taking THAT dose, and
+  // dueNow has already been saying "it is time" for that hour — the window that
+  // invites the shot has to be the window that counts it. Without this, a 22:00
+  // dose logged at 21:31 leaves 22:00 looking untaken, and by morning the row is
+  // seven hours overdue and shouting.
+  // The cost of the rule, deliberately accepted: on a Mon/Wed plan a shot at
+  // Tuesday noon is nearer Wednesday than Monday, so it settles Wednesday and
+  // the next reminder falls on Friday. Two doses in one day would be the worse
+  // mistake of the two.
   function nextSlotMs(lastMs, days, times){
     var n=normDays(days), ts=normTimes(times);
     if(lastMs==null || !n || !ts) return null;
-    var from=new Date(lastMs);
-    for(var k=0;k<=8;k++){
+    // A weekday plan can leave a seven-day hole, so look a clear week either
+    // side. Slots come out ascending: k climbs and normTimes is already sorted.
+    var from=new Date(lastMs), slots=[];
+    for(var k=-8;k<=9;k++){
       var day=new Date(from.getFullYear(), from.getMonth(), from.getDate()+k);
       if(n.indexOf(((day.getDay()+6)%7)+1)<0) continue;
       for(var i=0;i<ts.length;i++){
         var hm=ts[i].split(":");
-        var ms=new Date(day.getFullYear(), day.getMonth(), day.getDate(),
-                        Number(hm[0]), Number(hm[1]), 0, 0).getTime();
-        if(ms>lastMs) return ms;
+        slots.push(new Date(day.getFullYear(), day.getMonth(), day.getDate(),
+                            Number(hm[0]), Number(hm[1]), 0, 0).getTime());
       }
     }
-    return null;
+    if(slots.length<2) return null;
+    // Ties go to the earlier slot, so a genuinely ambiguous shot never swallows
+    // a dose that is still ahead.
+    var best=0;
+    for(var j=1;j<slots.length;j++){
+      if(Math.abs(slots[j]-lastMs) < Math.abs(slots[best]-lastMs)) best=j;
+    }
+    return (best+1<slots.length) ? slots[best+1] : null;
   }
   // One comparable cadence for a dosed entry, whichever form it is stamped in.
   // Switching between the two forms is itself a change of regimen, which is why
