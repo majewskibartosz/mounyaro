@@ -726,6 +726,90 @@ test("lastDoseAsOf: carries the weekday plan the shot was stamped with", functio
   assert.strictEqual(ld.every, null);
 });
 
+test("normPerDay: a count, floored at one and capped", function () {
+  assert.strictEqual(DOMAIN.normPerDay(undefined), 1);
+  assert.strictEqual(DOMAIN.normPerDay(null), 1);
+  assert.strictEqual(DOMAIN.normPerDay(0), 1);
+  assert.strictEqual(DOMAIN.normPerDay(-3), 1);
+  assert.strictEqual(DOMAIN.normPerDay("2"), 2);
+  assert.strictEqual(DOMAIN.normPerDay(2.7), 2);
+  assert.strictEqual(DOMAIN.normPerDay(99), DOMAIN.PER_DAY_MAX);
+});
+
+test("nextRollingMs: N a day, then on to the next injection day", function () {
+  var H = 3600000;
+  // Daily, twice a day, first dose at 09:40 — the user's own example
+  var first = new Date(2026, 8, 7, 9, 40, 0).getTime();
+  var afterFirst = DOMAIN.nextRollingMs(first, { every: 1, days: null },
+                                        { perDay: 2, dayCount: 1, firstMs: first });
+  assert.strictEqual(afterFirst, first + 12 * H);                     // 21:40 the same day
+
+  // the day's quota done -> next day at the time the day started, i.e. 09:40
+  var second = first + 12 * H;
+  var afterSecond = DOMAIN.nextRollingMs(second, { every: 1, days: null },
+                                         { perDay: 2, dayCount: 2, firstMs: first });
+  assert.strictEqual(afterSecond, new Date(2026, 8, 8, 9, 40, 0).getTime());
+  // ... which is exactly "every 12 h" — the two are the same rule
+  assert.strictEqual(afterSecond, second + 12 * H);
+
+  // Every 2 days, twice a day: two doses, then a day off
+  var e2 = DOMAIN.nextRollingMs(second, { every: 2, days: null },
+                                { perDay: 2, dayCount: 2, firstMs: first });
+  assert.strictEqual(e2, new Date(2026, 8, 9, 9, 40, 0).getTime());   // day 3, day 2 skipped
+
+  // Mon/Wed/Fri, twice a day: Monday 08:00 -> 20:00 -> Wednesday 08:00
+  var mon = new Date(2026, 8, 7, 8, 0, 0).getTime();                  // 07.09.2026 is a Monday
+  assert.strictEqual(DOMAIN.nextRollingMs(mon, { every: 1, days: [1, 3, 5] },
+                                          { perDay: 2, dayCount: 1, firstMs: mon }),
+                     mon + 12 * H);
+  assert.strictEqual(DOMAIN.nextRollingMs(mon + 12 * H, { every: 1, days: [1, 3, 5] },
+                                          { perDay: 2, dayCount: 2, firstMs: mon }),
+                     new Date(2026, 8, 9, 8, 0, 0).getTime());
+
+  // three a day is eight hours apart
+  assert.strictEqual(DOMAIN.nextRollingMs(first, { every: 1, days: null },
+                                          { perDay: 3, dayCount: 1, firstMs: first }),
+                     first + 8 * H);
+
+  // one a day is not this rule's business at all
+  assert.strictEqual(DOMAIN.nextRollingMs(first, { every: 1, days: null },
+                                          { perDay: 1, dayCount: 1, firstMs: first }), null);
+  assert.strictEqual(DOMAIN.nextRollingMs(null, { every: 1 }, { perDay: 2 }), null);
+});
+
+test("doseCountdown: named hours beat the count, and one a day is unchanged", function () {
+  var H = 3600000, EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+  var shot = new Date(2026, 8, 7, 9, 40, 0).getTime();
+
+  // twice a day, no hours named -> 12 h on
+  var cd = DOMAIN.doseCountdown(shot, 1, shot, EVERY_DAY, null,
+                                { perDay: 2, dayCount: 1, firstMs: shot });
+  assert.strictEqual(cd.nextMs, shot + 12 * H);
+
+  // the same substance with hours named ignores the count and uses the clock
+  var cd2 = DOMAIN.doseCountdown(shot, 1, shot, EVERY_DAY, ["08:00", "20:00"],
+                                 { perDay: 2, dayCount: 1, firstMs: shot });
+  assert.strictEqual(cd2.nextMs, new Date(2026, 8, 7, 20, 0, 0).getTime());
+
+  // perDay 1, or no context at all, behaves exactly as before
+  var plain = DOMAIN.doseCountdown(shot, 3, shot, null, null);
+  assert.strictEqual(DOMAIN.doseCountdown(shot, 3, shot, null, null,
+                                          { perDay: 1, dayCount: 1, firstMs: shot }).nextMs,
+                     plain.nextMs);
+});
+
+test("cadenceKey: how many a day is part of the regimen", function () {
+  assert.notStrictEqual(DOMAIN.cadenceKey({ every: 1, perDay: 2 }),
+                        DOMAIN.cadenceKey({ every: 1, perDay: 1 }));
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 1, perDay: 2 }),
+                     DOMAIN.cadenceKey({ every: 1, perDay: 2 }));
+  // a cadence stamped before perDay existed keys exactly as it did
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 1 }), "e:1");
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 1, perDay: 1 }), "e:1");
+  assert.strictEqual(DOMAIN.cadenceKey({ days: [1, 3] }), "d:1,3");
+  assert.strictEqual(DOMAIN.cadenceKey({ days: [1, 3], perDay: 2 }), "d:1,3x2");
+});
+
 test("dueNow: an hour before the moment, and everything past it", function () {
   var cd = function (remainingMs) { return { remainingMs: remainingMs }; };
   assert.strictEqual(DOMAIN.DUE_SOON_MS, 3600000);

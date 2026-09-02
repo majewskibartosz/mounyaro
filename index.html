@@ -607,6 +607,8 @@ var I18N = (function(){
     "inj.schedTimeMax":{pl:"Wi\u0119cej p\u00f3r na dob\u0119 nie ma sensu.",en:"More times a day makes no sense."},
     "inj.schedAllDays":{pl:"codziennie",en:"daily"},
     "inj.schedEveryDay":{pl:"Codziennie",en:"Every day"},
+    "inj.perDay":{pl:"Razy dziennie",en:"Times a day"},
+    "inj.perDayHint":{pl:"Wpisane pory dnia maj\u0105 pierwsze\u0144stwo przed t\u0105 liczb\u0105.",en:"Times of day, when listed, take precedence over this number."},
     "inj.backfillTitle":{pl:"Uzupełnij dawkowanie w historii",en:"Backfill dosing in history"},
     "inj.backfillSub":{pl:"Starsze wpisy nie mają zapisanego „co ile dni”, więc pigułka pokazuje samą dawkę. Oznacz zakres dat właściwym interwałem, aby historia odzwierciedlała realne dawkowanie (np. 25 mg/2d) i licznik d liczył się od faktycznej zmiany.",en:"Older entries carry no “every how many days”, so the pill shows the bare dose. Stamp a date range with the right interval so history reflects the real dosing (e.g. 25 mg/2d) and the d counter starts at the actual change."},
     "inj.backfillFrom":{pl:"Od",en:"From"},
@@ -1726,23 +1728,23 @@ var DOMAIN = (function(){
   // the entry predates interval stamping or the substance has no interval.
   function lastDoseAsOf(state, substance, uptoISO){
     var best=null;
-    function consider(date, dose, unit, every, days, times){
+    function consider(date, dose, unit, every, days, times, perDay){
       if(dose==null || !date || (uptoISO && date>uptoISO)) return;
       if(!best || date>best.date) best={date:date, dose:dose, unit:unit||"mg",
                                         every:every!=null?every:null, days:normDays(days),
-                                        times:normTimes(times)};
+                                        times:normTimes(times), perDay:normPerDay(perDay)};
     }
     visibleInjLog(state).forEach(function(e){
-      if(e && e.substance===substance) consider(e.date, e.dose, e.unit, e.every, e.days, e.times);
+      if(e && e.substance===substance) consider(e.date, e.dose, e.unit, e.every, e.days, e.times, e.perDay);
     });
     // Mounjaro dose is also logged alongside weight entries
     if(substance==="mounjaro"){
       ((state&&state.weightLog)||[]).forEach(function(e){
-        if(e) consider(e.date, e.doseMg, "mg", null, null, null);
+        if(e) consider(e.date, e.doseMg, "mg", null, null, null, null);
       });
     }
     return best ? {dose:best.dose, unit:best.unit, every:best.every, days:best.days,
-                   times:best.times} : null;
+                   times:best.times, perDay:best.perDay} : null;
   }
   // How long the dose in effect on uptoISO has been running: walks back
   // through same-substance doses while they stay identical. The dosage is the
@@ -1758,7 +1760,8 @@ var DOMAIN = (function(){
     visibleInjLog(state).forEach(function(e){
       if(e && e.substance===substance && e.dose!=null && e.date && (!uptoISO || e.date<=uptoISO))
         doses.push({date:e.date, dose:e.dose, unit:e.unit||"mg", every:e.every!=null?e.every:null,
-                    days:normDays(e.days), times:normTimes(e.times), cad:cadenceKey(e)});
+                    days:normDays(e.days), times:normTimes(e.times), perDay:normPerDay(e.perDay),
+                    cad:cadenceKey(e)});
     });
     if(substance==="mounjaro"){
       ((state&&state.weightLog)||[]).forEach(function(e){
@@ -1873,16 +1876,53 @@ var DOMAIN = (function(){
     }
     return (best+1<slots.length) ? slots[best+1] : null;
   }
+  // How many doses a day, as a plain count. 1 (or nothing) is the ordinary case.
+  function normPerDay(n){
+    n=Number(n);
+    if(!isFinite(n) || n<1) return 1;
+    return Math.min(PER_DAY_MAX, Math.floor(n));
+  }
+  var PER_DAY_MAX = 6;
+  /* Several doses a day without naming the hours. One rule covers both things
+     that were asked for, which is why it is worth having:
+
+       within an injection day take N doses 24/N hours apart; the next injection
+       day falls X days after THIS day's first dose.
+
+     Daily with N=2 and a first dose at 09:40 gives 21:40, then 09:40 tomorrow
+     (the day after = first + 24 h) — literally "every 12 h". Every-2-days with
+     N=2 gives 09:40, 21:40, then a day off, then 09:40 again. Same rule. */
+  function nextRollingMs(lastMs, sched, perCtx){
+    if(lastMs==null || !sched) return null;
+    var n=normPerDay(perCtx && perCtx.perDay);
+    if(n<2) return null;                       // one a day is the ordinary path
+    var done=(perCtx && perCtx.dayCount) || 0;
+    if(done<n) return lastMs + Math.round(86400000/n);
+    // The day's quota is used up, so step to the next injection day, keeping the
+    // time of day this one started at.
+    var base=(perCtx && perCtx.firstMs!=null) ? perCtx.firstMs : lastMs;
+    var dys=normDays(sched.days);
+    if(dys){
+      var step=daysToNextDow(((new Date(base).getDay()+6)%7)+1, dys);
+      return step==null ? null : base + step*86400000;
+    }
+    if(!sched.every) return null;
+    return base + Math.max(0.5, sched.every)*86400000;
+  }
+
   // One comparable cadence for a dosed entry, whichever form it is stamped in.
   // Switching between the two forms is itself a change of regimen, which is why
   // they share a key space rather than being compared field by field.
   function cadenceKey(o){
     if(!o) return null;
+    // How many a day is part of the regimen too: dropping from twice a day to
+    // once is a dosing change even when the mg, the weekdays and the hours all
+    // stay put. Written only when it is not the ordinary 1, so every cadence
+    // stamped before this existed keys exactly as it did.
+    var pd=normPerDay(o.perDay), px=(pd>1?"x"+pd:"");
     var dk=daysKey(o.days);
-    // Hours are part of the regimen: going from twice a day to once is a dosing
-    // change even when the mg per shot and the weekdays stay put.
-    if(dk){ var tk=timesKey(o.times); return "d:"+dk+(tk?"@"+tk:""); }
-    return o.every!=null ? "e:"+o.every : null;
+    if(dk){ var tk=timesKey(o.times); return "d:"+dk+(tk?"@"+tk:"")+px; }
+    return o.every!=null ? "e:"+o.every+px : null;
   }
   // Days from `fromDow` to the next scheduled weekday, always 1..7 — so a shot
   // taken on a scheduled day points at the NEXT one, and a single scheduled day
@@ -2115,12 +2155,14 @@ var DOMAIN = (function(){
   // dates: 3.5 days always means 84 elapsed hours, DST week included. days/hours
   // split the remaining (or overdue) span the way a countdown reads it — floored,
   // so "1 day 8 h" holds until the hour actually turns over.
-  function doseCountdown(lastMs, everyDays, nowMs, days, times){
+  function doseCountdown(lastMs, everyDays, nowMs, days, times, perCtx){
     if(lastMs==null) return null;
     // Set hours answer "when next" exactly, so they win outright: the next slot
     // is a wall-clock moment, not an offset, and a late shot cannot drag the
-    // whole rhythm along behind it.
+    // whole rhythm along behind it. Only where no hours are named does the
+    // count of doses per day get to decide — never both at once.
     var slot=nextSlotMs(lastMs, days, times);
+    if(slot==null) slot=nextRollingMs(lastMs, {days:days, every:everyDays}, perCtx);
     if(slot==null){
       // On a weekday plan the gap is whatever the calendar says from the day of
       // the last shot, so the same plan yields 2 days here and 5 days there.
@@ -2221,6 +2263,7 @@ var DOMAIN = (function(){
     normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     normTimes:normTimes, timesKey:timesKey, nextSlotMs:nextSlotMs,
     DUE_SOON_MS:DUE_SOON_MS, dueNow:dueNow,
+    PER_DAY_MAX:PER_DAY_MAX, normPerDay:normPerDay, nextRollingMs:nextRollingMs,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory, bmiBand:bmiBand, BMI_BANDS:BMI_BANDS,
@@ -2269,12 +2312,12 @@ var STORE = (function(){
       injLog:[],           // every injection: {id,date,substance,dose,unit,site}
       conditions:[],        // illness episodes + chronic conditions/injuries: {id,type,start,end,label,severity,symptoms} (end:null = still running)
       inj:{ mounjaro:{ unit:"mg" },
-            trt:{ intervalDays:3, unit:"mg", days:null, times:null },   // days: weekday plan (null = fixed gap); times: hours on those days
+            trt:{ intervalDays:3, unit:"mg", days:null, times:null, perDay:1 },   // days: weekday plan (null = fixed gap); times: hours on those days; perDay: doses per injection day
             // the order the substance rows are shown in, by id. Optional and
             // never has to be complete: anything missing keeps its natural place.
             order:[],
             // every peptide/blend is tracked on its own:
-            // {id,name,color,unit,intervalDays,days,times,cycleDays,cycleStart,archived}
+            // {id,name,color,unit,intervalDays,days,times,perDay,cycleDays,cycleStart,archived}
             // Injections reference one by id in their `substance` field.
             peptides:[] }
     };
@@ -3974,7 +4017,7 @@ var UI = (function(){
     return tags.map(function(t){
       return '<span class="pill" style="background:'+t.color+PAL.tintA+';color:'+t.color+'">'
         +esc(t.label)
-        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every, t.dose.days, t.dose.times)):'')
+        +(t.dose?' '+esc(doseTxt(t.dose.dose, t.dose.unit, t.dose.every, t.dose.days, t.dose.times, t.dose.perDay)):'')
         +' '+esc(I18N.t("common.weekLetter"))+t.week
         +(t.dose&&t.doseWeek!=null?' &middot; '+esc(I18N.t("common.doseWeekLetter"))+t.doseWeek:'')+'</span>';
     }).join(" ");
@@ -4764,7 +4807,9 @@ var UI = (function(){
   function substCardHTML(st, sub){
     var p=peptideById(st, sub);
     var ev=substInterval(st, sub);
-    var cd=DOMAIN.doseCountdown(lastInjTs(st,sub), ev, Date.now(), substDays(st, sub), substTimes(st, sub));
+    var lastTs=lastInjTs(st,sub);
+    var cd=DOMAIN.doseCountdown(lastTs, ev, Date.now(), substDays(st, sub), substTimes(st, sub),
+                                substDayCtx(st, sub, lastTs));
     var cyc=(p && p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
     var last=DOMAIN.lastDoseAsOf(st, sub);
     var bits=[];
@@ -4777,10 +4822,11 @@ var UI = (function(){
       var c0=pepConcAsOf(st, p);
       if(c0!=null) bits.push(esc(fmtConc(c0)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml"));
     }
-    var subDys=substDays(st, sub), subTms=substTimes(st, sub);
-    if(subDys) bits.push(esc(fmtDows(subDys)+(subTms?" "+fmtTimes(subTms):"")));
+    var subDys=substDays(st, sub), subTms=substTimes(st, sub), subPd=substPerDay(st, sub);
+    var pdTxt=(subPd>1 && !subTms)?" "+subPd+"\u00d7":"";
+    if(subDys) bits.push(esc(fmtDows(subDys)+(subTms?" "+fmtTimes(subTms):pdTxt)));
     else if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
-      +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))));
+      +I18N.t(ev===1?"inj.dayOne":(ev%1?"inj.dayGen":"inj.daysShort"))+pdTxt));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
@@ -4950,6 +4996,8 @@ var UI = (function(){
                                            : (isNew?null:pepDays(st,p));
     var pfTimes=(pepDraft.times!==undefined) ? DOMAIN.normTimes(pepDraft.times)
                                              : (isNew?null:pepTimes(st,p));
+    var pfPerDay=(pepDraft.perDay!==undefined) ? pepDraft.perDay
+                                               : (isNew?1:pepPerDay(st,p));
     var cycOn=isNew?false:!!(p.cycleDays && p.cycleStart);
     // Colours worn by another substance are struck through, so two cards can
     // never end up the same colour on the abdomen map. Archived peptides count:
@@ -4981,6 +5029,7 @@ var UI = (function(){
           +'<option value="days"'+(pfDays?" selected":"")+'>'+esc(I18N.t("inj.schedDays"))+'</option>'
         +'</select></div>':'')
       +'</div>'
+      +(daysOK?'<div class="field"><label>'+esc(I18N.t("inj.perDay"))+'</label>'+perDayHTML("pfPerDay", pfPerDay)+'</div>':'')
       // Either a gap or a set of days — never both at once, so there is only
       // ever one answer to "when is the next shot".
       +'<div class="field" id="pfEveryBox"'+(pfDays?' style="display:none"':'')+'><label>'+esc(I18N.t("inj.intervalSet"))+'</label>'
@@ -5114,6 +5163,7 @@ var UI = (function(){
     });
     bindDowPick("pfDays", function(sel){ pepDraft.days=sel; });
     bindTimePick("pfTimes", function(sel){ pepDraft.times=sel; });
+    if($("#pfPerDay")) $("#pfPerDay").addEventListener("change",function(){ pepDraft.perDay=DOMAIN.normPerDay(this.value); });
     if($("#pfAllDays")) $("#pfAllDays").addEventListener("click",function(){
       $all("#pfDays .dowchip").forEach(function(b){ b.classList.add("on"); b.setAttribute("aria-pressed","true"); });
       pepDraft.days=readDowPick("pfDays");
@@ -5137,6 +5187,7 @@ var UI = (function(){
                    intervalDays:parseEvery($("#pfEvery").value,1),   // routed below for Tirzepatyd
                    days:($("#pfMode")&&$("#pfMode").value==="days")?readDowPick("pfDays"):null,
                    times:($("#pfMode")&&$("#pfMode").value==="days")?readTimePick("pfTimes"):null,
+                   perDay:$("#pfPerDay")?DOMAIN.normPerDay($("#pfPerDay").value):1,
                    // a cycle without a start date is no cycle at all (cycleProgress agrees)
                    cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
                    cycleStart:(cycOn&&cs)?cs:null };
@@ -5163,7 +5214,7 @@ var UI = (function(){
         st.inj.peptides.push(np); injSeg="peptide"; pepSel=np.id; p=np;
       } else {
         Object.assign(p, fields);
-        setSubstSchedule(st, p.id, fields.intervalDays, fields.days, fields.times);
+        setSubstSchedule(st, p.id, fields.intervalDays, fields.days, fields.times, fields.perDay);
       }
       // The vial log is reachable only from a deliberately opened editor. Nothing
       // else in this form — days, times, dose, name, colour — has a path to it,
@@ -5251,6 +5302,16 @@ var UI = (function(){
     return null;
   }
   function pepTimes(st, p){ return p?substTimes(st, p.id):null; }
+  // Unlike the hours, the count needs no weekday plan: "every 2 days, twice a
+  // day" is as legitimate as "daily, twice a day".
+  function substPerDay(st, sub){
+    if(!canPickDays(st, sub)) return 1;
+    var p=peptideById(st, sub);
+    if(p) return DOMAIN.normPerDay(p.perDay);
+    if(sub==="trt") return DOMAIN.normPerDay(st.inj.trt.perDay);
+    return 1;
+  }
+  function pepPerDay(st, p){ return p?substPerDay(st, p.id):1; }
   function canPickDays(st, sub){ return sub==="trt" || !!(peptideById(st, sub) && sub!=="mounjaro"); }
   // A cadence change must never rewrite what already happened. Shots logged
   // before intervals were stamped carry no `every` of their own, so stamp them
@@ -5258,6 +5319,7 @@ var UI = (function(){
   // applies from here on and history can no longer shift under them.
   function freezeInterval(st, sub){
     var dys=substDays(st, sub), tms=substTimes(st, sub), ev=substInterval(st, sub);
+    var pd=substPerDay(st, sub);
     if(!dys && ev==null) return 0;
     var n=0;
     (st.injLog||[]).forEach(function(e){
@@ -5265,6 +5327,7 @@ var UI = (function(){
       if(e.every!=null || DOMAIN.normDays(e.days)) return;   // already speaks for itself
       if(dys){ e.days=dys.slice(); if(tms) e.times=tms.slice(); }
       else e.every=ev;
+      if(pd>1) e.perDay=pd;
       n++;
     });
     return n;
@@ -5281,11 +5344,12 @@ var UI = (function(){
   // on a weekday plan and the number becomes a leftover the plan overrides;
   // null days puts it back on a fixed gap. Freezes first, and only on a real
   // change — re-saving the same rhythm must not stamp anything.
-  function setSubstSchedule(st, sub, v, days, times){
+  function setSubstSchedule(st, sub, v, days, times, perDay){
     var want=DOMAIN.normDays(days), wantT=want?DOMAIN.normTimes(times):null;
-    var wantKey=DOMAIN.cadenceKey({ days:want, times:wantT, every:v });
+    var wantP=(perDay==null)?substPerDay(st, sub):DOMAIN.normPerDay(perDay);
+    var wantKey=DOMAIN.cadenceKey({ days:want, times:wantT, every:v, perDay:wantP });
     var haveKey=DOMAIN.cadenceKey({ days:substDays(st, sub), times:substTimes(st, sub),
-                                    every:substInterval(st, sub) });
+                                    every:substInterval(st, sub), perDay:substPerDay(st, sub) });
     if(wantKey!==haveKey) freezeInterval(st, sub);
     var p=peptideById(st, sub);
     if(v!=null){
@@ -5298,6 +5362,7 @@ var UI = (function(){
     if(!tgt) return;
     tgt.days=want?want.slice():null;
     tgt.times=wantT?wantT.slice():null;
+    tgt.perDay=wantP;
   }
   // ---- reconstitution: vials, concentration and units to draw ----
   function pepVials(st, p){ return (p && p.vials) || []; }
@@ -5392,6 +5457,14 @@ var UI = (function(){
       });
     });
   }
+  // Doses per injection day, as a count. Offered in BOTH rhythms — "every 2 days,
+  // twice a day" is as legitimate a protocol as "daily, twice a day".
+  function perDayHTML(id, sel){
+    var n=DOMAIN.normPerDay(sel), out='<select id="'+esc(id)+'">';
+    for(var i=1;i<=DOMAIN.PER_DAY_MAX;i++)
+      out+='<option value="'+i+'"'+(i===n?" selected":"")+'>'+i+"\u00d7"+'</option>';
+    return out+'</select>';
+  }
   var TIMES_MAX=6;
   // One row per time of day. Kept in the DOM like the weekday chips, so the
   // surrounding form can re-render without losing an unsaved edit.
@@ -5438,12 +5511,13 @@ var UI = (function(){
     for(var i=0;i<pick.length;i++) if(!have[pick[i]]) return pick[i];
     return "10:00";
   }
-  function doseTxt(dose, unit, every, days, times){
+  function doseTxt(dose, unit, every, days, times, perDay){
     var d=fmtDows(days), t=fmtTimes(times);
-    // With the hours spelled out, "every day" is already implied by them.
+    // Named hours already say how many a day, so the count is not repeated.
+    var n=DOMAIN.normPerDay(perDay), px=(n>1 && !t)?" "+n+"\u00d7":"";
     if(d && t) return dose+" "+unit+" "+(DOMAIN.normDays(days).length===7?"":d+" ")+t;
-    if(d) return dose+" "+unit+" "+d;
-    return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"");
+    if(d) return dose+" "+unit+" "+d+px;
+    return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"")+px;
   }
   function dosePill(label, txt, color, week, doseWeek){
     return '<span class="pill dosepill" style="background:'+color+PAL.tintA+';color:'+color+'">'+(label?label+' ':'')+esc(txt)
@@ -5507,8 +5581,9 @@ var UI = (function(){
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
     var dys=ld.days || substDays(st, sub);
     var tms=ld.days ? ld.times : substTimes(st, sub);
+    var pdy=(ld.perDay!=null)?ld.perDay:substPerDay(st, sub);
     var ev=(ld.every!=null)?ld.every:substInterval(st, sub);
-    return dosePill("", doseTxt(ld.dose, ld.unit, ev, dys, tms), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
+    return dosePill("", doseTxt(ld.dose, ld.unit, ev, dys, tms, pdy), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
   }
   // week on the current dose, only when the setting is on
   function doseWeekAsOf(st, sub, dISO){
@@ -5532,8 +5607,8 @@ var UI = (function(){
     var wm=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"mounjaro"), dISO);
     var wt=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,"trt"), dISO);
     var parts=[];
-    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every, mj.days, mj.times), PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
-    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every, trt.days, trt.times), PAL.subst.trt, wt, doseWeekAsOf(st,"trt",dISO)));
+    if(mj) parts.push(dosePill("MJ", doseTxt(mj.dose, mj.unit, mj.every, mj.days, mj.times, mj.perDay), PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
+    if(trt) parts.push(dosePill("TRT", doseTxt(trt.dose, trt.unit, trt.every, trt.days, trt.times, trt.perDay), PAL.subst.trt, wt, doseWeekAsOf(st,"trt",dISO)));
     if(!parts.length && manualMg!=null) parts.push(dosePill("MJ", manualMg+" mg", PAL.subst.mounjaro, wm, doseWeekAsOf(st,"mounjaro",dISO)));
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
@@ -5651,6 +5726,25 @@ var UI = (function(){
   // jab.history dates) fall back to noon, the convention used everywhere else.
   // A jab.history date is only considered when injLog has nothing that day —
   // otherwise its noon would beat a real 08:00 shot and skew the countdown.
+  // Doses of one substance on the LOCAL calendar day of `lastMs`, and when the
+  // first of them was. Deliberately the day of the last shot, not today's: at
+  // 03:00 yesterday's quota is already spent, so the next dose belongs to the
+  // morning rather than to this minute.
+  function substDayCtx(st, sub, lastMs){
+    var ctx={ perDay:substPerDay(st, sub), dayCount:0, firstMs:null };
+    if(lastMs==null) return ctx;
+    var d=new Date(lastMs), y=d.getFullYear(), m=d.getMonth(), dd=d.getDate();
+    DOMAIN.visibleInjLog(st).forEach(function(e){
+      if(!e || e.substance!==sub) return;
+      var t=Date.parse(e.ts || (e.date+"T12:00:00"));
+      if(isNaN(t)) return;
+      var x=new Date(t);
+      if(x.getFullYear()!==y || x.getMonth()!==m || x.getDate()!==dd) return;
+      ctx.dayCount++;
+      if(ctx.firstMs==null || t<ctx.firstMs) ctx.firstMs=t;
+    });
+    return ctx;
+  }
   function lastInjTs(st, substance){
     var best=null, seen={};
     function consider(t){ if(!isNaN(t) && (best===null || t>best)) best=t; }
@@ -5951,11 +6045,15 @@ var UI = (function(){
       extras+='<div class="field" style="max-width:220px;margin:8px auto 0"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="mjEvery" min="0.5" step="0.5" value="'+every+'"></div>';
     } else if(injSeg==="trt"){
       var trtDys=substDays(st,"trt");
-      extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.schedMode"))+'</label><select id="trtMode">'
+      extras+='<div class="grid g2">'
+        +'<div class="field"><label>'+esc(I18N.t("inj.schedMode"))+'</label><select id="trtMode">'
         +'<option value="every"'+(trtDys?"":" selected")+'>'+esc(I18N.t("inj.schedEvery"))+'</option>'
         +'<option value="days"'+(trtDys?" selected":"")+'>'+esc(I18N.t("inj.schedDays"))+'</option>'
-        +'</select></div>';
-      if(trtDys) extras+='<div class="field"><label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("trtDays", trtDys)
+        +'</select></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.perDay"))+'</label>'+perDayHTML("trtPerDay", substPerDay(st,"trt"))+'</div>'
+        +'</div>';
+      if(trtDys) extras+='<p class="tiny muted" style="margin:-4px 0 8px">'+esc(I18N.t("inj.perDayHint"))+'</p>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("trtDays", trtDys)
         +'<button type="button" class="btn ghost sm" id="trtAllDays" style="margin-top:6px">'+esc(I18N.t("inj.schedEveryDay"))+'</button></div>'
         +'<div class="field"><label>'+esc(I18N.t("inj.schedTimes"))+'</label>'+timePickHTML("trtTimes", substTimes(st,"trt"))+'</div>';
       else extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+parseEvery(st.inj.trt.intervalDays,3)+'"></div>';
@@ -6076,7 +6174,7 @@ var UI = (function(){
             +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
           +'</span></div>'
           +(e.dose!=null?'<div class="ihpill">'
-            +dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days, e.times), substColor(st, e.substance),
+            +dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days, e.times, e.perDay), substColor(st, e.substance),
                       DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             +'</div>':'')
           +'<div class="ihmeta">'+esc(where)+'</div>'
@@ -6180,6 +6278,11 @@ var UI = (function(){
     // config inputs
     if($("#mjEvery")) $("#mjEvery").addEventListener("change",function(){ setSubstInterval(st,"mounjaro",parseEvery(this.value,7)); STORE.save(); viewInject(); });
     if($("#trtEvery")) $("#trtEvery").addEventListener("change",function(){ setSubstInterval(st,"trt",parseEvery(this.value,3)); STORE.save(); viewInject(); });
+    if($("#trtPerDay")) $("#trtPerDay").addEventListener("change",function(){
+      setSubstSchedule(st, "trt", parseEvery(st.inj.trt.intervalDays,3), substDays(st,"trt"),
+                       substTimes(st,"trt"), DOMAIN.normPerDay(this.value));
+      STORE.save(); viewInject();
+    });
     if($("#trtMode")) $("#trtMode").addEventListener("change",function(){
       // Switching to weekdays with nothing picked yet seeds today, so the card
       // never sits in a state with a plan that counts down to nothing.
@@ -6281,6 +6384,8 @@ var UI = (function(){
           entry.days=subDays.slice(); delete entry.every;
           if(subTimes) entry.times=subTimes.slice();
         }
+        var subPd=substPerDay(st, sub);
+        if(subPd>1) entry.perDay=subPd;
         // The tracker position derives from jab.history, so logging (and
         // deleting) needs no counter bookkeeping. The FIRST Mounjaro entry of
         // a day — one new dose — is stamped with the planned breakdown so
@@ -6404,8 +6509,9 @@ var UI = (function(){
     // now" highlight is what surfaces it — the two decisions go together, so
     // putting a sort back here would quietly undo the order the user set.
     substRows(st).forEach(function(id){
-      var cd=DOMAIN.doseCountdown(lastInjTs(st,id), substInterval(st,id), Date.now(),
-                                  substDays(st,id), substTimes(st,id));
+      var lastTs=lastInjTs(st,id);
+      var cd=DOMAIN.doseCountdown(lastTs, substInterval(st,id), Date.now(),
+                                  substDays(st,id), substTimes(st,id), substDayCtx(st, id, lastTs));
       var c=substColor(st, id), href=DOMAIN.buildRoute("inject", id);
       // Just the figure, not "next in ..." / "... overdue": the exact moment sits
       // right beside it and the red minus already says which side of due it is.

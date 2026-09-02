@@ -1,6 +1,6 @@
 /* Mounjaro Tracker service worker — offline app shell.
    Bump CACHE on each release so clients pick up the new version. */
-var CACHE = "mj-v164";
+var CACHE = "mj-v165";
 var ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function(e){
