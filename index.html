@@ -683,6 +683,10 @@ var I18N = (function(){
     "inj.pepResume":{pl:"Wznów związek",en:"Resume compound"},
     "inj.archivedTitle":{pl:"Zakończone ({n})",en:"Finished ({n})"},
     "inj.archivedNote":{pl:"Zakończony — historia tylko do odczytu. Wznów, aby znowu zapisywać wkłucia.",en:"Finished — history is read-only. Resume it to log shots again."},
+    "inj.pepDelete":{pl:"Usuń związek",en:"Delete compound"},
+    "inj.pepDeleteFinal":{pl:"Usuń trwale",en:"Delete permanently"},
+    "inj.pepDelConfirm":{pl:"Usunąć „{name}”? Nie ma zapisanych wkłuć, więc z historii nic nie zniknie.",en:"Delete \u201c{name}\u201d? It has no injections on file, so nothing leaves the history."},
+    "inj.pepKeepsShots":{pl:"Wkłucia w historii: {n} — dlatego związek zostaje.",en:"Injections on file: {n} — which is why the compound stays."},
     "inj.pepConfirmDel":{pl:"Usunąć ten związek z listy? Wkłucia zostaną w historii, a związek w podpowiedziach — można go później przywrócić.",en:"Remove this compound from the list? Its injections stay in the history and the compound stays in the suggestions, so you can bring it back later."},
     "inj.pepEditTitle":{pl:"Peptyd",en:"Peptide"},
     "inj.pepEdit":{pl:"Edytuj peptyd",en:"Edit peptide"},
@@ -4721,6 +4725,34 @@ var UI = (function(){
     });
     return out;
   }
+  // Shots on file for a substance — the WHOLE log, not the visible one: a
+  // sandbagged shot is still a shot, and deleting one quietly is the very thing
+  // the delete rule below exists to prevent.
+  function substShotCount(st, sub){
+    return ((st.injLog||[]).filter(function(e){ return e && e.substance===sub; })).length;
+  }
+  // The only way a compound leaves the file, and it takes nothing with it:
+  // deletion is allowed ONLY where there is not one shot on record, so history
+  // can never be destroyed from here. Anything with a shot behind it is finished
+  // and resumed instead. Tirzepatyd is never deletable at all — its record is
+  // wired to st.calc and the optimizer. The gate lives here rather than in the
+  // buttons, so no future caller can walk around it.
+  function canDeletePep(st, id){
+    return !!id && id!=="mounjaro" && !substShotCount(st, id);
+  }
+  function deletePeptide(st, id){
+    if(!canDeletePep(st, id)) return false;
+    var list=(st.inj&&st.inj.peptides)||[], i=-1;
+    for(var k=0;k<list.length;k++) if(list[k] && list[k].id===id){ i=k; break; }
+    if(i<0) return false;
+    list.splice(i,1);
+    // substRows ignores ids it does not know, so this is tidiness rather than
+    // necessity — but a saved order carrying ghosts is a puzzle for the next reader.
+    if(st.inj.order) st.inj.order=st.inj.order.filter(function(x){ return x!==id; });
+    if(pepSel===id) pepSel=null;
+    if(pepEditId===id){ pepEditId=null; pepDraft={}; }
+    return true;
+  }
   // Moving a row writes back the WHOLE visible order, so a stale saved list
   // repairs itself the first time anything is moved.
   function moveSubst(st, id, dir){
@@ -5103,7 +5135,8 @@ var UI = (function(){
       +'</div>'
       +'<div class="row" style="margin-top:6px"><button class="btn" id="pfSave">'+esc(I18N.t("common.save"))+'</button>'
       +'<button class="btn ghost" id="pfCancel">'+esc(I18N.t("common.cancel"))+'</button>'
-      +(isNew?'':'<button class="btn ghost" id="pfDel">'+esc(I18N.t("inj.pepArchive"))+'</button>')
+      +(isNew?'':'<button class="btn ghost" id="pfDel">'
+        +esc(I18N.t(canDeletePep(st, p.id)?"inj.pepDelete":"inj.pepArchive"))+'</button>')
       +'</div></div>';
   }
   function bindPeptides(st){
@@ -5324,12 +5357,29 @@ var UI = (function(){
       p.archived=false;
       STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
     });
+    if($("#pepDrop")) $("#pepDrop").addEventListener("click",function(){
+      var id=selectedSubst(), p=peptideById(st, id); if(!p) return;
+      if(!confirm(I18N.t("inj.pepDelConfirm").replace("{name}", p.name||""))) return;
+      if(!deletePeptide(st, id)) return;
+      STORE.save(); syncInjectRoute(); viewInject();
+    });
     if($("#pfDel")) $("#pfDel").addEventListener("click",function(){
       var p=peptideById(st, pepEditId); if(!p) return;
+      // Nothing on record means nothing to preserve: finishing it would be an
+      // empty gesture, so a compound added by mistake simply goes. One shot
+      // behind it and archiving is the only exit again — history is what
+      // archiving is FOR.
+      if(canDeletePep(st, p.id)){
+        if(!confirm(I18N.t("inj.pepDelConfirm").replace("{name}", p.name||""))) return;
+        deletePeptide(st, p.id);
+        STORE.save(); syncInjectRoute(); viewInject();
+        return;
+      }
       if(!confirm(I18N.t("inj.pepConfirmDel"))) return;
-      // Always archive, never drop. Shots keep their name and colour, and the
-      // compound stays in the picker so re-adding it later resumes the same
-      // record instead of starting a second history under a new id.
+      // With history behind it: archive, never drop. Shots keep their name and
+      // colour, and the compound stays in the picker so re-adding it later
+      // resumes the same record instead of starting a second history under a
+      // new id.
       p.archived=true;
       if(pepSel===p.id) pepSel=null;
       pepEditId=null; pepDraft={}; STORE.save(); syncInjectRoute(); viewInject();
@@ -6173,9 +6223,18 @@ var UI = (function(){
     // and the repair panel stay, the dose form steps out, and one button puts it
     // back on the list.
     if(showForm && subArch){
+      var subShots=substShotCount(st, sub);
       html+='<div class="card"><p class="sub" style="margin:0 0 10px">'+esc(I18N.t("inj.archivedNote"))+'</p>'
         +'<div class="row"><button class="btn" id="pepResume">'+esc(I18N.t("inj.pepResume"))+'</button>'
-        +'<a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a></div></div>';
+        +'<a class="btn ghost" href="#diary">'+icon("diary")+esc(I18N.t("rel.toDiary"))+icon("arrow")+'</a>'
+        +(canDeletePep(st, sub)?'<button class="btn ghost" id="pepDrop">'+esc(I18N.t("inj.pepDeleteFinal"))+'</button>':'')
+        +'</div>'
+        // A button that is simply absent sends the reader hunting for it. The
+        // count says why it is not here, and points at the only way out: the
+        // shots go one by one from the history, or the compound stays.
+        +(subShots?'<p class="tiny muted" style="margin:8px 0 0">'
+          +esc(I18N.t("inj.pepKeepsShots").replace("{n}", String(subShots)))+'</p>':'')
+        +'</div>';
     }
     if(showForm && !subArch){
     html+='<div class="card">';
