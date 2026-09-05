@@ -2210,7 +2210,18 @@ var DOMAIN = (function(){
     var span=(slot!=null) ? (slot-lastMs) : Math.max(0.5, everyDays)*86400000;
     var elapsed=nowMs-lastMs, remainingMs=span-elapsed, abs=Math.abs(remainingMs);
     return { remainingMs:remainingMs, everyDays:span/86400000, elapsed:elapsed,
+             // Two different questions, and they must not share a visual channel.
+             // frac is progress through THIS substance's own interval — right for
+             // a ring standing alone, meaningless between rows, because every row
+             // scales it by its own span: 13 h left of 48 reads further along than
+             // 11 h left of 12.
              frac:Math.max(0,Math.min(1, elapsed/span)),
+             // dayFrac is how much of the last DAY before the shot has run down —
+             // one scale for every substance, so five bars stacked up rank exactly
+             // as their figures do. Past due it comes out over 1 and clamps, so a
+             // full bar needs no special case; further out than a day it sits at 0,
+             // which is not missing data but the honest answer: not today.
+             dayFrac:Math.max(0,Math.min(1, 1-remainingMs/DUE_WINDOW_MS)),
              overdue:remainingMs<0,
              days:Math.floor(abs/86400000),
              hours:Math.floor((abs%86400000)/3600000),
@@ -2223,6 +2234,10 @@ var DOMAIN = (function(){
   // days overdue is still one to take now, and its remainingMs is negative.
   var DUE_SOON_MS = 3600000;
   function dueNow(cd){ return !!cd && cd.remainingMs <= DUE_SOON_MS; }
+  // The span every progress bar is drawn against — one day, the same for all of
+  // them. Kept beside dueNow because the two answer the same question at
+  // different resolutions: "is it time" and "how close".
+  var DUE_WINDOW_MS = 86400000;
 
   // Hash route -> {tab, sub}. The sub-state segment is what lets a dashboard
   // tile point at one substance ("#inject/trt") instead of just the tab. Pure
@@ -2299,7 +2314,7 @@ var DOMAIN = (function(){
     unitsForDose:unitsForDose, vialAsOf:vialAsOf, vialSpans:vialSpans,
     normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     normTimes:normTimes, timesKey:timesKey, nextSlotMs:nextSlotMs,
-    DUE_SOON_MS:DUE_SOON_MS, dueNow:dueNow,
+    DUE_SOON_MS:DUE_SOON_MS, DUE_WINDOW_MS:DUE_WINDOW_MS, dueNow:dueNow,
     PER_DAY_MAX:PER_DAY_MAX, normPerDay:normPerDay, nextRollingMs:nextRollingMs,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
@@ -4925,7 +4940,7 @@ var UI = (function(){
       +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)
       +';--ct:'+substColor(st,sub)+PAL.tintA+'">'
       +head
-      +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
+      +'<div class="wbar flush"><span style="width:'+Math.round((cd?cd.dayFrac:0)*100)+'%"></span></div>'
       +'</div>';
   }
   // One row of the compound picker. `dim` marks a compound already on the list:
@@ -6659,7 +6674,7 @@ var UI = (function(){
       // Just the figure, not "next in ..." / "... overdue": the exact moment sits
       // right beside it and the red minus already says which side of due it is.
       // The words were costing more width than the substance name had.
-      if(cd) html+=rhythmRow(substLabel(st,id), c, cd.overdue?1:cd.frac,
+      if(cd) html+=rhythmRow(substLabel(st,id), c, cd.dayFrac,
                              (cd.overdue?"\u2212":"")+fmtCountdown(cd),
                              fmtNextShot(cd.nextMs), href, cd.overdue, DOMAIN.dueNow(cd));
       else html+=rhythmRow(substLabel(st,id), c, 0, I18N.t("inj.pepNoShots"), null, href, false, false);

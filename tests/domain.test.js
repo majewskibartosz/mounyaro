@@ -503,6 +503,33 @@ test("doseCountdown: whole-day intervals still behave as before", function () {
   assert.strictEqual(cd.nextMs, SAT_8AM + 7 * D);
 });
 
+test("dayFrac: the bar runs on one shared day, whatever the interval is", function () {
+  // half a day out is half a bar, whatever the rhythm behind it
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 72 * H).dayFrac, 0.5);
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 1, SAT_8AM + 12 * H).dayFrac, 0.5);
+  // exactly a day out is an empty bar, and further out stays empty rather than
+  // going negative — "not today" is an answer, not missing data
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 60 * H).dayFrac, 0);
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM).dayFrac, 0);
+  // due, and past due: full, with no special case for it in the caller
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 84 * H).dayFrac, 1);
+  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 200 * H).dayFrac, 1);
+});
+
+test("dayFrac: the reported inversion is gone — 13 h can no longer outrun 11 h", function () {
+  // The two rows off the screenshot. Thymosin Alpha-1: every 2 days, 13 h to go.
+  // KPV: twice a day (a 12 h span), 11 h to go. Sooner has to draw shorter.
+  var ta1 = DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 35 * H);
+  var kpv = DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM + 1 * H);
+  assert.strictEqual(ta1.hours, 13);
+  assert.strictEqual(kpv.hours, 11);
+  assert.ok(ta1.dayFrac < kpv.dayFrac, "13 h must draw shorter than 11 h");
+  // and frac, untouched, still ranks them the other way round — which is exactly
+  // why the bar stopped being drawn from it
+  assert.ok(ta1.frac > kpv.frac);
+  assert.strictEqual(ta1.frac, 35 / 48);
+});
+
 test("doseCountdown: no last shot, or no interval, gives null", function () {
   assert.strictEqual(DOMAIN.doseCountdown(null, 3.5, SAT_8AM), null);
   assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 0, SAT_8AM), null);
