@@ -617,6 +617,7 @@ var I18N = (function(){
     "inj.schedEveryDay":{pl:"Codziennie",en:"Every day"},
     "inj.perDay":{pl:"Razy dziennie",en:"Times a day"},
     "inj.perDayHint":{pl:"Wpisane pory dnia maj\u0105 pierwsze\u0144stwo przed t\u0105 liczb\u0105.",en:"Times of day, when listed, take precedence over this number."},
+    "inj.schedWholeDays":{pl:"Z podanymi porami dnia odst\u0119p liczy si\u0119 w pe\u0142nych dniach.",en:"With times of day set, the gap counts in whole days."},
     "inj.backfillTitle":{pl:"Uzupełnij dawkowanie w historii",en:"Backfill dosing in history"},
     "inj.backfillSub":{pl:"Starsze wpisy nie mają zapisanego „co ile dni”, więc pigułka pokazuje samą dawkę. Oznacz zakres dat właściwym interwałem, aby historia odzwierciedlała realne dawkowanie (np. 25 mg/2d) i licznik d liczył się od faktycznej zmiany.",en:"Older entries carry no “every how many days”, so the pill shows the bare dose. Stamp a date range with the right interval so history reflects the real dosing (e.g. 25 mg/2d) and the d counter starts at the actual change."},
     "inj.backfillFrom":{pl:"Od",en:"From"},
@@ -1860,20 +1861,41 @@ var DOMAIN = (function(){
   // Tuesday noon is nearer Wednesday than Monday, so it settles Wednesday and
   // the next reminder falls on Friday. Two doses in one day would be the worse
   // mistake of the two.
-  function nextSlotMs(lastMs, days, times){
+  // The named hours of one calendar day, appended as timestamps. Built from the
+  // date parts rather than by adding milliseconds, so a DST boundary moves the
+  // span and leaves 20:00 at 20:00.
+  function slotsOnDay(out, day, ts){
+    for(var i=0;i<ts.length;i++){
+      var hm=ts[i].split(":");
+      out.push(new Date(day.getFullYear(), day.getMonth(), day.getDate(),
+                        Number(hm[0]), Number(hm[1]), 0, 0).getTime());
+    }
+  }
+  function nextSlotMs(lastMs, days, times, everyDays, firstMs){
     var n=normDays(days), ts=normTimes(times);
-    if(lastMs==null || !n || !ts) return null;
-    // A weekday plan can leave a seven-day hole, so look a clear week either
-    // side. Slots come out ascending: k climbs and normTimes is already sorted.
-    var from=new Date(lastMs), slots=[];
-    for(var k=-8;k<=9;k++){
-      var day=new Date(from.getFullYear(), from.getMonth(), from.getDate()+k);
-      if(n.indexOf(((day.getDay()+6)%7)+1)<0) continue;
-      for(var i=0;i<ts.length;i++){
-        var hm=ts[i].split(":");
-        slots.push(new Date(day.getFullYear(), day.getMonth(), day.getDate(),
-                            Number(hm[0]), Number(hm[1]), 0, 0).getTime());
+    if(lastMs==null || !ts) return null;
+    var slots=[];
+    if(n){
+      // A weekday plan can leave a seven-day hole, so look a clear week either
+      // side. Slots come out ascending: k climbs and normTimes is already sorted.
+      var from=new Date(lastMs);
+      for(var k=-8;k<=9;k++){
+        var day=new Date(from.getFullYear(), from.getMonth(), from.getDate()+k);
+        if(n.indexOf(((day.getDay()+6)%7)+1)<0) continue;
+        slotsOnDay(slots, day, ts);
       }
+    } else {
+      // A fixed gap names its hours just as well: the injection day repeats
+      // every X days from the day this one began — the same anchor nextRollingMs
+      // counts from — and the hours say when on it. An hour pins a dose to the
+      // clock, so a half-day gap cannot be honoured and counts as a whole day;
+      // a genuine 3.5-day rhythm at a set hour is a weekday plan (Mon + Thu).
+      var ev=Number(everyDays);
+      if(!isFinite(ev) || ev<=0) return null;
+      var step=Math.max(1, Math.round(ev));
+      var base=new Date(firstMs!=null?firstMs:lastMs);
+      for(var q=-2;q<=2;q++)
+        slotsOnDay(slots, new Date(base.getFullYear(), base.getMonth(), base.getDate()+q*step), ts);
     }
     if(slots.length<2) return null;
     // Ties go to the earlier slot, so a genuinely ambiguous shot never swallows
@@ -1928,9 +1950,12 @@ var DOMAIN = (function(){
     // stay put. Written only when it is not the ordinary 1, so every cadence
     // stamped before this existed keys exactly as it did.
     var pd=normPerDay(o.perDay), px=(pd>1?"x"+pd:"");
-    var dk=daysKey(o.days);
-    if(dk){ var tk=timesKey(o.times); return "d:"+dk+(tk?"@"+tk:"")+px; }
-    return o.every!=null ? "e:"+o.every+px : null;
+    var dk=daysKey(o.days), tk=timesKey(o.times);
+    if(dk) return "d:"+dk+(tk?"@"+tk:"")+px;
+    // Hours belong to a fixed gap too, and adding them ("every 2 days" ->
+    // "every 2 days at 20:00") is a change of regimen. Written only when there
+    // are any, so a cadence stamped before this keys exactly as it did.
+    return o.every!=null ? "e:"+o.every+(tk?"@"+tk:"")+px : null;
   }
   // Days from `fromDow` to the next scheduled weekday, always 1..7 — so a shot
   // taken on a scheduled day points at the NEXT one, and a single scheduled day
@@ -2169,7 +2194,7 @@ var DOMAIN = (function(){
     // is a wall-clock moment, not an offset, and a late shot cannot drag the
     // whole rhythm along behind it. Only where no hours are named does the
     // count of doses per day get to decide — never both at once.
-    var slot=nextSlotMs(lastMs, days, times);
+    var slot=nextSlotMs(lastMs, days, times, everyDays, perCtx && perCtx.firstMs);
     if(slot==null) slot=nextRollingMs(lastMs, {days:days, every:everyDays}, perCtx);
     if(slot==null){
       // On a weekday plan the gap is whatever the calendar says from the day of
@@ -4832,12 +4857,15 @@ var UI = (function(){
     }
     var subDys=substDays(st, sub), subTms=substTimes(st, sub), subPd=substPerDay(st, sub);
     var pdTxt=(subPd>1 && !subTms)?" "+subPd+"\u00d7":"";
-    if(subDys) bits.push(esc(fmtDows(subDys)+(subTms?" "+fmtTimes(subTms):pdTxt)));
+    // Named hours say how many a day better than the count does, so they take
+    // its place — in either rhythm, since either one picks the days out.
+    var rhTxt=subTms?" "+fmtTimes(subTms):pdTxt;
+    if(subDys) bits.push(esc(fmtDows(subDys)+rhTxt));
     // A one-day gap is simply "daily" — the same word the weekday plan uses for
     // all seven, and short enough that "2x" beside it no longer wraps the line.
-    else if(ev===1) bits.push(esc(I18N.t("inj.schedAllDays")+pdTxt));
+    else if(ev===1) bits.push(esc(I18N.t("inj.schedAllDays")+rhTxt));
     else if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
-      +I18N.t(ev%1?"inj.dayGen":"inj.daysShort")+pdTxt));
+      +I18N.t(ev%1?"inj.dayGen":"inj.daysShort")+rhTxt));
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
@@ -5053,8 +5081,13 @@ var UI = (function(){
         +'<div class="field"><label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("pfDays", pfDays)
           +'<button type="button" class="btn ghost sm" id="pfAllDays" style="margin-top:6px">'
           +esc(I18N.t("inj.schedEveryDay"))+'</button></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.schedTimes"))+'</label>'+timePickHTML("pfTimes", pfTimes)+'</div>'
         +'</div>':'')
+      // Outside both boxes: the hours say when on the days, and both rhythms
+      // pick days out — "every 2 days at 20:00" reads as well as "Tue/Thu at
+      // 20:00". Kept here, above the count, so the hint below it is about a
+      // field that is actually on screen.
+      +(daysOK?'<div class="field"><label>'+esc(I18N.t("inj.schedTimes"))+'</label>'
+        +timePickHTML("pfTimes", pfTimes)+'</div>':'')
       // Under the rhythm, because it modifies whichever one is chosen: how many
       // doses land on each of the days that rhythm already picked out.
       +(daysOK?'<div class="field"><label>'+esc(I18N.t("inj.perDay"))+'</label>'+perDayHTML("pfPerDay", pfPerDay)
@@ -5205,11 +5238,12 @@ var UI = (function(){
                    unit:$("#pfUnit").value||"mcg",
                    intervalDays:parseEvery($("#pfEvery").value,1),   // routed below for Tirzepatyd
                    days:($("#pfMode")&&$("#pfMode").value==="days")?readDowPick("pfDays"):null,
-                   times:($("#pfMode")&&$("#pfMode").value==="days")?readTimePick("pfTimes"):null,
+                   times:readTimePick("pfTimes"),
                    perDay:$("#pfPerDay")?DOMAIN.normPerDay($("#pfPerDay").value):1,
                    // a cycle without a start date is no cycle at all (cycleProgress agrees)
                    cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
                    cycleStart:(cycOn&&cs)?cs:null };
+      var gapRounded=false;
       if(isNew){
         // Looks like something already known? Offer to resume that record rather
         // than start a second history for the same compound. The bar is a strong
@@ -5231,9 +5265,20 @@ var UI = (function(){
         // "add" is reachable with any row open now, so land on the new peptide
         // rather than leaving whichever substance was open still selected
         st.inj.peptides.push(np); injSeg="peptide"; pepSel=np.id; p=np;
+        // Nothing to freeze on a record with no history, but the rhythm still
+        // goes through the one gate, so a gap that names hours lands whole.
+        gapRounded=setSubstSchedule(st, np.id, fields.intervalDays, fields.days,
+                                    fields.times, fields.perDay)!==fields.intervalDays;
       } else {
+        // Before the assignment, never after: the freeze compares what the
+        // substance is set to against what is wanted, and a record already
+        // holding the new rhythm has nothing left to compare — the shots taken
+        // under the old one would stay unstamped and drift with it.
+        var eff=setSubstSchedule(st, p.id, fields.intervalDays, fields.days,
+                                 fields.times, fields.perDay);
+        gapRounded=(eff!==fields.intervalDays);
+        fields.intervalDays=eff;
         Object.assign(p, fields);
-        setSubstSchedule(st, p.id, fields.intervalDays, fields.days, fields.times, fields.perDay);
       }
       // The vial log is reachable only from a deliberately opened editor. Nothing
       // else in this form — days, times, dose, name, colour — has a path to it,
@@ -5268,7 +5313,11 @@ var UI = (function(){
           }
         }
       }
-      pepEditId=null; pepDraft={}; STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
+      // A rounded gap is worth more than "Saved": the field is about to show a
+      // number the user did not type, and this is the only place that says why.
+      pepEditId=null; pepDraft={}; STORE.save();
+      toast(I18N.t(gapRounded ? "inj.schedWholeDays" : "common.saved"));
+      syncInjectRoute(); viewInject();
     });
     if($("#pepResume")) $("#pepResume").addEventListener("click",function(){
       var p=peptideById(st, selectedSubst()); if(!p) return;
@@ -5311,10 +5360,11 @@ var UI = (function(){
     if(sub==="trt") return DOMAIN.normDays(st.inj.trt.days);
     return null;
   }
-  // Hours only mean something on top of a weekday plan — they say WHEN on the
-  // days the plan already picked, so without days there is nothing to pin them to.
+  // Hours say WHEN on the days the rhythm already picked out — and both rhythms
+  // pick days out, so "every 2 days at 20:00" is as legitimate as "Tue/Thu at
+  // 20:00". Only Tirzepatyd has nowhere to keep them: it rides st.calc.
   function substTimes(st, sub){
-    if(!substDays(st, sub)) return null;
+    if(!canPickDays(st, sub)) return null;
     var p=peptideById(st, sub);
     if(p) return p.id==="mounjaro" ? null : DOMAIN.normTimes(p.times);
     if(sub==="trt") return DOMAIN.normTimes(st.inj.trt.times);
@@ -5344,8 +5394,9 @@ var UI = (function(){
     (st.injLog||[]).forEach(function(e){
       if(!e || e.substance!==sub) return;
       if(e.every!=null || DOMAIN.normDays(e.days)) return;   // already speaks for itself
-      if(dys){ e.days=dys.slice(); if(tms) e.times=tms.slice(); }
+      if(dys) e.days=dys.slice();
       else e.every=ev;
+      if(tms) e.times=tms.slice();
       if(pd>1) e.perDay=pd;
       n++;
     });
@@ -5363,8 +5414,18 @@ var UI = (function(){
   // on a weekday plan and the number becomes a leftover the plan overrides;
   // null days puts it back on a fixed gap. Freezes first, and only on a real
   // change — re-saving the same rhythm must not stamp anything.
+  // `times` left out entirely means "leave the hours as they are" (so editing
+  // the number of days cannot silently drop them); an explicit null clears them.
   function setSubstSchedule(st, sub, v, days, times, perDay){
-    var want=DOMAIN.normDays(days), wantT=want?DOMAIN.normTimes(times):null;
+    var want=DOMAIN.normDays(days);
+    var wantT=(times===undefined)?substTimes(st, sub):DOMAIN.normTimes(times);
+    // An hour pins the dose to the clock, so a gap that names hours counts in
+    // whole days. Rounded at the one gate every cadence change passes through,
+    // and said out loud — a typed 3,5 must never quietly become something else.
+    if(v!=null && !want && wantT){
+      var whole=Math.max(1, Math.round(v));
+      if(whole!==v){ v=whole; toast(I18N.t("inj.schedWholeDays")); }
+    }
     var wantP=(perDay==null)?substPerDay(st, sub):DOMAIN.normPerDay(perDay);
     var wantKey=DOMAIN.cadenceKey({ days:want, times:wantT, every:v, perDay:wantP });
     var haveKey=DOMAIN.cadenceKey({ days:substDays(st, sub), times:substTimes(st, sub),
@@ -5376,12 +5437,13 @@ var UI = (function(){
       else if(sub==="trt") st.inj.trt.intervalDays=v;
       else if(sub==="mounjaro") st.calc.intervalDays=v;
     }
-    if(!canPickDays(st, sub)) return;
+    if(!canPickDays(st, sub)) return v;
     var tgt = p || (sub==="trt" ? st.inj.trt : null);
-    if(!tgt) return;
+    if(!tgt) return v;
     tgt.days=want?want.slice():null;
     tgt.times=wantT?wantT.slice():null;
     tgt.perDay=wantP;
+    return v;                       // the gap as actually stored, rounding included
   }
   // ---- reconstitution: vials, concentration and units to draw ----
   function pepVials(st, p){ return (p && p.vials) || []; }
@@ -5536,7 +5598,7 @@ var UI = (function(){
     var n=DOMAIN.normPerDay(perDay), px=(n>1 && !t)?" "+n+"\u00d7":"";
     if(d && t) return dose+" "+unit+" "+(DOMAIN.normDays(days).length===7?"":d+" ")+t;
     if(d) return dose+" "+unit+" "+d+px;
-    return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"")+px;
+    return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"")+(t?" "+t:"")+px;
   }
   function dosePill(label, txt, color, week, doseWeek){
     return '<span class="pill dosepill" style="background:'+color+PAL.tintA+';color:'+color+'">'+(label?label+' ':'')+esc(txt)
@@ -5599,7 +5661,10 @@ var UI = (function(){
     var ld=DOMAIN.lastDoseAsOf(st, sub, todayISOstr); if(!ld) return "";
     var w=DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,sub), todayISOstr);
     var dys=ld.days || substDays(st, sub);
-    var tms=ld.days ? ld.times : substTimes(st, sub);
+    // An entry carrying a cadence of its own speaks for itself, hours included:
+    // a shot stamped "every 2 days" and nothing else had no hour, and must not
+    // borrow today's.
+    var tms=(ld.days || ld.every!=null) ? ld.times : substTimes(st, sub);
     var pdy=(ld.perDay!=null)?ld.perDay:substPerDay(st, sub);
     var ev=(ld.every!=null)?ld.every:substInterval(st, sub);
     return dosePill("", doseTxt(ld.dose, ld.unit, ev, dys, tms, pdy), substColor(st, sub), w, doseWeekAsOf(st,sub,todayISOstr));
@@ -6071,11 +6136,12 @@ var UI = (function(){
         +'</select></div>'
         +'<div class="field"><label>'+esc(I18N.t("inj.perDay"))+'</label>'+perDayHTML("trtPerDay", substPerDay(st,"trt"))+'</div>'
         +'</div>';
-      if(trtDys) extras+='<p class="tiny muted" style="margin:-4px 0 8px">'+esc(I18N.t("inj.perDayHint"))+'</p>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("trtDays", trtDys)
-        +'<button type="button" class="btn ghost sm" id="trtAllDays" style="margin-top:6px">'+esc(I18N.t("inj.schedEveryDay"))+'</button></div>'
-        +'<div class="field"><label>'+esc(I18N.t("inj.schedTimes"))+'</label>'+timePickHTML("trtTimes", substTimes(st,"trt"))+'</div>';
+      extras+='<p class="tiny muted" style="margin:-4px 0 8px">'+esc(I18N.t("inj.perDayHint"))+'</p>';
+      if(trtDys) extras+='<div class="field"><label>'+esc(I18N.t("inj.schedPick"))+'</label>'+dowPickHTML("trtDays", trtDys)
+        +'<button type="button" class="btn ghost sm" id="trtAllDays" style="margin-top:6px">'+esc(I18N.t("inj.schedEveryDay"))+'</button></div>';
       else extras+='<div class="field" style="max-width:220px"><label>'+esc(I18N.t("inj.intervalSet"))+'</label><input type="number" inputmode="decimal" id="trtEvery" min="0.5" step="0.5" value="'+parseEvery(st.inj.trt.intervalDays,3)+'"></div>';
+      // The hours ride either rhythm, so the field stands outside the branch.
+      extras+='<div class="field"><label>'+esc(I18N.t("inj.schedTimes"))+'</label>'+timePickHTML("trtTimes", substTimes(st,"trt"))+'</div>';
     }
     // retro-stamp a date range with its real interval: a shot logged before
     // cadences were stamped carries none of its own and shows a bare dose, and
@@ -6399,10 +6465,9 @@ var UI = (function(){
         // weekday plan the days ARE the cadence, and a single gap would be a
         // fiction (Tue->Thu is two days, Thu->Tue is five).
         var subDays=substDays(st, sub), subTimes=substTimes(st, sub);
-        if(subDays){
-          entry.days=subDays.slice(); delete entry.every;
-          if(subTimes) entry.times=subTimes.slice();
-        }
+        if(subDays){ entry.days=subDays.slice(); delete entry.every; }
+        // The hours ride either rhythm, so they are stamped either way.
+        if(subTimes) entry.times=subTimes.slice();
         var subPd=substPerDay(st, sub);
         if(subPd>1) entry.perDay=subPd;
         // The tracker position derives from jab.history, so logging (and

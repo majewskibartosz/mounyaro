@@ -854,8 +854,11 @@ test("cadenceKey: the hours are part of the regimen", function () {
   // twice a day is not the same regimen as once a day
   assert.notStrictEqual(DOMAIN.cadenceKey({ days: [1], times: ["08:00", "20:00"] }),
                         DOMAIN.cadenceKey({ days: [1], times: ["08:00"] }));
-  // hours without days are not a plan, so they do not enter the key
-  assert.strictEqual(DOMAIN.cadenceKey({ every: 2, times: ["08:00"] }), "e:2");
+  // a fixed gap names its hours too, and adding them is a change of regimen
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 2, times: ["08:00"] }), "e:2@08:00");
+  // while a gap with no hours keys exactly as it always did, so nothing already
+  // stamped re-keys and no history is re-stamped for it
+  assert.strictEqual(DOMAIN.cadenceKey({ every: 2 }), "e:2");
 });
 
 test("nextSlotMs: twice a day lands on the evening, then on tomorrow morning", function () {
@@ -936,8 +939,56 @@ test("doseCountdown: hours pin the next shot to the clock, not to an offset", fu
   assert.strictEqual(cd2.nextMs, new Date(2026, 8, 8, 8, 0, 0).getTime());
   assert.strictEqual(cd2.everyDays, 0.5);
 
-  // hours with no weekday plan fall back to the plain interval
-  assert.strictEqual(DOMAIN.doseCountdown(late, 3, late, null, T).everyDays, 3);
+  // a fixed gap honours the hours as readily: the same Monday morning shot on
+  // "every 3 days at 08:00 and 20:00" still points at 20:00 that evening
+  assert.strictEqual(DOMAIN.doseCountdown(late, 3, late, null, T).nextMs,
+                     new Date(2026, 8, 7, 20, 0, 0).getTime());
+  // with no hours at all it is the plain interval again
+  assert.strictEqual(DOMAIN.doseCountdown(late, 3, late, null, null).everyDays, 3);
+});
+
+test("nextSlotMs: a fixed gap names its hours too", function () {
+  // every 2 days at 20:00, taken three minutes late: Monday -> Wednesday 20:00.
+  // Being late must not drag the rhythm three minutes along with it.
+  var mon = new Date(2026, 8, 7, 20, 3, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(mon, null, ["20:00"], 2),
+                     new Date(2026, 8, 9, 20, 0, 0).getTime());
+  // daily at 09:00 and 21:00 — "every 12 h", said in hours instead of a count
+  var morning = new Date(2026, 8, 7, 9, 5, 0).getTime();
+  var evening = new Date(2026, 8, 7, 21, 5, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(morning, null, ["09:00", "21:00"], 1),
+                     new Date(2026, 8, 7, 21, 0, 0).getTime());
+  assert.strictEqual(DOMAIN.nextSlotMs(evening, null, ["09:00", "21:00"], 1),
+                     new Date(2026, 8, 8, 9, 0, 0).getTime());
+  // every 2 days, twice a day: the day's last dose steps two days on, to the
+  // first hour — counted from where the injection day began, not from the dose
+  assert.strictEqual(DOMAIN.nextSlotMs(evening, null, ["09:00", "21:00"], 2, morning),
+                     new Date(2026, 8, 9, 9, 0, 0).getTime());
+  // an hour cannot be honoured half a day at a time, so the gap counts in whole
+  // days: 3.5 is four days on, not three days and twelve hours
+  assert.strictEqual(DOMAIN.nextSlotMs(mon, null, ["20:00"], 3.5),
+                     new Date(2026, 8, 11, 20, 0, 0).getTime());
+  // a weekday plan still wins outright over the gap
+  assert.strictEqual(DOMAIN.nextSlotMs(mon, [1, 4], ["20:00"], 2),
+                     new Date(2026, 8, 10, 20, 0, 0).getTime());
+  // and neither half alone is a slot plan
+  assert.strictEqual(DOMAIN.nextSlotMs(mon, null, null, 2), null);
+  assert.strictEqual(DOMAIN.nextSlotMs(mon, null, ["20:00"], null), null);
+});
+
+test("doseCountdown: a fixed gap counts down to the named hour", function () {
+  var shot = new Date(2026, 8, 7, 20, 3, 0).getTime();          // Mon 20:03
+  var ctx = { perDay: 1, dayCount: 1, firstMs: shot };
+  var cd = DOMAIN.doseCountdown(shot, 2, new Date(2026, 8, 9, 19, 30, 0).getTime(),
+                                null, ["20:00"], ctx);
+  assert.strictEqual(cd.nextMs, new Date(2026, 8, 9, 20, 0, 0).getTime());
+  assert.strictEqual(cd.overdue, false);
+  assert.strictEqual(DOMAIN.dueNow(cd), true);                  // half an hour out is "now"
+  // the hours win over the plain count, here as on a weekday plan: twice a day
+  // would have said "twelve hours from the shot"
+  var cd2 = DOMAIN.doseCountdown(shot, 2, shot, null, ["20:00"],
+                                 { perDay: 2, dayCount: 1, firstMs: shot });
+  assert.strictEqual(cd2.nextMs, new Date(2026, 8, 9, 20, 0, 0).getTime());
 });
 
 test("doseStreakAsOf: dropping from twice a day to once starts a new period", function () {
