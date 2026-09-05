@@ -1,6 +1,6 @@
 /* Mounjaro Tracker service worker — offline app shell.
    Bump CACHE on each release so clients pick up the new version. */
-var CACHE = "mj-v172";
+var CACHE = "mj-v173";
 var ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function(e){
@@ -14,6 +14,15 @@ self.addEventListener("activate", function(e){
       return Promise.all(keys.map(function(k){ if(k!==CACHE) return caches.delete(k); }));
     }).then(function(){ return self.clients.claim(); })
   );
+});
+
+/* The page asks two things of the worker: which build it is serving, so the
+   footer can say whether the shell on screen is the current one, and — when a
+   new worker installed but never took over — to step in now. */
+self.addEventListener("message", function(e){
+  var d = e.data || {};
+  if(d.type === "SKIP_WAITING"){ self.skipWaiting(); return; }
+  if(d.type === "VERSION" && e.ports && e.ports[0]) e.ports[0].postMessage({ version: CACHE });
 });
 
 self.addEventListener("fetch", function(e){

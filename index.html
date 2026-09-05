@@ -513,6 +513,10 @@
 
 <script>
 "use strict";
+/* Which build this page is. Kept in step with CACHE in sw.js on every release
+   and shown in the footer, so "am I looking at the new version?" is answered by
+   reading it rather than by comparing what moved on the screen. */
+var BUILD = "mj-v173";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -1208,7 +1212,9 @@ var I18N = (function(){
                    en:"⚠ This browser is blocking storage (e.g. private mode). Data won't persist after closing — use Export."},
 
     "footer.disclaimer":{pl:"To narzędzie edukacyjne, nie porada medyczna. Zawsze konsultuj dawkowanie z lekarzem lub farmaceutą. Darmowe, bez reklam, dla społeczności ❤",
-                         en:"Educational tool, not medical advice. Always confirm dosing with your doctor or pharmacist. Free, ad-free, for the community ❤"}
+                         en:"Educational tool, not medical advice. Always confirm dosing with your doctor or pharmacist. Free, ad-free, for the community ❤"},
+    "footer.version":{pl:"wersja {v}",en:"version {v}"},
+    "footer.update":{pl:"Nowa wersja gotowa — odśwież",en:"A new version is ready — refresh"}
   };
   var lang = "pl";
   function setLang(l){ lang = (l==="en")?"en":"pl"; }
@@ -7560,8 +7566,31 @@ var UI = (function(){
   }
   function applyStatic(){
     $all("[data-i]").forEach(function(n){ n.textContent=I18N.t(n.getAttribute("data-i")); });
-    $("#footer").textContent=I18N.t("footer.disclaimer");
+    renderFooter();
     $all("#langSwitch button").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-lang")===I18N.lang); });
+  }
+  // The version the service worker reports, once it is AHEAD of this page —
+  // i.e. the page is running an old shell. Null the rest of the time, including
+  // when the worker is the older of the two: that one sorts itself out on its
+  // own and telling the user to refresh would be a lie.
+  var swAhead=null;
+  function buildNo(v){ var m=/v(\d+)$/.exec(String(v||"")); return m?Number(m[1]):null; }
+  function onSwVersion(v){
+    var a=buildNo(v), b=buildNo(BUILD);
+    var next=(a!=null && b!=null && a>b) ? v : null;
+    if(next===swAhead) return;           // redraw on a CHANGE, either way: a
+    swAhead=next; renderFooter();        // prompt that cannot clear is a lie too
+  }
+  function renderFooter(){
+    var f=$("#footer");
+    if(!f) return;
+    f.innerHTML='<div>'+esc(I18N.t("footer.disclaimer"))+'</div>'
+      +'<div style="margin-top:8px">'
+      +(swAhead
+        ? '<button type="button" class="btn ghost sm" id="swRefresh">'+esc(I18N.t("footer.update"))+'</button>'
+        : '<span style="opacity:.6">'+esc(I18N.t("footer.version").replace("{v}", BUILD))+'</span>')
+      +'</div>';
+    if($("#swRefresh")) $("#swRefresh").addEventListener("click",function(){ location.reload(); });
   }
   var linkBannerOn=false;
   function updateBanner(){
@@ -7703,7 +7732,7 @@ var UI = (function(){
       }
     });
   }
-  return { init:init };
+  return { init:init, onSwVersion:onSwVersion };
 })();
 
 /* ===== bootstrap ===== */
@@ -7723,10 +7752,33 @@ if("serviceWorker" in navigator && location.protocol.indexOf("http")===0){
       if(__reloading) return; __reloading=true; window.location.reload();
     });
   }
+  // What build is actually serving this page? Only the worker knows, so ask it
+  // and let the footer say so. A worker AHEAD of this page means the shell on
+  // screen is stale — which otherwise shows up as "I refreshed and nothing
+  // changed", with nothing on screen to explain it.
+  function askVersion(){
+    var c=navigator.serviceWorker.controller;
+    if(!c || !window.MessageChannel) return;
+    var ch=new MessageChannel();
+    ch.port1.onmessage=function(ev){
+      if(ev.data && ev.data.version) UI.onSwVersion(ev.data.version);
+    };
+    try{ c.postMessage({type:"VERSION"}, [ch.port2]); }catch(e){}
+  }
   window.addEventListener("load",function(){
     navigator.serviceWorker.register("sw.js").then(function(reg){
+      // A worker that installed but never took over leaves the page on the old
+      // shell for good. skipWaiting() at install usually prevents that; this
+      // catches the times it did not.
+      function nudge(){ if(reg.waiting) reg.waiting.postMessage({type:"SKIP_WAITING"}); }
+      nudge();
+      reg.addEventListener("updatefound",function(){
+        var w=reg.installing;
+        if(w) w.addEventListener("statechange",function(){ if(w.state==="installed") nudge(); });
+      });
+      askVersion();
       // Proactively look for a new deploy: on focus/return to the tab and hourly.
-      function checkUpdate(){ if(reg && reg.update) reg.update()["catch"](function(){}); }
+      function checkUpdate(){ if(reg && reg.update) reg.update()["catch"](function(){}); nudge(); askVersion(); }
       window.addEventListener("focus",checkUpdate);
       document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") checkUpdate(); });
       setInterval(checkUpdate, 60*60*1000);
