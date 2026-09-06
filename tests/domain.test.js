@@ -503,31 +503,40 @@ test("doseCountdown: whole-day intervals still behave as before", function () {
   assert.strictEqual(cd.nextMs, SAT_8AM + 7 * D);
 });
 
-test("dayFrac: the bar runs on one shared day, whatever the interval is", function () {
-  // half a day out is half a bar, whatever the rhythm behind it
-  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 72 * H).dayFrac, 0.5);
-  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 1, SAT_8AM + 12 * H).dayFrac, 0.5);
-  // exactly a day out is an empty bar, and further out stays empty rather than
-  // going negative — "not today" is an answer, not missing data
-  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 60 * H).dayFrac, 0);
-  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM).dayFrac, 0);
-  // due, and past due: full, with no special case for it in the caller
-  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 84 * H).dayFrac, 1);
-  assert.strictEqual(DOMAIN.doseCountdown(SAT_8AM, 3.5, SAT_8AM + 200 * H).dayFrac, 1);
+test("dueWithinDay / dayMark: the day is marked on the bar, not measured by it", function () {
+  // every 2 days: 20 h out is today's business, 30 h out is not
+  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 28 * H)), true);
+  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 18 * H)), false);
+  // past due counts as today too — it is certainly not tomorrow's problem
+  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 60 * H)), true);
+  // twice a day is ALWAYS inside a day of its next dose, so the mark would be lit
+  // permanently and say nothing: it gets none, and NOW carries the signal instead
+  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM + 11 * H)), false);
+  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM)), null);
+  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 1, SAT_8AM)), null);
+  // and where the cycle is longer than a day, the mark sits exactly one day short
+  // of the end of the track
+  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM)), 0.5);
+  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 4, SAT_8AM)), 0.75);
+  assert.strictEqual(DOMAIN.dayMark(null), null);
 });
 
-test("dayFrac: the reported inversion is gone — 13 h can no longer outrun 11 h", function () {
-  // The two rows off the screenshot. Thymosin Alpha-1: every 2 days, 13 h to go.
-  // KPV: twice a day (a 12 h span), 11 h to go. Sooner has to draw shorter.
+test("frac: the wave runs its own cycle, which is why the mark carries the day", function () {
+  // The two rows off the report. Thymosin Alpha-1: every 2 days, 13 h to go.
+  // KPV: twice a day (a 12 h span), 11 h to go.
   var ta1 = DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 35 * H);
   var kpv = DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM + 1 * H);
   assert.strictEqual(ta1.hours, 13);
   assert.strictEqual(kpv.hours, 11);
-  assert.ok(ta1.dayFrac < kpv.dayFrac, "13 h must draw shorter than 11 h");
-  // and frac, untouched, still ranks them the other way round — which is exactly
-  // why the bar stopped being drawn from it
-  assert.ok(ta1.frac > kpv.frac);
+  // Deliberately kept: length is progress through one's own rhythm, so the longer
+  // wait does draw further along. Both waves move the whole time and empty at the
+  // shot, which is the reading the bar is FOR.
   assert.strictEqual(ta1.frac, 35 / 48);
+  assert.ok(ta1.frac > kpv.frac);
+  assert.ok(kpv.frac < 0.1);                       // just injected: near-empty, not half
+  // "How close" is carried by the mark instead, and it is not a length at all
+  assert.strictEqual(DOMAIN.dueWithinDay(ta1), true);
+  assert.strictEqual(DOMAIN.dayMark(ta1), 0.5);
 });
 
 test("doseCountdown: no last shot, or no interval, gives null", function () {

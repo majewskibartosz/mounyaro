@@ -327,6 +327,10 @@
   .duebadge{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.06em;
     padding:2px 6px;border-radius:999px;background:var(--c);color:var(--on-brand);
     line-height:1.4;align-self:center}
+  /* "soon" is the quietest of the three states — outline where NOW is filled,
+     and it steps aside entirely once NOW takes over. */
+  .duebadge.soft{background:transparent;color:var(--c);box-shadow:inset 0 0 0 1px var(--c);
+    font-weight:700;letter-spacing:.04em}
   a.rrow.due,.rrow.due{background:var(--ct);border-left:3px solid var(--c);
     border-radius:10px;margin-left:-9px;padding:6px 7px 4px 7px}
   /* reorder mode owns the row's look (dashed, soft, no bar); the due tint must
@@ -363,7 +367,10 @@
      wave keeps its period at any width instead of stretching with the container.
      Where mask is unsupported the fill renders solid, i.e. exactly as before. */
   :root{--wave:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='12' viewBox='0 0 26 12'%3E%3Cpath d='M0 6q3.25-3.6 6.5 0t6.5 0t6.5 0t6.5 0' fill='none' stroke='%23000' stroke-width='4.2' stroke-linecap='round'/%3E%3C/svg%3E")}
-  .wbar{height:18px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden;margin:6px 0}
+  .wbar{position:relative;height:18px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden;margin:6px 0}
+  /* where the next shot becomes today's business. Half-transparent ink so it
+     reads both on the bare track and over the substance's own colour. */
+  .dayline{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--ink);opacity:.45}
   .wbar>span{display:block;height:100%;border-radius:999px;transition:width .3s;
     -webkit-mask:var(--wave) repeat-x left center/26px 100%;
             mask:var(--wave) repeat-x left center/26px 100%;
@@ -516,7 +523,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v173";
+var BUILD = "mj-v174";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -638,6 +645,7 @@ var I18N = (function(){
     "inj.hoursShort":{pl:"godz.",en:"h"},
     "inj.dueNow":{pl:"termin teraz",en:"due now"},
     "inj.dueBadge":{pl:"TERAZ",en:"NOW"},
+    "inj.soonBadge":{pl:"blisko",en:"soon"},
     "inj.cycleLen":{pl:"Długość cyklu (dni)",en:"Cycle length (days)"},
     "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
     "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
@@ -2216,18 +2224,13 @@ var DOMAIN = (function(){
     var span=(slot!=null) ? (slot-lastMs) : Math.max(0.5, everyDays)*86400000;
     var elapsed=nowMs-lastMs, remainingMs=span-elapsed, abs=Math.abs(remainingMs);
     return { remainingMs:remainingMs, everyDays:span/86400000, elapsed:elapsed,
-             // Two different questions, and they must not share a visual channel.
-             // frac is progress through THIS substance's own interval — right for
-             // a ring standing alone, meaningless between rows, because every row
-             // scales it by its own span: 13 h left of 48 reads further along than
-             // 11 h left of 12.
+             // Progress through THIS substance's own interval: it empties at
+             // every shot and fills to the brim at the next one, so the bar is a
+             // run that can be watched. Deliberately not comparable between rows —
+             // 13 h left of 48 does draw further along than 11 h left of 12 — which
+             // is why "how close" is carried by the day mark below instead of by
+             // length. One length cannot answer both questions at once.
              frac:Math.max(0,Math.min(1, elapsed/span)),
-             // dayFrac is how much of the last DAY before the shot has run down —
-             // one scale for every substance, so five bars stacked up rank exactly
-             // as their figures do. Past due it comes out over 1 and clamps, so a
-             // full bar needs no special case; further out than a day it sits at 0,
-             // which is not missing data but the honest answer: not today.
-             dayFrac:Math.max(0,Math.min(1, 1-remainingMs/DUE_WINDOW_MS)),
              overdue:remainingMs<0,
              days:Math.floor(abs/86400000),
              hours:Math.floor((abs%86400000)/3600000),
@@ -2244,6 +2247,16 @@ var DOMAIN = (function(){
   // them. Kept beside dueNow because the two answer the same question at
   // different resolutions: "is it time" and "how close".
   var DUE_WINDOW_MS = 86400000;
+  // Less than a day to go — the last stretch of a rhythm that runs longer than a
+  // day. Deliberately not "today": at 19:00 a shot twelve hours out lands tomorrow
+  // morning. Only where the cycle is longer than a day, because something taken
+  // twice a day is ALWAYS within a day of its next dose, so the mark would be lit
+  // permanently and would say nothing at all.
+  function dueWithinDay(cd){ return !!cd && cd.everyDays>1 && cd.remainingMs<=DUE_WINDOW_MS; }
+  // Where on the bar that moment falls, as a fraction of the track — the point
+  // the wave crosses when the next shot becomes today's business. Null for a
+  // cycle that fits inside a day, which has no such point.
+  function dayMark(cd){ return (cd && cd.everyDays>1) ? 1-1/cd.everyDays : null; }
 
   // Hash route -> {tab, sub}. The sub-state segment is what lets a dashboard
   // tile point at one substance ("#inject/trt") instead of just the tab. Pure
@@ -2321,6 +2334,7 @@ var DOMAIN = (function(){
     normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     normTimes:normTimes, timesKey:timesKey, nextSlotMs:nextSlotMs,
     DUE_SOON_MS:DUE_SOON_MS, DUE_WINDOW_MS:DUE_WINDOW_MS, dueNow:dueNow,
+    dueWithinDay:dueWithinDay, dayMark:dayMark,
     PER_DAY_MAX:PER_DAY_MAX, normPerDay:normPerDay, nextRollingMs:nextRollingMs,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
@@ -4923,14 +4937,15 @@ var UI = (function(){
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
     // inert row means the list cannot scroll out from under the arrows.
-    var dueSoon=DOMAIN.dueNow(cd);
+    var dueSoon=DOMAIN.dueNow(cd), withinDay=DOMAIN.dueWithinDay(cd), mark=DOMAIN.dayMark(cd);
     // Two lines, and each one carries something on the right, so the row closes
     // as a rectangle instead of leaving a ragged corner: the moment sits beside
     // the name, the countdown beside the subtitle. Splitting the pair this way
     // also keeps the subtitle wide — the figure ("9h") is far narrower than the
     // moment ("czw. 08:11") that used to reserve the space on both lines.
     var inner='<span class="peptop"><span class="pepname">'+esc(substLabel(st,sub))
-        +(dueSoon&&!injReorder?' <span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>':'')+'</span>'
+        +(dueSoon&&!injReorder?' <span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>'
+          :(withinDay&&!injReorder?' <span class="duebadge soft">'+esc(I18N.t("inj.soonBadge"))+'</span>':''))+'</span>'
         +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>'
         +'<span class="pepbot"><span class="pepsub">'+bits.join(" &middot; ")+'</span>'
         +'<span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span></span>';
@@ -4946,7 +4961,8 @@ var UI = (function(){
       +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)
       +';--ct:'+substColor(st,sub)+PAL.tintA+'">'
       +head
-      +'<div class="wbar flush"><span style="width:'+Math.round((cd?cd.dayFrac:0)*100)+'%"></span></div>'
+      +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span>'
+        +(mark!=null?'<i class="dayline" style="left:'+(mark*100).toFixed(1)+'%"></i>':'')+'</div>'
       +'</div>';
   }
   // One row of the compound picker. `dim` marks a compound already on the list:
@@ -6605,7 +6621,7 @@ var UI = (function(){
   // as a hairline under the row: still a glance at how much of the wait has run
   // down, without a third level of text. progressBar is deliberately not reused
   // here — it appends a label row that would be two empty spans on every row.
-  function rhythmRow(label, color, frac, right, foot, href, overdue, due){
+  function rhythmRow(label, color, frac, right, foot, href, overdue, due, soon, mark){
     var tag=href?'a class="rrow'+(due?" due":"")+(overdue?" late":"")+'" href="'+esc(href)+'"'
                 :'div class="'+(due?"due":"")+(overdue?" late":"")+'"';
     var pct=Math.max(0,Math.min(1,frac||0))*100;
@@ -6617,14 +6633,16 @@ var UI = (function(){
       +'<div class="rrhead">'
         +'<span class="rrname"><span class="rrdot" style="background:'+color+'"></span>'
           +'<span class="rrlbl">'+esc(label)+'</span>'
-          +(due?'<span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>':'')+'</span>'
+          +(due?'<span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>'
+            :(soon?'<span class="duebadge soft">'+esc(I18N.t("inj.soonBadge"))+'</span>':''))+'</span>'
         +'<span class="rrwhen">'
           +'<span class="rrin'+(overdue?" late":"")+'">'+esc(right||"")+'</span>'
           +(foot?'<span class="rrat">'+esc(foot)+'</span>':'')
         +'</span>'
       +'</div>'
       +'<div class="wbar slim"><span class="'+(overdue?"late":"")+'" style="width:'+pct.toFixed(1)
-        +'%;background:'+color+'"></span></div>'
+        +'%;background:'+color+'"></span>'
+        +(mark!=null?'<i class="dayline" style="left:'+(mark*100).toFixed(1)+'%"></i>':'')+'</div>'
       + (href?'</a>':'</div>');
   }
   // Every view opens with this: the title plus the two history arrows. In an
@@ -6680,10 +6698,11 @@ var UI = (function(){
       // Just the figure, not "next in ..." / "... overdue": the exact moment sits
       // right beside it and the red minus already says which side of due it is.
       // The words were costing more width than the substance name had.
-      if(cd) html+=rhythmRow(substLabel(st,id), c, cd.dayFrac,
+      if(cd) html+=rhythmRow(substLabel(st,id), c, cd.overdue?1:cd.frac,
                              (cd.overdue?"\u2212":"")+fmtCountdown(cd),
-                             fmtNextShot(cd.nextMs), href, cd.overdue, DOMAIN.dueNow(cd));
-      else html+=rhythmRow(substLabel(st,id), c, 0, I18N.t("inj.pepNoShots"), null, href, false, false);
+                             fmtNextShot(cd.nextMs), href, cd.overdue, DOMAIN.dueNow(cd),
+                             DOMAIN.dueWithinDay(cd), DOMAIN.dayMark(cd));
+      else html+=rhythmRow(substLabel(st,id), c, 0, I18N.t("inj.pepNoShots"), null, href, false, false, false, null);
     });
     html+='</div>';
 
