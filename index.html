@@ -1716,6 +1716,10 @@ var DOMAIN = (function(){
         for(var ai2=0;ai2<arr2.length;ai2++) sum2+=arr2[ai2];
         out.push({date:dk2, value:Math.round(sum2/arr2.length*10)/10});
       }}
+    } else if(sourceId==="glucose"){
+      (state.glu && state.glu.log ? state.glu.log : []).forEach(function(e){
+        if(e && e.mgdl!=null && e.ts) out.push({date:String(e.ts).slice(0,10), value:Number(e.mgdl)});
+      });
     } else if(sourceId==="waist"){
       (state.weightLog||[]).forEach(function(e){
         if(e && e.waistCm!=null) out.push({date:e.date, value:Number(e.waistCm)});
@@ -2161,6 +2165,45 @@ var DOMAIN = (function(){
              dia:minMaxAvg(rows.map(function(e){ return e.dia; })),
              pulse:pulse };
   }
+  // ---- glucose -----------------------------------------------------------
+  // Readings are stored in ONE canonical unit (mg/dl) whatever the meter reads
+  // in, so switching the display unit later cannot change what a past reading
+  // meant. The round trip lands within 0.03 mmol/l — finer than any meter's own
+  // resolution, so a value never comes back as a different reading.
+  var MMOL_MGDL = 18;
+  var GLU_TAGS = ["fasting","post","bed"];
+  function gluToMgdl(v, unit){
+    var n=Number(v);
+    if(!isFinite(n) || n<=0) return null;
+    return Math.round(unit==="mmol" ? n*MMOL_MGDL : n);
+  }
+  function gluFromMgdl(mgdl, unit){
+    if(mgdl==null || mgdl==="") return null;   // nothing on file must never render as 0
+    var n=Number(mgdl);
+    if(!isFinite(n)) return null;
+    return unit==="mmol" ? Math.round(n/MMOL_MGDL*10)/10 : Math.round(n);
+  }
+  // Which reading this is, guessed from the clock so the ordinary case needs no
+  // tap at all: the morning one is fasting, the evening one is bedtime, and the
+  // day in between is after a meal. Always overridable — it is a guess.
+  function gluTagFor(hour){
+    if(hour<11) return "fasting";
+    if(hour>=18) return "bed";
+    return "post";
+  }
+  // Averages per tag as well as overall: 95 fasting and 95 two hours after a
+  // meal are different readings, so one number over both would say nothing.
+  function gluWindowStats(entries){
+    var rows=(entries||[]).filter(function(e){ return e && e.mgdl!=null; });
+    if(!rows.length) return null;
+    var byTag={};
+    GLU_TAGS.forEach(function(t){
+      var vals=rows.filter(function(e){ return e.tag===t; }).map(function(e){ return e.mgdl; });
+      if(vals.length) byTag[t]=minMaxAvg(vals);
+    });
+    return { n:rows.length, all:minMaxAvg(rows.map(function(e){ return e.mgdl; })), byTag:byTag };
+  }
+
   // Several readings taken back to back — the way blood pressure is supposed to
   // be measured — collapsed into the one number that goes in the log. A row only
   // counts once it has both values; pulse is averaged over the rows that carry
@@ -2324,6 +2367,7 @@ var DOMAIN = (function(){
     conditionEpisodes:conditionEpisodes, openConditions:openConditions, conditionSpans:conditionSpans,
     normName:normName, nameScore:nameScore, similarCompounds:similarCompounds,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
+    gluToMgdl:gluToMgdl, gluFromMgdl:gluFromMgdl, gluTagFor:gluTagFor, gluWindowStats:gluWindowStats, GLU_TAGS:GLU_TAGS,
     parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
@@ -2343,7 +2387,7 @@ var STORE = (function(){
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" },
-        sandbagging:false },
+        sandbagging:false, gluUnit:"mgdl" },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],        // {id,date,weightKg,waistCm,doseMg,note}; ts (optional) = exact time when given
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
@@ -2351,6 +2395,8 @@ var STORE = (function(){
       jab:{ history:[] },
       penTracker:{ enabled:false, strengthMg:null, dose:null, anchor:null, preDone:0, shotsDone:0, strengthChanges:[], doseChanges:[] },
       bp:{ log:[] },
+      glu:{ log:[] },      // {id,ts,mgdl,tag,note} — mgdl is canonical, see gluToMgdl
+
       // ---- health-tracking expansion (all new keys; merge() migrates old data) ----
       // Blood pressure + pulse already live in bp.log (its own tab); we read it
       // as a series rather than duplicating it here.

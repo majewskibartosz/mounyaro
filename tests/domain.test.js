@@ -1227,3 +1227,61 @@ test("similarCompounds: ranks matches, drops the rest, keeps all on empty query"
   assert.strictEqual(DOMAIN.similarCompounds(list, "").length, 3);
   assert.strictEqual(DOMAIN.similarCompounds([], "klow").length, 0);
 });
+
+// ---- glucose ----
+test("gluToMgdl / gluFromMgdl: one canonical unit, and the round trip holds", function () {
+  assert.strictEqual(DOMAIN.gluToMgdl(99, "mgdl"), 99);
+  assert.strictEqual(DOMAIN.gluToMgdl(5.5, "mmol"), 99);
+  assert.strictEqual(DOMAIN.gluFromMgdl(99, "mgdl"), 99);
+  assert.strictEqual(DOMAIN.gluFromMgdl(99, "mmol"), 5.5);
+  // typed in mmol, read back in mmol: the reading must come back as itself
+  [3.9, 5.5, 5.6, 7.8, 11.1].forEach(function (v) {
+    assert.strictEqual(DOMAIN.gluFromMgdl(DOMAIN.gluToMgdl(v, "mmol"), "mmol"), v);
+  });
+  // and rubbish stays rubbish rather than becoming a reading
+  assert.strictEqual(DOMAIN.gluToMgdl("", "mgdl"), null);
+  assert.strictEqual(DOMAIN.gluToMgdl(0, "mgdl"), null);
+  assert.strictEqual(DOMAIN.gluToMgdl(-4, "mmol"), null);
+  assert.strictEqual(DOMAIN.gluToMgdl("nie liczba", "mgdl"), null);
+  assert.strictEqual(DOMAIN.gluFromMgdl(null, "mgdl"), null);
+});
+
+test("gluTagFor: the clock guesses which reading this is", function () {
+  assert.strictEqual(DOMAIN.gluTagFor(7), "fasting");
+  assert.strictEqual(DOMAIN.gluTagFor(10), "fasting");
+  assert.strictEqual(DOMAIN.gluTagFor(11), "post");     // the boundary belongs to "after a meal"
+  assert.strictEqual(DOMAIN.gluTagFor(17), "post");
+  assert.strictEqual(DOMAIN.gluTagFor(18), "bed");
+  assert.strictEqual(DOMAIN.gluTagFor(23), "bed");
+});
+
+test("gluWindowStats: overall and per tag, because 95 fasting is not 95 after a meal", function () {
+  var rows = [
+    { mgdl: 90, tag: "fasting" },
+    { mgdl: 100, tag: "fasting" },
+    { mgdl: 140, tag: "post" },
+    { mgdl: 110, tag: "bed" },
+    { mgdl: null, tag: "fasting" }          // an empty row counts for nothing
+  ];
+  var st = DOMAIN.gluWindowStats(rows);
+  assert.strictEqual(st.n, 4);
+  assert.strictEqual(st.all.min, 90);
+  assert.strictEqual(st.all.max, 140);
+  assert.strictEqual(st.all.avg, 110);
+  assert.strictEqual(st.byTag.fasting.avg, 95);
+  assert.strictEqual(st.byTag.post.avg, 140);
+  assert.strictEqual(st.byTag.bed.avg, 110);
+  assert.strictEqual(DOMAIN.gluWindowStats([]), null);
+  assert.strictEqual(DOMAIN.gluWindowStats(null), null);
+});
+
+test("seriesFor: glucose is correlatable like every other reading", function () {
+  var state = { glu: { log: [
+    { id: "g2", ts: "2026-09-06T20:00:00.000Z", mgdl: 105, tag: "bed" },
+    { id: "g1", ts: "2026-09-05T07:00:00.000Z", mgdl: 92, tag: "fasting" }
+  ] } };
+  assert.deepStrictEqual(Array.from(DOMAIN.seriesFor(state, "glucose")).map(function (p) {
+    return p.date + ":" + p.value;
+  }), ["2026-09-05:92", "2026-09-06:105"]);
+  assert.strictEqual(DOMAIN.seriesFor({}, "glucose").length, 0);
+});
