@@ -516,7 +516,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v176";
+var BUILD = "mj-v177";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -890,7 +890,7 @@ var I18N = (function(){
     "glu.sub":{pl:"Zapisz odczyt z glukometru — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log a meter reading — the date and time are captured automatically when you save."},
     "glu.value":{pl:"Odczyt",en:"Reading"},
     "glu.add":{pl:"Dodaj odczyt",en:"Add reading"},
-    "glu.chartTitle":{pl:"Wykres glukozy",en:"Glucose trend"},
+    "glu.chartTitle":{pl:"Przebieg",en:"Trend"},
     "glu.empty":{pl:"Brak odczytów. Dodaj pierwszy powyżej.",en:"No readings yet. Add your first above."},
     "glu.history":{pl:"Historia odczytów",en:"Reading history"},
     "glu.latest":{pl:"Ostatni odczyt",en:"Latest reading"},
@@ -900,6 +900,8 @@ var I18N = (function(){
     "glu.tagPost":{pl:"po posiłku",en:"after a meal"},
     "glu.tagBed":{pl:"przed snem",en:"at bedtime"},
     "glu.winAvg":{pl:"Śr. w oknie",en:"Window avg"},
+    "glu.typical":{pl:"typowy zakres",en:"typical range"},
+    "glu.typicalHint":{pl:"środkowa połowa Twoich odczytów z ostatnich 30 dni — nie norma medyczna",en:"the middle half of your own readings over the last 30 days — not a medical norm"},
     "glu.confirmDel":{pl:"Usunąć ten odczyt?",en:"Delete this reading?"},
     "glu.unitMgdl":{pl:"mg/dl",en:"mg/dL"},
     "glu.unitMmol":{pl:"mmol/l",en:"mmol/L"},
@@ -2214,6 +2216,25 @@ var DOMAIN = (function(){
     if(hour>=18) return "bed";
     return "post";
   }
+  // "Your typical range": the middle half of your OWN readings over the last
+  // month. Deliberately descriptive and never a clinical threshold — it says
+  // where you usually sit, not where anyone says you ought to. Under five
+  // readings there is nothing to call typical, so there is no band at all.
+  function gluTypicalRange(entries, nowMs){
+    var from=nowMs-30*86400000;
+    var vals=(entries||[]).filter(function(e){
+      if(!e || e.mgdl==null || !e.ts) return false;
+      var t=Date.parse(e.ts);
+      return !isNaN(t) && t>=from && t<=nowMs;
+    }).map(function(e){ return Number(e.mgdl); }).sort(function(a,b){ return a-b; });
+    if(vals.length<5) return null;
+    function pct(q){
+      var i=(vals.length-1)*q, lo=Math.floor(i), hi=Math.ceil(i);
+      return vals[lo]+(vals[hi]-vals[lo])*(i-lo);
+    }
+    var lo=Math.round(pct(0.25)), hi=Math.round(pct(0.75));
+    return hi>lo ? { lo:lo, hi:hi } : null;    // a band of zero height says nothing
+  }
   // Averages per tag as well as overall: 95 fasting and 95 two hours after a
   // meal are different readings, so one number over both would say nothing.
   function gluWindowStats(entries){
@@ -2390,7 +2411,8 @@ var DOMAIN = (function(){
     conditionEpisodes:conditionEpisodes, openConditions:openConditions, conditionSpans:conditionSpans,
     normName:normName, nameScore:nameScore, similarCompounds:similarCompounds,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
-    gluToMgdl:gluToMgdl, gluFromMgdl:gluFromMgdl, gluTagFor:gluTagFor, gluWindowStats:gluWindowStats, GLU_TAGS:GLU_TAGS,
+    gluToMgdl:gluToMgdl, gluFromMgdl:gluFromMgdl, gluTagFor:gluTagFor, gluWindowStats:gluWindowStats,
+    gluTypicalRange:gluTypicalRange, GLU_TAGS:GLU_TAGS,
     parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
@@ -3325,46 +3347,106 @@ var CHART = (function(){
     var data = log.slice().filter(function(e){return e && e.mgdl!=null;})
                   .sort(function(a,b){ return a.ts<b.ts?-1:a.ts>b.ts?1:0; });
     if(data.length===0) return '<div class="empty">'+esc(I18N.t("glu.empty"))+'</div>';
-    var W=320,H=210,mL=30,mR=12,mT=12,mB=26, iw=W-mL-mR, ih=H-mT-mB;
+    // Taller than the other charts, and roomier top and bottom: every point
+    // carries its own figure, and the day axis is two lines rather than one.
+    var W=320,H=236,mL=26,mR=14,mT=26,mB=34, iw=W-mL-mR, ih=H-mT-mB;
     var xs=data.map(function(e){ return new Date(e.ts).getTime(); });
     var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
     if(opts.minX!=null) minX=opts.minX;
     if(opts.maxX!=null) maxX=opts.maxX;
-    // Plotted in whatever unit is on display, so the numbers beside the grid are
+    // Plotted in whatever unit is on display, so the numbers on the chart are
     // the numbers on the meter.
     function u(mgdl){ return DOMAIN.gluFromMgdl(mgdl, unit); }
     function lab(v){ return unit==="mmol" ? (Math.round(v*10)/10).toFixed(1) : String(Math.round(v)); }
     var vals=data.map(function(e){ return u(e.mgdl); });
-    var minY=Math.min.apply(null,vals), maxY=Math.max.apply(null,vals);
-    if(minY===maxY){ minY-=unit==="mmol"?0.5:10; maxY+=unit==="mmol"?0.5:10; }
-    var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
+    var band=opts.band ? { lo:u(opts.band.lo), hi:u(opts.band.hi) } : null;
+    var span=vals.slice();
+    if(band) span.push(band.lo, band.hi);
+    var minY=Math.min.apply(null,span), maxY=Math.max.apply(null,span);
+    if(minY===maxY){ var bump=unit==="mmol"?0.5:10; minY-=bump; maxY+=bump; }
+    var padY=(maxY-minY)*0.18; minY-=padY; maxY+=padY;
     function X(t){ return maxX===minX ? mL+iw/2 : mL+(t-minX)/(maxX-minX)*iw; }
     function Y(v){ return mT+(1-(v-minY)/(maxY-minY))*ih; }
     var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="glucose chart">';
     svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, maxX===minX);
-    var rows=4;
+    // the band goes down first, so gridlines and the line itself read on top
+    if(band){
+      var yHi=Y(band.hi), yLo=Y(band.lo);
+      svg+='<rect x="'+mL+'" y="'+yHi.toFixed(1)+'" width="'+iw+'" height="'+(yLo-yHi).toFixed(1)
+        +'" fill="'+PAL.chartAxis+'" opacity="0.14" rx="3"/>';
+    }
+    var rows=3;
     for(var r=0;r<=rows;r++){
       var val=minY+(maxY-minY)*r/rows, y=Y(val);
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="'+PAL.chartGrid+'" stroke-width="1"/>';
       svg+='<text x="'+(mL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="end">'+lab(val)+'</text>';
     }
-    if(opts.minX!=null && maxX>minX){
-      dayTicks(minX,maxX).forEach(function(t){
-        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(t)+'</text>';
-      });
-    } else {
-      var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0,Math.floor((data.length-1)/2),data.length-1];
-      idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
-    }
+    // One label per day, weekday over date — the way a week of readings is read.
+    var ticks = (opts.minX!=null && maxX>minX) ? dayTicks(minX,maxX)
+              : (data.length<=3 ? xs.slice() : [xs[0], xs[Math.floor((data.length-1)/2)], xs[data.length-1]]);
+    ticks.forEach(function(t){
+      var d=new Date(t), x=X(t).toFixed(1);
+      svg+='<text x="'+x+'" y="'+(H-18)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'
+         +esc(I18N.t("common.dow"+(((d.getDay()+6)%7)+1)))+'</text>';
+      svg+='<text x="'+x+'" y="'+(H-6)+'" font-size="10" font-weight="700" fill="'+PAL.chartAxis+'" text-anchor="middle">'
+         +d.getDate()+'</text>';
+    });
     if(data.length>1){
       var pts=data.map(function(e,i){ return X(xs[i]).toFixed(1)+","+Y(u(e.mgdl)).toFixed(1); }).join(" ");
-      svg+='<polyline points="'+pts+'" fill="none" stroke="'+PAL.series.glu+'" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
+      svg+='<polyline points="'+pts+'" fill="none" stroke="'+PAL.series.glu+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.75"/>';
+    }
+    // A figure on every point, as long as the figures can stand apart. Two
+    // readings a day put them 21 units apart — too close in one row, roomy in
+    // two — so at that density they alternate above and below the line and every
+    // number still shows. Tighter than that and only the extremes and the latest
+    // are labelled: a row of overlapping chips is less readable than no chips.
+    var gap = data.length>1 ? iw/(data.length-1) : iw;
+    var chip={}, stagger=(gap<26 && gap>=15);
+    if(gap>=15){ data.forEach(function(_,i){ chip[i]=true; }); }
+    else {
+      var iMin=0, iMax=0;
+      vals.forEach(function(v,i){ if(v<vals[iMin]) iMin=i; if(v>vals[iMax]) iMax=i; });
+      [iMin,iMax,data.length-1].forEach(function(i){
+        // never two chips close enough to collide
+        var clash=false;
+        for(var k in chip){ if(chip.hasOwnProperty(k) && Math.abs(X(xs[k])-X(xs[i]))<26) clash=true; }
+        if(!clash) chip[i]=true;
+      });
     }
     var uLab=I18N.t(unit==="mmol"?"glu.unitMmol":"glu.unitMgdl");
+    // Chips are placed against the ones already down, not by rule alone: the
+    // line zigzags, so "above" for a low point and "below" for a high one can
+    // land in the same strip. Preferred side first, the other side second, and
+    // if both collide the figure is left off rather than printed over another.
+    var placed=[];
+    function chipBox(x, y, cw, pref){
+      for(var pass=0;pass<2;pass++){
+        var above = pass===0 ? pref : !pref;
+        var cand={ x:Math.max(mL, Math.min(W-mR-cw, x-cw/2)), y:above?y-21:y+8, w:cw };
+        var hit=false;
+        for(var k=0;k<placed.length;k++){
+          var q=placed[k];
+          if(Math.abs(q.y-cand.y)<15 && cand.x < q.x+q.w+2 && q.x < cand.x+cand.w+2){ hit=true; break; }
+        }
+        if(!hit){ placed.push(cand); return cand; }
+      }
+      return null;
+    }
     data.forEach(function(e,i){
+      var x=X(xs[i]), y=Y(u(e.mgdl));
       var tip=fmtDateTime(e.ts)+" · "+lab(u(e.mgdl))+" "+uLab+" · "+gluTagLabel(e.tag)+(e.note?" · "+e.note:"");
-      svg+='<g><title>'+esc(tip)+'</title>'
-         +'<circle cx="'+X(xs[i]).toFixed(1)+'" cy="'+Y(u(e.mgdl)).toFixed(1)+'" r="3.6" fill="'+PAL.series.glu+'" stroke="'+PAL.halo+'" stroke-width="1.2"/></g>';
+      svg+='<g><title>'+esc(tip)+'</title>';
+      if(chip[i]){
+        var txt=lab(u(e.mgdl)), cw=txt.length*6.4+9;
+        var box=chipBox(x, y, cw, stagger ? (i%2===0) : (y>mT+ih*0.16));
+        if(box){
+          svg+='<rect x="'+box.x.toFixed(1)+'" y="'+box.y.toFixed(1)+'" width="'+cw.toFixed(1)+'" height="14" rx="4" fill="'+PAL.halo+'" opacity="0.9"/>';
+          svg+='<text x="'+(box.x+cw/2).toFixed(1)+'" y="'+(box.y+10.5).toFixed(1)+'" font-size="10" font-weight="800" fill="'+PAL.series.glu+'" text-anchor="middle">'+esc(txt)+'</text>';
+        }
+      }
+      // an open ring, not a dot: it stays readable where the line crosses it
+      svg+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="4.4" fill="'+PAL.halo+'" stroke="'+PAL.series.glu+'" stroke-width="2"/>';
+      svg+='</g>';
     });
     svg+='</svg>';
     return svg;
@@ -3942,7 +4024,7 @@ var UI = (function(){
   // ---- glucose ------------------------------------------------------------
   var gluEdit=null;  // id of the reading being edited (null = adding a new one)
   var gluPage=0;     // history page
-  var gluRange={days:null, offset:0};
+  var gluRange={days:7, offset:0};   // a week reads well; the presets go wider
   // Both vitals live under one tab, so both views open with the same switch.
   function vitalsSwitch(active){
     return '<div class="seg" style="margin:0 0 12px">'
@@ -3979,9 +4061,17 @@ var UI = (function(){
     gluRange.offset=win.offset;
     var chartLog=win.entries;
     function noonMs(iso){ return new Date(iso+"T12:00:00").getTime(); }
+    // The band is computed from the whole log, not from the visible window: it
+    // is a baseline to read the window against, so it must not move with it.
+    var band=DOMAIN.gluTypicalRange(log, Date.now());
     html+='<div class="card">'+rangeHeader("glu.chartTitle","gluRg",gluRange,win)
-        + '<div id="gluChart">'+CHART.renderGlucose(chartLog, {unit:unit, illness:illSpansFor(chartLog,"ts",win),
+        + '<div id="gluChart">'+CHART.renderGlucose(chartLog, {unit:unit, band:band, illness:illSpansFor(chartLog,"ts",win),
             minX:win.from?noonMs(win.from)-43200000:null, maxX:win.to?noonMs(win.to)+43200000:null})+'</div>';
+    if(band){
+      html+='<div class="legend"><span><i style="background:'+PAL.chartAxis+'40"></i>'
+        + esc(I18N.t("glu.typical")+" "+gluShow(band.lo,unit)+"–"+gluShow(band.hi,unit)+" "+uLab)+'</span></div>'
+        + '<p class="tiny muted" style="margin:2px 0 0">'+esc(I18N.t("glu.typicalHint"))+'</p>';
+    }
     if(log.length){
       var L=log[0];
       html+='<div class="stats" style="margin-top:12px">'

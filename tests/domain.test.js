@@ -1285,3 +1285,21 @@ test("seriesFor: glucose is correlatable like every other reading", function () 
   }), ["2026-09-05:92", "2026-09-06:105"]);
   assert.strictEqual(DOMAIN.seriesFor({}, "glucose").length, 0);
 });
+
+test("gluTypicalRange: your own middle half, and nothing until there is enough", function () {
+  var now = Date.parse("2026-09-08T12:00:00.000Z");
+  function r(daysAgo, mgdl) {
+    return { id: "x" + daysAgo + "_" + mgdl, mgdl: mgdl, tag: "fasting",
+             ts: new Date(now - daysAgo * 86400000).toISOString() };
+  }
+  // four readings is not yet a habit to describe
+  assert.strictEqual(DOMAIN.gluTypicalRange([r(1, 90), r(2, 95), r(3, 100), r(4, 105)], now), null);
+  var band = DOMAIN.gluTypicalRange([r(1, 80), r(2, 90), r(3, 100), r(4, 110), r(5, 120)], now);
+  assert.deepStrictEqual({ lo: band.lo, hi: band.hi }, { lo: 90, hi: 110 });
+  // older than a month is out of the baseline: with those dropped, too few remain
+  assert.strictEqual(
+    DOMAIN.gluTypicalRange([r(1, 80), r(2, 90), r(40, 100), r(50, 110), r(60, 120)], now), null);
+  // a flat run has no spread to draw, so there is no band rather than a hairline
+  assert.strictEqual(DOMAIN.gluTypicalRange([r(1, 95), r(2, 95), r(3, 95), r(4, 95), r(5, 95)], now), null);
+  assert.strictEqual(DOMAIN.gluTypicalRange([], now), null);
+});
