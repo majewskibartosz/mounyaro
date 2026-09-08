@@ -540,7 +540,7 @@ var I18N = (function(){
     "jab.confirmDel":{pl:"Usunąć ten zastrzyk?",en:"Delete this shot?"},
     "tab.weight":{pl:"Waga",en:"Weight"},
     "tab.bmi":{pl:"BMI",en:"BMI"},
-    "tab.bp":{pl:"Ciśnienie",en:"BP"},
+    "tab.bp":{pl:"Pomiary",en:"Vitals"},
     "tab.optimizer":{pl:"Kalkulator",en:"Calculator"},
     "tab.settings":{pl:"Ustawienia",en:"Settings"},
     "tab.pulpit":{pl:"Pulpit",en:"Home"},
@@ -884,6 +884,29 @@ var I18N = (function(){
     "chart.rangeAll":{pl:"Wszystko",en:"All"},
     "chart.prevRange":{pl:"Wcześniejszy okres",en:"Earlier period"},
     "chart.nextRange":{pl:"Późniejszy okres",en:"Later period"},
+    "vitals.bp":{pl:"Ciśnienie",en:"Pressure"},
+    "vitals.glu":{pl:"Glukoza",en:"Glucose"},
+    "glu.title":{pl:"Glukoza",en:"Blood glucose"},
+    "glu.sub":{pl:"Zapisz odczyt z glukometru — data i godzina pobierane są automatycznie w chwili wpisania.",en:"Log a meter reading — the date and time are captured automatically when you save."},
+    "glu.value":{pl:"Odczyt",en:"Reading"},
+    "glu.add":{pl:"Dodaj odczyt",en:"Add reading"},
+    "glu.chartTitle":{pl:"Wykres glukozy",en:"Glucose trend"},
+    "glu.empty":{pl:"Brak odczytów. Dodaj pierwszy powyżej.",en:"No readings yet. Add your first above."},
+    "glu.history":{pl:"Historia odczytów",en:"Reading history"},
+    "glu.latest":{pl:"Ostatni odczyt",en:"Latest reading"},
+    "glu.when":{pl:"Czas odczytu",en:"Reading time"},
+    "glu.tag":{pl:"Kiedy",en:"When"},
+    "glu.tagFasting":{pl:"na czczo",en:"fasting"},
+    "glu.tagPost":{pl:"po posiłku",en:"after a meal"},
+    "glu.tagBed":{pl:"przed snem",en:"at bedtime"},
+    "glu.winAvg":{pl:"Śr. w oknie",en:"Window avg"},
+    "glu.confirmDel":{pl:"Usunąć ten odczyt?",en:"Delete this reading?"},
+    "glu.unitMgdl":{pl:"mg/dl",en:"mg/dL"},
+    "glu.unitMmol":{pl:"mmol/l",en:"mmol/L"},
+    "set.gluUnit":{pl:"Jednostka glukozy",en:"Glucose unit"},
+    "corr.glucose":{pl:"Glukoza",en:"Blood glucose"},
+    "pulpit.glu":{pl:"Glukoza",en:"Glucose"},
+    "rel.toGlu":{pl:"Zapisz glukozę",en:"Log glucose"},
     "bp.winSys":{pl:"Sys śr.",en:"Sys avg"},
     "bp.winDia":{pl:"Dia śr.",en:"Dia avg"},
     "bp.winPulse":{pl:"Puls śr.",en:"Pulse avg"},
@@ -2864,7 +2887,7 @@ var THEME=(function(){
       bmi:["#0284c7","#16a34a","#f59e0b","#f97316","#dc2626","#991b1b"],
       ring:["#16a34a","#f59e0b","#dc2626"],
       dose:["#0ea5a4","#f59e0b","#dc2626"],
-      series:{ weight:"#0ea5a4", waist:"#6366f1", sys:"#dc2626", dia:"#0284c7", pulse:"#94a3b8" },
+      series:{ weight:"#0ea5a4", waist:"#6366f1", sys:"#dc2626", dia:"#0284c7", pulse:"#94a3b8", glu:"#f59e0b" },
       chartGrid:"#e2e8f0", chartAxis:"#94a3b8",
       ident:["#0ea5a4","#6366f1","#f59e0b","#38bdf8","#a78bfa","#fb7185","#34d399","#facc15","#f472b6","#22d3ee"] },
 
@@ -2881,7 +2904,7 @@ var THEME=(function(){
       bmi:["#0284c7","#16a34a","#f59e0b","#f97316","#dc2626","#991b1b"],
       ring:["#16a34a","#f59e0b","#dc2626"],
       dose:["#0ea5a4","#f59e0b","#dc2626"],
-      series:{ weight:"#0ea5a4", waist:"#818cf8", sys:"#dc2626", dia:"#0284c7", pulse:"#94a3b8" },
+      series:{ weight:"#0ea5a4", waist:"#818cf8", sys:"#dc2626", dia:"#0284c7", pulse:"#94a3b8", glu:"#f59e0b" },
       chartAxis:"#94a3b8",
       ident:["#0ea5a4","#6366f1","#f59e0b","#38bdf8","#a78bfa","#fb7185","#34d399","#facc15","#f472b6","#22d3ee"] },
     // Monokai — microsoft/vscode extensions/theme-monokai. The comment grey
@@ -2897,7 +2920,7 @@ var THEME=(function(){
       bmi:["#66d9ef","#a6e22e","#e6db74","#fd971f","#f92672","#ff6188"],
       ring:["#a6e22e","#fd971f","#f92672"],
       dose:["#66d9ef","#e6db74","#f92672"],
-      series:{ weight:"#a6e22e", waist:"#ae81ff", sys:"#f92672", dia:"#66d9ef", pulse:"#90908a" },
+      series:{ weight:"#a6e22e", waist:"#ae81ff", sys:"#f92672", dia:"#66d9ef", pulse:"#90908a", glu:"#fd971f" },
       ident:["#a6e22e","#ae81ff",
              "#f92672","#fd971f","#e6db74","#66d9ef","#ff6188","#78dce8","#ab9df2","#ffd866"] },
     // Solarized Dark — altercation/solarized. Its accents are deliberately muted;
@@ -2914,7 +2937,7 @@ var THEME=(function(){
       bmi:["#268bd2","#859900","#b58900","#cb4b16","#dc322f","#a02724"],
       ring:["#859900","#b58900","#dc322f"],
       dose:["#2aa198","#b58900","#dc322f"],
-      series:{ weight:"#2aa198", waist:"#6c71c4", sys:"#dc322f", dia:"#268bd2", pulse:"#839496" },
+      series:{ weight:"#2aa198", waist:"#6c71c4", sys:"#dc322f", dia:"#268bd2", pulse:"#839496", glu:"#b58900" },
       ident:["#2aa198","#6c71c4",
              "#b58900","#268bd2","#d33682","#859900","#cb4b16","#dc322f","#93a1a1","#6c71c4"] },
 
@@ -2929,7 +2952,7 @@ var THEME=(function(){
       bmi:["#7dcfff","#9ece6a","#e0af68","#ff9e64","#f7768e","#db4b4b"],
       ring:["#9ece6a","#e0af68","#f7768e"],
       dose:["#7dcfff","#e0af68","#f7768e"],
-      series:{ weight:"#9ece6a", waist:"#bb9af7", sys:"#f7768e", dia:"#7dcfff", pulse:"#8b93b8" },
+      series:{ weight:"#9ece6a", waist:"#bb9af7", sys:"#f7768e", dia:"#7dcfff", pulse:"#8b93b8", glu:"#e0af68" },
       ident:["#7aa2f7","#bb9af7",
              "#f7768e","#ff9e64","#e0af68","#9ece6a","#73daca","#7dcfff","#c0a0f0","#db4b4b"] },
 
@@ -2945,7 +2968,7 @@ var THEME=(function(){
       bmi:["#8be9fd","#50fa7b","#f1fa8c","#ffb86c","#ff5555","#d83a3a"],
       ring:["#50fa7b","#ffb86c","#ff5555"],
       dose:["#8be9fd","#f1fa8c","#ff5555"],
-      series:{ weight:"#50fa7b", waist:"#ff79c6", sys:"#ff5555", dia:"#8be9fd", pulse:"#8e9ac4" },
+      series:{ weight:"#50fa7b", waist:"#ff79c6", sys:"#ff5555", dia:"#8be9fd", pulse:"#8e9ac4", glu:"#ffb86c" },
       ident:["#bd93f9","#ff79c6",
              "#ff5555","#ffb86c","#f1fa8c","#50fa7b","#8be9fd","#6272a4","#d6acff","#ff92d0"] },
 
@@ -2962,7 +2985,7 @@ var THEME=(function(){
       bmi:["#81a1c1","#a3be8c","#ebcb8b","#d08770","#bf616a","#9b4a52"],
       ring:["#a3be8c","#ebcb8b","#bf616a"],
       dose:["#88c0d0","#ebcb8b","#bf616a"],
-      series:{ weight:"#a3be8c", waist:"#b48ead", sys:"#bf616a", dia:"#88c0d0", pulse:"#98a3b8" },
+      series:{ weight:"#a3be8c", waist:"#b48ead", sys:"#bf616a", dia:"#88c0d0", pulse:"#98a3b8", glu:"#d08770" },
       ident:["#88c0d0","#b48ead",
              "#bf616a","#d08770","#ebcb8b","#a3be8c","#8fbcbb","#81a1c1","#5e81ac","#d8a0b4"] }
   ];
@@ -2999,7 +3022,8 @@ var THEME=(function(){
       sev:sev, sevBand:band, sevOp:d?0.13:0.09, sevStroke:d?0.7:0.55,
       state:p.state, symSev:symSevRamp(p.good,p.warn,p.bad), bmi:p.bmi, ring:p.ring, dose:p.dose,
       series:{ weight:pick(p.series.weight,p.brand), waist:p.series.waist,
-               sys:p.series.sys, dia:p.series.dia, pulse:p.series.pulse },
+               sys:p.series.sys, dia:p.series.dia, pulse:p.series.pulse,
+               glu:pick(p.series.glu, p.series.waist) },
       chartGrid:pick(p.chartGrid,p.line), chartAxis:pick(p.chartAxis,p.muted),
       subst:{ mounjaro:id[0], trt:id[1], peptide:id[2] },
       pep:id.slice(2),
@@ -3108,6 +3132,12 @@ function doseColor(mg){
 /* =========================================================================
    CHART — inline SVG weight trend + dose colouring
    ========================================================================= */
+/* One place that turns a glucose tag into words, so the chart, the history and
+   the stats can never disagree about what "fasting" is called. */
+function gluTagLabel(tag){
+  return I18N.t(tag==="fasting" ? "glu.tagFasting" : tag==="bed" ? "glu.tagBed" : "glu.tagPost");
+}
+
 var CHART = (function(){
   // Illness episodes as shaded vertical bands drawn behind the gridlines and
   // every series, so a sick stretch is visible against the trend. spans come
@@ -3286,6 +3316,60 @@ var CHART = (function(){
     return svg;
   }
 
+  // Blood-glucose chart: one series over time, irregular timestamps OK. The tag
+  // rides the tooltip rather than the marker — blood pressure does the same with
+  // its fasting flag, and three marker styles at this size read as noise.
+  function renderGlucose(log, opts){
+    opts=opts||{};
+    var unit=opts.unit||"mgdl";
+    var data = log.slice().filter(function(e){return e && e.mgdl!=null;})
+                  .sort(function(a,b){ return a.ts<b.ts?-1:a.ts>b.ts?1:0; });
+    if(data.length===0) return '<div class="empty">'+esc(I18N.t("glu.empty"))+'</div>';
+    var W=320,H=210,mL=30,mR=12,mT=12,mB=26, iw=W-mL-mR, ih=H-mT-mB;
+    var xs=data.map(function(e){ return new Date(e.ts).getTime(); });
+    var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
+    if(opts.minX!=null) minX=opts.minX;
+    if(opts.maxX!=null) maxX=opts.maxX;
+    // Plotted in whatever unit is on display, so the numbers beside the grid are
+    // the numbers on the meter.
+    function u(mgdl){ return DOMAIN.gluFromMgdl(mgdl, unit); }
+    function lab(v){ return unit==="mmol" ? (Math.round(v*10)/10).toFixed(1) : String(Math.round(v)); }
+    var vals=data.map(function(e){ return u(e.mgdl); });
+    var minY=Math.min.apply(null,vals), maxY=Math.max.apply(null,vals);
+    if(minY===maxY){ minY-=unit==="mmol"?0.5:10; maxY+=unit==="mmol"?0.5:10; }
+    var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
+    function X(t){ return maxX===minX ? mL+iw/2 : mL+(t-minX)/(maxX-minX)*iw; }
+    function Y(v){ return mT+(1-(v-minY)/(maxY-minY))*ih; }
+    var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="glucose chart">';
+    svg+=illBands(opts.illness, X, mL, W-mR, mT, ih, maxX===minX);
+    var rows=4;
+    for(var r=0;r<=rows;r++){
+      var val=minY+(maxY-minY)*r/rows, y=Y(val);
+      svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="'+PAL.chartGrid+'" stroke-width="1"/>';
+      svg+='<text x="'+(mL-5)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="end">'+lab(val)+'</text>';
+    }
+    if(opts.minX!=null && maxX>minX){
+      dayTicks(minX,maxX).forEach(function(t){
+        svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(t)+'</text>';
+      });
+    } else {
+      var idxs = data.length<=3 ? data.map(function(_,i){return i;}) : [0,Math.floor((data.length-1)/2),data.length-1];
+      idxs.forEach(function(i){ svg+='<text x="'+X(xs[i]).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(xs[i])+'</text>'; });
+    }
+    if(data.length>1){
+      var pts=data.map(function(e,i){ return X(xs[i]).toFixed(1)+","+Y(u(e.mgdl)).toFixed(1); }).join(" ");
+      svg+='<polyline points="'+pts+'" fill="none" stroke="'+PAL.series.glu+'" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    var uLab=I18N.t(unit==="mmol"?"glu.unitMmol":"glu.unitMgdl");
+    data.forEach(function(e,i){
+      var tip=fmtDateTime(e.ts)+" · "+lab(u(e.mgdl))+" "+uLab+" · "+gluTagLabel(e.tag)+(e.note?" · "+e.note:"");
+      svg+='<g><title>'+esc(tip)+'</title>'
+         +'<circle cx="'+X(xs[i]).toFixed(1)+'" cy="'+Y(u(e.mgdl)).toFixed(1)+'" r="3.6" fill="'+PAL.series.glu+'" stroke="'+PAL.halo+'" stroke-width="1.2"/></g>';
+    });
+    svg+='</svg>';
+    return svg;
+  }
+
   // Blood-pressure chart: systolic + diastolic (+ pulse) over time, irregular timestamps OK.
   function renderBP(log, opts){
     opts=opts||{};
@@ -3377,7 +3461,7 @@ var CHART = (function(){
     svg+='</svg>';
     return svg;
   }
-  return { render:render, renderBP:renderBP, renderDual:renderDual };
+  return { render:render, renderBP:renderBP, renderGlucose:renderGlucose, renderDual:renderDual };
 })();
 
 /* =========================================================================
@@ -3854,6 +3938,156 @@ var UI = (function(){
     }
     return rows;
   }
+
+  // ---- glucose ------------------------------------------------------------
+  var gluEdit=null;  // id of the reading being edited (null = adding a new one)
+  var gluPage=0;     // history page
+  var gluRange={days:null, offset:0};
+  // Both vitals live under one tab, so both views open with the same switch.
+  function vitalsSwitch(active){
+    return '<div class="seg" style="margin:0 0 12px">'
+      +'<button type="button" class="vitSw'+(active==="bp"?" on":"")+'" data-v="bp">'+esc(I18N.t("vitals.bp"))+'</button>'
+      +'<button type="button" class="vitSw'+(active==="glu"?" on":"")+'" data-v="glu">'+esc(I18N.t("vitals.glu"))+'</button>'
+      +'</div>';
+  }
+  function bindVitalsSwitch(){
+    $all(".vitSw").forEach(function(b){ b.addEventListener("click",function(){
+      location.hash = b.getAttribute("data-v")==="glu" ? "#glucose" : "#bp";
+    });});
+  }
+  function gluUnit(st){ return st.settings.gluUnit==="mmol" ? "mmol" : "mgdl"; }
+  function gluUnitLabel(unit){ return I18N.t(unit==="mmol"?"glu.unitMmol":"glu.unitMgdl"); }
+  // A stored reading in the unit on display. Never "0" for a missing one: the
+  // dash says there is nothing, which is not the same as a reading of zero.
+  function gluShow(mgdl, unit){
+    var v=DOMAIN.gluFromMgdl(mgdl, unit);
+    return v==null ? "—" : (unit==="mmol" ? fmtNum(v,1) : String(v));
+  }
+  function viewGlucose(){
+    var st=s();
+    var unit=gluUnit(st), uLab=gluUnitLabel(unit);
+    var log=(st.glu&&st.glu.log)||[];
+    var editing=null;
+    if(gluEdit){
+      for(var gi=0;gi<log.length;gi++){ if(log[gi].id===gluEdit){ editing=log[gi]; break; } }
+      if(!editing) gluEdit=null;
+    }
+    var html=pageHead("glu.title")+vitalsSwitch("glu");
+
+    // chart card, same shape as blood pressure: range bar on top, stats below
+    var win=DOMAIN.chartWindow(log, "ts", gluRange.days, gluRange.offset, todayISO());
+    gluRange.offset=win.offset;
+    var chartLog=win.entries;
+    function noonMs(iso){ return new Date(iso+"T12:00:00").getTime(); }
+    html+='<div class="card">'+rangeHeader("glu.chartTitle","gluRg",gluRange,win)
+        + '<div id="gluChart">'+CHART.renderGlucose(chartLog, {unit:unit, illness:illSpansFor(chartLog,"ts",win),
+            minX:win.from?noonMs(win.from)-43200000:null, maxX:win.to?noonMs(win.to)+43200000:null})+'</div>';
+    if(log.length){
+      var L=log[0];
+      html+='<div class="stats" style="margin-top:12px">'
+        + '<div class="stat"><span class="k">'+esc(I18N.t("glu.latest"))+'</span>'
+        + '<span class="v">'+esc(gluShow(L.mgdl, unit))+'</span>'
+        + '<span class="muted tiny">'+esc(uLab+" · "+gluTagLabel(L.tag))+'</span></div>'
+        + '<div class="stat"><span class="k">'+esc(I18N.t("glu.when"))+'</span>'
+        + '<span class="v" style="font-size:14px">'+esc(fmtDateTime(L.ts))+'</span></div>'
+        + '</div>';
+      // Averages per tag as well as overall: fasting and after-a-meal are not
+      // the same measurement, and one number over both would say nothing.
+      var gs=DOMAIN.gluWindowStats(chartLog);
+      if(gs){
+        function gTile(label, mm){
+          return '<div class="stat"><span class="k">'+esc(label)+'</span>'
+            +'<span class="v">'+esc(gluShow(Math.round(mm.avg), unit))+'</span>'
+            +'<span class="muted tiny">'+esc(gluShow(mm.min,unit)+"–"+gluShow(mm.max,unit))+'</span></div>';
+        }
+        var tiles=gTile(I18N.t("glu.winAvg"), gs.all);
+        DOMAIN.GLU_TAGS.forEach(function(t){ if(gs.byTag[t]) tiles+=gTile(gluTagLabel(t), gs.byTag[t]); });
+        html+='<div class="stats" style="margin-top:8px">'+tiles+'</div>';
+      }
+    }
+    html+='</div>';
+
+    // entry form
+    var when0=(editing?toLocalDT(editing.ts):nowLocalDT());
+    var defTag=editing ? (editing.tag||"post") : DOMAIN.gluTagFor(new Date().getHours());
+    var val0=editing ? DOMAIN.gluFromMgdl(editing.mgdl, unit) : null;
+    html+='<div class="card"><p class="sub">'+esc(I18N.t("glu.sub"))+'</p>'
+      + (editing?'<div class="note" style="margin:0 0 12px">'+esc(I18N.t("common.editing"))+'</div>':'')
+      + '<div class="field"><label>'+esc(I18N.t("glu.value"))+' <span class="muted tiny">('+esc(uLab)+')</span></label>'
+      + '<input type="number" inputmode="decimal" id="gluVal" step="'+(unit==="mmol"?"0.1":"1")+'" min="0"'
+      + ' placeholder="'+(unit==="mmol"?"5.5":"99")+'" value="'+(val0==null?'':esc(String(val0)))+'"></div>'
+      + '<div class="field"><label>'+esc(I18N.t("glu.tag"))+'</label><div class="seg" id="gluTags">'
+      + DOMAIN.GLU_TAGS.map(function(t){
+          return '<button type="button" data-t="'+t+'"'+(t===defTag?' class="on"':'')+'>'+esc(gluTagLabel(t))+'</button>';
+        }).join('')
+      + '</div></div>'
+      + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("glu.when"))+' <span class="muted tiny">('+esc(I18N.t("bp.whenHint"))+')</span></label>'
+      + '<input type="date" id="gluDate" value="'+when0.slice(0,10)+'"></div>'
+      + '<div class="field"><label>'+esc(I18N.t("common.time"))+'</label><input type="time" id="gluTime" value="'+when0.slice(11,16)+'"></div></div>'
+      + '<div class="field"><label>'+esc(I18N.t("common.note"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
+      + '<input type="text" id="gluNote" maxlength="80" value="'+(editing?esc(editing.note||""):'')+'"></div>'
+      + '<div class="row"><button class="btn" id="gluAdd">'+esc(editing?I18N.t("common.update"):I18N.t("glu.add"))+'</button>'
+      + (editing?'<button class="btn ghost" id="gluCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
+      + '</div>'
+      + '<div class="rellinks"><a class="btn ghost" href="#bp">'+icon("bp")+esc(I18N.t("rel.toBp"))+icon("arrow")+'</a></div>'
+      + '</div>';
+
+    // history
+    if(log.length){
+      html+='<div class="card"><h2>'+esc(I18N.t("glu.history"))+'</h2><div class="scroll"><table><tbody>';
+      gluPage=pageClamp(gluPage, log.length);
+      pageSlice(log, gluPage).forEach(function(e){
+        html+='<tr><td style="width:45%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(String(e.ts).slice(0,10))
+            + injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
+            + '<span class="pill" style="display:inline-block;margin-top:2px;background:var(--brand-t14);color:var(--brand-dk)">'+esc(gluTagLabel(e.tag))+'</span>'
+            + (e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
+            + '<td style="width:25%"><b class="nowrap">'+esc(gluShow(e.mgdl, unit))+'</b>'
+            + '<br><span class="muted tiny nowrap">'+esc(uLab)+'</span></td>'
+            + '<td class="num"><button class="btn ghost sm gluEd" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
+            + '<button class="btn ghost sm gluDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
+      });
+      html+='</tbody></table></div>'+pagerHTML("gluPg", gluPage, log.length)+'</div>';
+    }
+    app.innerHTML=html;
+
+    bindVitalsSwitch();
+    $("#gluAdd").addEventListener("click",function(){
+      var mgdl=DOMAIN.gluToMgdl($("#gluVal").value, unit);
+      if(mgdl==null){ $("#gluVal").focus(); return; }
+      var on=$("#gluTags .on");
+      var tag=on?on.getAttribute("data-t"):defTag;
+      var whenVal=$("#gluDate").value ? $("#gluDate").value+"T"+($("#gluTime").value||"12:00") : "";
+      var when=whenVal?new Date(whenVal):new Date();
+      if(isNaN(when.getTime())) when=new Date();
+      var note=($("#gluNote").value||"").trim();
+      if(editing){
+        editing.ts=when.toISOString(); editing.mgdl=mgdl; editing.tag=tag; editing.note=note;
+        gluEdit=null;
+      } else {
+        st.glu.log.push({ id:uid(), ts:when.toISOString(), mgdl:mgdl, tag:tag, note:note });
+      }
+      st.glu.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
+      gluPage=0;
+      STORE.save(); toast(I18N.t("common.saved")); viewGlucose();
+    });
+    // The tag is a plain segment: pick one, nothing else moves.
+    $all("#gluTags button").forEach(function(b){ b.addEventListener("click",function(){
+      $all("#gluTags button").forEach(function(x){ x.classList.toggle("on", x===b); });
+    });});
+    if($("#gluCancel")) $("#gluCancel").addEventListener("click",function(){ gluEdit=null; viewGlucose(); });
+    bindPager("gluPg", function(){return gluPage;}, function(v){gluPage=v;}, viewGlucose);
+    bindRange("gluRg", gluRange, viewGlucose);
+    $all(".gluEd").forEach(function(b){ b.addEventListener("click",function(){
+      gluEdit=b.getAttribute("data-id"); viewGlucose(); window.scrollTo(0,0);
+    });});
+    $all(".gluDel").forEach(function(b){ b.addEventListener("click",function(){
+      if(!confirm(I18N.t("glu.confirmDel"))) return;
+      var id=b.getAttribute("data-id");
+      st.glu.log = st.glu.log.filter(function(e){return e.id!==id;});
+      if(gluEdit===id) gluEdit=null;
+      STORE.save(); viewGlucose();
+    });});
+  }
   function viewBP(){
     var st=s();
     var series=!!st.settings.bpSeries;
@@ -3869,7 +4103,7 @@ var UI = (function(){
     // doses in effect on a reading's date (shared pill renderer)
     function doseCell(e){ return dosePillsAsOf(st, String(e.ts).slice(0,10), e.doseMg); }
     var html=''
-    + pageHead("bp.title");
+    + pageHead("bp.title") + vitalsSwitch("bp");
 
     // chart card (on top); the range bar narrows to a day window and ‹ › page it
     var win=DOMAIN.chartWindow(log, "ts", bpRange.days, bpRange.offset, todayISO());
@@ -4025,6 +4259,7 @@ var UI = (function(){
     $all(".bpAvgToggle").forEach(function(b){ b.addEventListener("click",function(){
       var id=b.getAttribute("data-id"); bpOpenId=(bpOpenId===id)?null:id; viewBP();
     });});
+    bindVitalsSwitch();
     if($("#bpCancel")) $("#bpCancel").addEventListener("click",function(){ bpEdit=null; viewBP(); });
     bindPager("bpPg", function(){return bpPage;}, function(v){bpPage=v;}, viewBP);
     bindRange("bpRg", bpRange, viewBP);
@@ -7524,7 +7759,10 @@ var UI = (function(){
   }
 
   /* ---- router & static text ---- */
-  var routes={ pulpit:viewDash, inject:viewInject, weight:viewWeight, bp:viewBP, diary:viewDiary, correlate:viewCorrelate, optimizer:viewOpt, settings:viewSettings };
+  var routes={ pulpit:viewDash, inject:viewInject, weight:viewWeight, bp:viewBP, glucose:viewGlucose, diary:viewDiary, correlate:viewCorrelate, optimizer:viewOpt, settings:viewSettings };
+  // Blood pressure and glucose share the "Pomiary" tab, so two addresses light
+  // the same one. Everything else answers for itself.
+  function navTabFor(tab){ return tab==="glucose" ? "bp" : tab; }
   function currentTab(){
     var t=DOMAIN.parseRoute(location.hash).tab;
     return routes[t]?t:"pulpit";
@@ -7597,7 +7835,8 @@ var UI = (function(){
     var r=DOMAIN.parseRoute(location.hash), tab=routes[r.tab]?r.tab:"pulpit";
     trackNav();
     applyRoute(tab, r.sub);
-    $all("nav.tabs a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-tab")===tab); });
+    var navTab=navTabFor(tab);
+    $all("nav.tabs a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-tab")===navTab); });
     routes[tab]();
     window.scrollTo(0,0);
   }
