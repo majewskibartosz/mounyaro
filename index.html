@@ -516,7 +516,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v175";
+var BUILD = "mj-v176";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -4064,6 +4064,10 @@ var UI = (function(){
         editing.ts=when.toISOString(); editing.mgdl=mgdl; editing.tag=tag; editing.note=note;
         gluEdit=null;
       } else {
+        // merge() fills this from defaults, but a hand-edited or very old import
+        // might not carry it — a first reading must never fail on that
+        if(!st.glu) st.glu={log:[]};
+        if(!st.glu.log) st.glu.log=[];
         st.glu.log.push({ id:uid(), ts:when.toISOString(), mgdl:mgdl, tag:tag, note:note });
       }
       st.glu.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
@@ -6965,6 +6969,11 @@ var UI = (function(){
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
     html+='<a class="stat" href="#bp"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10), bpL.ts):'')+'</a>';
+    var gL=(st.glu&&st.glu.log&&st.glu.log.length)?st.glu.log[0]:null;
+    var gU=gluUnit(st);
+    html+='<a class="stat" href="#glucose"><span class="k">'+esc(I18N.t("pulpit.glu"))+'</span><span class="v">'
+      +(gL?esc(gluShow(gL.mgdl,gU)+" "+gluUnitLabel(gU)):I18N.t("pulpit.noData"))+'</span>'
+      +(gL?statDate(String(gL.ts).slice(0,10), gL.ts):'')+'</a>';
     var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData");
     // month-to-date + total deltas on their own line, each coloured by its own sign
@@ -7024,6 +7033,7 @@ var UI = (function(){
       opts.push({ id:"vital:dia", label:I18N.t("corr.vital.dia") });
       if(st.bp.log.some(function(e){return e.pulse!=null;})) opts.push({ id:"vital:pulse", label:I18N.t("corr.vital.pulse") });
     }
+    if(st.glu && st.glu.log && st.glu.log.length) opts.push({ id:"glucose", label:I18N.t("corr.glucose") });
     if((st.weightLog||[]).length){
       opts.push({ id:"weight", label:I18N.t("corr.weight") });
       if(st.weightLog.some(function(e){return e.waistCm!=null;})) opts.push({ id:"waist", label:I18N.t("corr.waist") });
@@ -7643,6 +7653,10 @@ var UI = (function(){
       +'<option value="f"'+(st.profile.sex==="f"?" selected":"")+'>'+esc(I18N.t("bmi.female"))+'</option>'
       +'<option value="m"'+(st.profile.sex==="m"?" selected":"")+'>'+esc(I18N.t("bmi.male"))+'</option>'
     +'</select></div>'
+    +'<div class="field"><label>'+esc(I18N.t("set.gluUnit"))+'</label><select id="setGluUnit">'
+      +'<option value="mgdl"'+(gluUnit(st)==="mgdl"?" selected":"")+'>'+esc(I18N.t("glu.unitMgdl"))+'</option>'
+      +'<option value="mmol"'+(gluUnit(st)==="mmol"?" selected":"")+'>'+esc(I18N.t("glu.unitMmol"))+'</option>'
+    +'</select></div>'
     +'</div></div>'
     +'<div class="card"><h2>'+esc(I18N.t("set.penCosts"))+'</h2>'
     +'<div class="seg" id="pcSeg">'
@@ -7689,6 +7703,11 @@ var UI = (function(){
     $("#setH").addEventListener("input",function(){ st.profile.heightCm=this.value===""?null:parseFloat(this.value); STORE.save(); });
     $("#setAge").addEventListener("input",function(){ st.profile.age=this.value===""?null:parseInt(this.value,10); STORE.save(); });
     $("#setSex").addEventListener("change",function(){ st.profile.sex=this.value||null; STORE.save(); });
+    // Only the display changes: readings are stored in mg/dl whatever this says,
+    // so switching back and forth leaves every past reading exactly as it was.
+    $("#setGluUnit").addEventListener("change",function(){
+      st.settings.gluUnit=this.value==="mmol"?"mmol":"mgdl"; STORE.save(); toast(I18N.t("common.saved"));
+    });
     $("#setMjTab").addEventListener("change",function(){ st.settings.showMounjaroTab=this.checked; STORE.save(); render(); });
     $("#setDoseWeeks").addEventListener("change",function(){ st.settings.showDoseWeeks=this.checked; STORE.save(); });
     $("#setDoseBf").addEventListener("change",function(){ st.settings.showDoseBackfill=this.checked; STORE.save(); });
