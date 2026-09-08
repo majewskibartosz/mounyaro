@@ -503,40 +503,19 @@ test("doseCountdown: whole-day intervals still behave as before", function () {
   assert.strictEqual(cd.nextMs, SAT_8AM + 7 * D);
 });
 
-test("dueWithinDay / dayMark: the day is marked on the bar, not measured by it", function () {
-  // every 2 days: 20 h out is today's business, 30 h out is not
-  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 28 * H)), true);
-  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 18 * H)), false);
-  // past due counts as today too — it is certainly not tomorrow's problem
-  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 60 * H)), true);
-  // twice a day is ALWAYS inside a day of its next dose, so the mark would be lit
-  // permanently and say nothing: it gets none, and NOW carries the signal instead
-  assert.strictEqual(DOMAIN.dueWithinDay(DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM + 11 * H)), false);
-  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM)), null);
-  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 1, SAT_8AM)), null);
-  // and where the cycle is longer than a day, the mark sits exactly one day short
-  // of the end of the track
-  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM)), 0.5);
-  assert.strictEqual(DOMAIN.dayMark(DOMAIN.doseCountdown(SAT_8AM, 4, SAT_8AM)), 0.75);
-  assert.strictEqual(DOMAIN.dayMark(null), null);
-});
-
-test("frac: the wave runs its own cycle, which is why the mark carries the day", function () {
+test("frac: the wave runs its own cycle, and empties at every shot", function () {
   // The two rows off the report. Thymosin Alpha-1: every 2 days, 13 h to go.
   // KPV: twice a day (a 12 h span), 11 h to go.
   var ta1 = DOMAIN.doseCountdown(SAT_8AM, 2, SAT_8AM + 35 * H);
   var kpv = DOMAIN.doseCountdown(SAT_8AM, 0.5, SAT_8AM + 1 * H);
   assert.strictEqual(ta1.hours, 13);
   assert.strictEqual(kpv.hours, 11);
-  // Deliberately kept: length is progress through one's own rhythm, so the longer
-  // wait does draw further along. Both waves move the whole time and empty at the
-  // shot, which is the reading the bar is FOR.
+  // Length is progress through one's own rhythm, so the longer wait does draw
+  // further along, and rows are not comparable by it. Accepted on purpose: what
+  // the bar is for is watching one run fill, and it moves the whole time.
   assert.strictEqual(ta1.frac, 35 / 48);
   assert.ok(ta1.frac > kpv.frac);
   assert.ok(kpv.frac < 0.1);                       // just injected: near-empty, not half
-  // "How close" is carried by the mark instead, and it is not a length at all
-  assert.strictEqual(DOMAIN.dueWithinDay(ta1), true);
-  assert.strictEqual(DOMAIN.dayMark(ta1), 0.5);
 });
 
 test("doseCountdown: no last shot, or no interval, gives null", function () {
