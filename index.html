@@ -219,14 +219,15 @@
   .jnote{position:relative}
   .jnote .jbody{line-height:1.5}
   .jnote:not(.open){cursor:pointer}
-  .jnote:not(.open) .jbody{max-height:4.5em;overflow:hidden}   /* 3 lines */
-  /* the first two lines stay solid; only the third dissolves, and the ellipsis
-     sits where it has already reached zero, so the two never fight */
+  .jnote:not(.open) .jbody{max-height:10.5em;overflow:hidden}   /* 7 lines */
+  /* roughly four and a half lines stay sharp and the rest dissolves: enough of
+     the note to tell what it is about, which is the only reason a preview
+     exists -- a shorter cut buys screen space by making it useless */
   .jnote:not(.open):not(.short) .jbody{
-    -webkit-mask-image:linear-gradient(180deg,#000 66%,transparent 100%);
-            mask-image:linear-gradient(180deg,#000 66%,transparent 100%)}
-  /* rolled up, the ellipsis lies on the faded tail and costs no height at all
-     -- that is what makes the difference between four and five notes a screen */
+    -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
+            mask-image:linear-gradient(180deg,#000 62%,transparent 100%)}
+  /* rolled up, the ellipsis lies on the faded tail: it says "there is more"
+     without costing a row of its own */
   .jnote:not(.open) .jmore{position:absolute;left:0;bottom:0;margin:0}
   /* .short = measured as fitting, so no cut and no fade at all */
   .jnote.short{cursor:auto}
@@ -557,7 +558,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v182";
+var BUILD = "mj-v183";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -3677,10 +3678,15 @@ var UI = (function(){
 
   /* ---- history pagination: PAGE_SIZE rows per page + prev/next arrows ---- */
   var PAGE_SIZE=5;
-  function pageClamp(page, total){ var pages=Math.max(1, Math.ceil(total/PAGE_SIZE)); return Math.max(0, Math.min(page, pages-1)); }
-  function pageSlice(list, page){ return list.slice(page*PAGE_SIZE, page*PAGE_SIZE+PAGE_SIZE); }
-  function pagerHTML(cls, page, total){
-    var pages=Math.max(1, Math.ceil(total/PAGE_SIZE));
+  // Notes are read in a run, not looked up row by row, so the journal's page is
+  // long and scrolled -- five entries meant reaching for the arrow every screen.
+  // Every other list keeps PAGE_SIZE: five table rows a page is right there.
+  var JOURNAL_PAGE=15;
+  function pageClamp(page, total, n){ n=n||PAGE_SIZE; var pages=Math.max(1, Math.ceil(total/n)); return Math.max(0, Math.min(page, pages-1)); }
+  function pageSlice(list, page, n){ n=n||PAGE_SIZE; return list.slice(page*n, page*n+n); }
+  function pagerHTML(cls, page, total, n){
+    n=n||PAGE_SIZE;
+    var pages=Math.max(1, Math.ceil(total/n));
     if(pages<2) return "";
     return '<div class="pager">'
       +'<button type="button" class="btn ghost sm '+cls+'" data-d="-1"'+(page<=0?' disabled':'')+'>&lsaquo;</button>'
@@ -4923,9 +4929,9 @@ var UI = (function(){
           + ' aria-expanded="'+(open?"true":"false")+'" title="'+esc(I18N.t(open?"common.less":"common.more"))+'">'
           + jMoreLabel(open)+'</button></div>';
       }
-      journalPage=pageClamp(journalPage, items.length);
+      journalPage=pageClamp(journalPage, items.length, JOURNAL_PAGE);
       var lastDay=null;
-      pageSlice(items, journalPage).forEach(function(it){
+      pageSlice(items, journalPage, JOURNAL_PAGE).forEach(function(it){
         var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
         // the illness flag is day-derived, so it lands on every item type
         var ill=DOMAIN.illnessAsOf(st, dISO), ic=ill?illColor(ill.severity):null;
@@ -4955,7 +4961,7 @@ var UI = (function(){
             +'<button class="btn ghost sm jDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(it.id)+'">'+icon("trash")+'</button>'))
           +'</div>';
       });
-      html+=pagerHTML("jPg", journalPage, items.length);
+      html+=pagerHTML("jPg", journalPage, items.length, JOURNAL_PAGE);
     }
     html+='</div>';
     html+='<div class="rellinks"><a class="btn ghost" href="#inject">'+icon("inject")+esc(I18N.t("rel.toInject"))+icon("arrow")+'</a></div>';
