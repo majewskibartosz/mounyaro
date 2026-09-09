@@ -212,9 +212,15 @@
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
   .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
-  /* four chips in a row break every label onto two lines at 360px; two rows of
-     two give each one 137px for a 106px label and they all stay on one line */
-  .seg.g2x2{display:grid;grid-template-columns:1fr 1fr}
+  /* Glucose tags. Four chips in a row break every label onto two lines at 360px;
+     two rows of two give each one 137px for a 106px label and they all stay on
+     one line. The pair being compared — before a meal and after it — has to sit
+     one above the other, so the bottom two cells swap: the chips are rendered in
+     the order a day runs (fasting, before, after, bedtime) and only their
+     PLACES move. Written for exactly those four. */
+  .seg.gtags{display:grid;grid-template-columns:1fr 1fr}
+  .seg.gtags button:nth-child(3){grid-column:2;grid-row:2}   /* after a meal, under before */
+  .seg.gtags button:nth-child(4){grid-column:1;grid-row:2}   /* bedtime, under fasting */
   /* peptide cards: one row per blend, colour rail carries its identity */
   /* the app's first overlay: full-bleed, above the sticky header and tab bar */
   .modal{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}
@@ -519,7 +525,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v178";
+var BUILD = "mj-v179";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -4114,7 +4120,7 @@ var UI = (function(){
       + '<div class="field"><label>'+esc(I18N.t("glu.value"))+' <span class="muted tiny">('+esc(uLab)+')</span></label>'
       + '<input type="number" inputmode="decimal" id="gluVal" step="'+(unit==="mmol"?"0.1":"1")+'" min="0"'
       + ' placeholder="'+(unit==="mmol"?"5.5":"99")+'" value="'+(val0==null?'':esc(String(val0)))+'"></div>'
-      + '<div class="field"><label>'+esc(I18N.t("glu.tag"))+'</label><div class="seg g2x2" id="gluTags">'
+      + '<div class="field"><label>'+esc(I18N.t("glu.tag"))+'</label><div class="seg gtags" id="gluTags">'
       + DOMAIN.GLU_TAGS.map(function(t){
           return '<button type="button" data-t="'+t+'"'+(t===defTag?' class="on"':'')+'>'+esc(gluTagLabel(t))+'</button>';
         }).join('')
