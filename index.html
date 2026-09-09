@@ -218,11 +218,18 @@
      background inline -- a mask fades the text itself, so it is right on both. */
   .jnote{position:relative}
   .jnote .jbody{line-height:1.5}
-  .jnote:not(.open) .jbody{max-height:10.5em;overflow:hidden}   /* 7 lines */
+  .jnote:not(.open){cursor:pointer}
+  .jnote:not(.open) .jbody{max-height:4.5em;overflow:hidden}   /* 3 lines */
+  /* the first two lines stay solid; only the third dissolves, and the ellipsis
+     sits where it has already reached zero, so the two never fight */
   .jnote:not(.open):not(.short) .jbody{
-    -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
-            mask-image:linear-gradient(180deg,#000 62%,transparent 100%)}
+    -webkit-mask-image:linear-gradient(180deg,#000 66%,transparent 100%);
+            mask-image:linear-gradient(180deg,#000 66%,transparent 100%)}
+  /* rolled up, the ellipsis lies on the faded tail and costs no height at all
+     -- that is what makes the difference between four and five notes a screen */
+  .jnote:not(.open) .jmore{position:absolute;left:0;bottom:0;margin:0}
   /* .short = measured as fitting, so no cut and no fade at all */
+  .jnote.short{cursor:auto}
   .jnote.short .jbody{max-height:none}
   .jnote.short .jmore{display:none}
   .jmore{margin-top:2px}
@@ -550,7 +557,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v181";
+var BUILD = "mj-v182";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -5003,8 +5010,8 @@ var UI = (function(){
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // in place, never viewDiary(): a re-render would throw away the typed note
-    $all(".jmore").forEach(function(b){ b.addEventListener("click",function(){
-      var n=b.parentNode, open=!n.classList.contains("open");
+    function setNoteOpen(n, open){
+      var b=n.querySelector(".jmore");
       jNoteOpen[b.getAttribute("data-id")]=open;
       n.classList.toggle("open", open);
       n.classList.remove("short");
@@ -5012,6 +5019,17 @@ var UI = (function(){
       b.setAttribute("aria-expanded", open?"true":"false");
       b.title=I18N.t(open?"common.less":"common.more");
       b.innerHTML=jMoreLabel(open);
+    }
+    // A tap anywhere in the note unrolls it; only "Zwiń" rolls it back, so
+    // brushing the text while reading does not fold it away again. One listener
+    // on the note covers the button too -- it sits inside, and Enter on it
+    // fires a click that bubbles here, so the keyboard path is the same one.
+    $all(".jnote").forEach(function(n){ n.addEventListener("click",function(ev){
+      if(n.classList.contains("short")) return;
+      var open=n.classList.contains("open");
+      if(open && !(ev.target.closest && ev.target.closest(".jmore"))) return;
+      if(!open && String(window.getSelection())) return;   // that was selecting text, not a tap
+      setNoteOpen(n, !open);
     });});
     $all(".symLineToggle").forEach(function(b){ b.addEventListener("click",function(){
       var id=b.getAttribute("data-id"); symLineOpenId=(symLineOpenId===id)?null:id; viewDiary();
