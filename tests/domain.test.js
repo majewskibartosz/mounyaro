@@ -1303,3 +1303,22 @@ test("gluTypicalRange: your own middle half, and nothing until there is enough",
   assert.strictEqual(DOMAIN.gluTypicalRange([r(1, 95), r(2, 95), r(3, 95), r(4, 95), r(5, 95)], now), null);
   assert.strictEqual(DOMAIN.gluTypicalRange([], now), null);
 });
+
+test("GLU_TAGS: four readings a day can be told apart, in the order the day runs", function () {
+  assert.deepStrictEqual(Array.from(DOMAIN.GLU_TAGS), ["fasting", "pre", "post", "bed"]);
+});
+
+test("gluWindowStats: before a meal is its own bucket, not folded into after", function () {
+  var st = DOMAIN.gluWindowStats([
+    { mgdl: 88, tag: "fasting" },
+    { mgdl: 96, tag: "pre" },
+    { mgdl: 104, tag: "pre" },
+    { mgdl: 150, tag: "post" },
+    { mgdl: 110, tag: "bed" }
+  ]);
+  assert.strictEqual(st.byTag.pre.avg, 100);
+  assert.strictEqual(st.byTag.pre.min, 96);
+  assert.strictEqual(st.byTag.pre.max, 104);
+  assert.strictEqual(st.byTag.post.avg, 150);      // untouched by the new tag
+  assert.strictEqual(st.n, 5);
+});

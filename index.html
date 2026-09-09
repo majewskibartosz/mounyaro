@@ -212,6 +212,9 @@
   .seg{display:flex;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:9px 6px;border-radius:9px;cursor:pointer}
   .seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  /* four chips in a row break every label onto two lines at 360px; two rows of
+     two give each one 137px for a 106px label and they all stay on one line */
+  .seg.g2x2{display:grid;grid-template-columns:1fr 1fr}
   /* peptide cards: one row per blend, colour rail carries its identity */
   /* the app's first overlay: full-bleed, above the sticky header and tab bar */
   .modal{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}
@@ -516,7 +519,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v177";
+var BUILD = "mj-v178";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -897,6 +900,7 @@ var I18N = (function(){
     "glu.when":{pl:"Czas odczytu",en:"Reading time"},
     "glu.tag":{pl:"Kiedy",en:"When"},
     "glu.tagFasting":{pl:"na czczo",en:"fasting"},
+    "glu.tagPre":{pl:"przed posiłkiem",en:"before a meal"},
     "glu.tagPost":{pl:"po posiłku",en:"after a meal"},
     "glu.tagBed":{pl:"przed snem",en:"at bedtime"},
     "glu.winAvg":{pl:"Śr. w oknie",en:"Window avg"},
@@ -2196,7 +2200,7 @@ var DOMAIN = (function(){
   // meant. The round trip lands within 0.03 mmol/l — finer than any meter's own
   // resolution, so a value never comes back as a different reading.
   var MMOL_MGDL = 18;
-  var GLU_TAGS = ["fasting","post","bed"];
+  var GLU_TAGS = ["fasting","pre","post","bed"];
   function gluToMgdl(v, unit){
     var n=Number(v);
     if(!isFinite(n) || n<=0) return null;
@@ -2211,6 +2215,8 @@ var DOMAIN = (function(){
   // Which reading this is, guessed from the clock so the ordinary case needs no
   // tap at all: the morning one is fasting, the evening one is bedtime, and the
   // day in between is after a meal. Always overridable — it is a guess.
+  // "Before a meal" is never guessed: at noon it is a coin-flip against "two
+  // hours after breakfast", and a worse guess than the one already here.
   function gluTagFor(hour){
     if(hour<11) return "fasting";
     if(hour>=18) return "bed";
@@ -3157,7 +3163,9 @@ function doseColor(mg){
 /* One place that turns a glucose tag into words, so the chart, the history and
    the stats can never disagree about what "fasting" is called. */
 function gluTagLabel(tag){
-  return I18N.t(tag==="fasting" ? "glu.tagFasting" : tag==="bed" ? "glu.tagBed" : "glu.tagPost");
+  return I18N.t(tag==="fasting" ? "glu.tagFasting"
+              : tag==="pre" ? "glu.tagPre"
+              : tag==="bed" ? "glu.tagBed" : "glu.tagPost");
 }
 
 var CHART = (function(){
@@ -4106,7 +4114,7 @@ var UI = (function(){
       + '<div class="field"><label>'+esc(I18N.t("glu.value"))+' <span class="muted tiny">('+esc(uLab)+')</span></label>'
       + '<input type="number" inputmode="decimal" id="gluVal" step="'+(unit==="mmol"?"0.1":"1")+'" min="0"'
       + ' placeholder="'+(unit==="mmol"?"5.5":"99")+'" value="'+(val0==null?'':esc(String(val0)))+'"></div>'
-      + '<div class="field"><label>'+esc(I18N.t("glu.tag"))+'</label><div class="seg" id="gluTags">'
+      + '<div class="field"><label>'+esc(I18N.t("glu.tag"))+'</label><div class="seg g2x2" id="gluTags">'
       + DOMAIN.GLU_TAGS.map(function(t){
           return '<button type="button" data-t="'+t+'"'+(t===defTag?' class="on"':'')+'>'+esc(gluTagLabel(t))+'</button>';
         }).join('')
