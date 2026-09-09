@@ -178,6 +178,16 @@
     opacity:.5;transition:opacity .15s,transform .1s,box-shadow .15s}
   .sdot.on{opacity:1;box-shadow:0 0 0 3px var(--card),0 0 0 5px currentColor;transform:scale(1.08)}
   .sdot:active{transform:scale(.92)}
+  .ckpanel{margin:0 0 10px}
+  .ckhead{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
+    border:0;background:none;padding:7px 0;color:var(--ink);font:inherit;font-size:14px;
+    font-weight:800;cursor:pointer;text-align:left}
+  .ckhead .ckname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ckhead .ckright{display:flex;align-items:center;gap:6px;flex:none;color:var(--muted)}
+  .ckbadge{font-size:11px;font-weight:800}
+  .ckhead svg{width:12px;height:12px;transition:transform .15s}
+  .ckpanel.open .ckhead svg{transform:rotate(180deg)}
+  .ckpanel:not(.open) .ckbody{display:none}
   .statepill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 3px;border-radius:999px;font-size:12px;font-weight:800;color:var(--on-brand);margin-right:4px}
   .statepill .pemoji{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
     border-radius:50%;background:rgba(0,0,0,.32);font-size:11px;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
@@ -525,7 +535,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v179";
+var BUILD = "mj-v180";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -2444,7 +2454,11 @@ var STORE = (function(){
         penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null },
         travel:{ currency:"", rate:null, dose:null, tripValue:null, tripUnit:"weeks", penCosts:{ "2.5":null, "5":null, "7.5":null, "10":null, "12.5":null, "15":null } },
         fxAuto:false, fx:{ base:"", rates:null, fetchedAt:null, updated:"" },
-        sandbagging:false, gluUnit:"mgdl" },
+        sandbagging:false, gluUnit:"mgdl",
+        // which diary check-in panels are unrolled: key -> bool. A missing key
+        // means the default (a condition starts rolled up, wellbeing starts open),
+        // so rolling one up stores an explicit false and survives a reload too.
+        panelOpen:{} },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
       weightLog:[],        // {id,date,weightKg,waistCm,doseMg,note}; ts (optional) = exact time when given
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
@@ -4412,9 +4426,48 @@ var UI = (function(){
       return v==null ? '' : '<span class="statepill" style="background:'+wc+';color:'+THEME.pickInk(wc)+'"><span class="pemoji">'+p.icon+'</span>'+v+'</span>';
     }).join('');
   }
+  // ---- roll-up panels of the daily check-in ----------------------------------
+  // One condition brings five rows of dots with it; three conditions bury the
+  // note field. So every panel is a single line until it is asked for, and the
+  // answer is remembered in settings.panelOpen (STORE, not a module variable,
+  // or a reload would unroll everything again).
+  var PANEL_STATE="state";   // the wellbeing panel's key, next to condition ids
+  function panelOpen(key){
+    var m=(s().settings&&s().settings.panelOpen)||{};
+    return m.hasOwnProperty(key) ? !!m[key] : (key===PANEL_STATE);
+  }
+  function setPanelOpen(key, v){
+    var st=s();
+    if(!st.settings.panelOpen) st.settings.panelOpen={};
+    st.settings.panelOpen[key]=!!v;
+    STORE.save();
+  }
+  // A rolled-up panel hides dots that are about to be saved, so its header
+  // counts them: nothing set, nothing shown.
+  function panelSet(key){
+    var n=0;
+    if(key===PANEL_STATE){ STATE_PARAMS.forEach(function(p){ if(stateDraft[p.key]!=null) n++; }); return n; }
+    var pre=key+":";
+    for(var k in symDraft){ if(symDraft.hasOwnProperty(k) && k.indexOf(pre)===0 && symDraft[k]!=null) n++; }
+    return n;
+  }
+  function panelBadge(key, tot){ var n=panelSet(key); return n ? n+"/"+tot : ""; }
+  function panelHTML(key, titleHTML, bodyHTML, tot){
+    var open=panelOpen(key);
+    return '<div class="ckpanel'+(open?" open":"")+'">'
+      + '<button type="button" class="ckhead" data-panel="'+esc(key)+'" aria-expanded="'+(open?"true":"false")+'">'
+      + '<span class="ckname">'+titleHTML+'</span>'
+      + '<span class="ckright"><span class="ckbadge" data-panel="'+esc(key)+'" data-tot="'+tot+'">'+panelBadge(key,tot)+'</span>'
+      + icon("chevron")+'</span></button>'
+      + '<div class="ckbody">'+bodyHTML+'</div></div>';
+  }
+  function refreshPanelBadges(){
+    $all(".ckbadge").forEach(function(b){
+      b.textContent=panelBadge(b.getAttribute("data-panel"), b.getAttribute("data-tot"));
+    });
+  }
   function stateRowsHTML(){
-    var h='<div style="margin:0 0 10px"><div style="font-size:14px;font-weight:800;color:var(--ink);margin:0 0 2px">'+esc(I18N.t("state.title"))
-      +' <span class="muted tiny" style="font-weight:400">— '+esc(I18N.t("state.hint"))+'</span></div>';
+    var h='';
     STATE_PARAMS.forEach(function(p){
       h+='<div class="staterow"><span class="sname">'+p.icon+' '+esc(I18N.t("state."+p.key))+'</span><span class="sdots">';
       for(var v=1; v<=5; v++){
@@ -4424,7 +4477,10 @@ var UI = (function(){
       }
       h+='</span></div>';
     });
-    return h+'</div>';
+    // the hint sits inside the body, so the rolled-up line stays one short title
+    return panelHTML(PANEL_STATE, esc(I18N.t("state.title")),
+      '<p class="muted tiny" style="margin:0 0 4px">'+esc(I18N.t("state.hint"))+'</p>'+h,
+      STATE_PARAMS.length);
   }
   function bindStateDots(){
     $all(".sdot").forEach(function(b){ b.addEventListener("click",function(){
@@ -4433,6 +4489,7 @@ var UI = (function(){
       $all('.sdot[data-sp="'+k+'"]').forEach(function(x){
         x.classList.toggle("on", parseInt(x.getAttribute("data-v"),10)===stateDraft[k]);
       });
+      refreshPanelBadges();
     });});
   }
 
@@ -4708,22 +4765,23 @@ var UI = (function(){
         var e=null; (st.conditions||[]).forEach(function(c){ if(c.id===o.id) e=c; });
         var active=e?(e.symptoms||[]).filter(function(sy){ return !sy.archived; }):[];
         if(!active.length) return;
-        h+='<div style="margin:0 0 10px"><div style="font-size:14px;font-weight:800;color:var(--ink);margin:0 0 2px">'
-          +(e.type==="illness"?'&#129298;':'&#129657;')+' '+esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+'</div>';
+        var body='';
         active.forEach(function(sy){
-          h+='<div class="staterow"><span class="sname">'+esc(sy.label)+'</span><span class="sdots">';
+          body+='<div class="staterow"><span class="sname">'+esc(sy.label)+'</span><span class="sdots">';
           for(var v=1;v<=5;v++){
             // severity runs the opposite way from wellbeing: none (1) is good
             // (green), severe (5) is bad (red) — its own ramp, not the
             // wellbeing one, whose "best" slot is a theme's cyan accent rather
             // than a true green (see symSevRamp).
             var vc=PAL.symSev[v-1], on=(symDraft[e.id+":"+sy.key]===v);
-            h+='<button type="button" class="sdot symdot'+(on?" on":"")+'" data-cond="'+esc(e.id)+'" data-sym="'+esc(sy.key)
+            body+='<button type="button" class="sdot symdot'+(on?" on":"")+'" data-cond="'+esc(e.id)+'" data-sym="'+esc(sy.key)
               +'" data-v="'+v+'" style="background:'+vc+';color:'+vc+'" aria-label="'+esc(sy.label)+' '+v+'/5"></button>';
           }
-          h+='</span></div>';
+          body+='</span></div>';
         });
-        h+='</div>';
+        h+=panelHTML(e.id,
+          (e.type==="illness"?'&#129298;':'&#129657;')+' '+esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic")),
+          body, active.length);
       });
       return h;
     }
@@ -4906,7 +4964,7 @@ var UI = (function(){
     $("#jDate").addEventListener("input",function(){
       var d=this.value||today;
       var c=$("#jCtx"); if(c) c.innerHTML=ctxHtml(d);
-      var sy=$("#jSym"); if(sy){ sy.innerHTML=condCheckinHTML(d); bindSymDots(); }
+      var sy=$("#jSym"); if(sy){ sy.innerHTML=condCheckinHTML(d); bindSymDots(); bindPanels(); }
     });
     $("#jText").addEventListener("keydown",function(ev){
       if(ev.key==="Enter" && (ev.ctrlKey||ev.metaKey)) saveNote();
@@ -4940,9 +4998,20 @@ var UI = (function(){
         $all('.symdot[data-cond="'+c+'"][data-sym="'+k+'"]').forEach(function(x){
           x.classList.toggle("on", parseInt(x.getAttribute("data-v"),10)===symDraft[key]);
         });
+        refreshPanelBadges();
       });});
     }
     bindSymDots();
+    // in place, never viewDiary(): a re-render would throw away the typed note
+    function bindPanels(){
+      $all(".ckhead").forEach(function(b){ b.addEventListener("click",function(){
+        var p=b.parentNode, open=!p.classList.contains("open");
+        p.classList.toggle("open", open);
+        b.setAttribute("aria-expanded", open?"true":"false");
+        setPanelOpen(b.getAttribute("data-panel"), open);
+      });});
+    }
+    bindPanels();
     function illCommit(){ STORE.save(); toast(I18N.t("common.saved")); viewDiary(); }
     if($(".condCardHead")) $(".condCardHead").addEventListener("click",function(){
       condCardOpen=!condCardOpen; viewDiary();
@@ -5011,6 +5080,7 @@ var UI = (function(){
       if(!confirm(I18N.t("cond.confirmDrop"))) return;
       var id=$("#condEdDrop").getAttribute("data-id");
       st.conditions=(st.conditions||[]).filter(function(e){ return e.id!==id; });
+      if(st.settings.panelOpen) delete st.settings.panelOpen[id];
       condOpenId=null; condSeed=null; STORE.save(); viewDiary();
     });
     // live day-count preview, so it is obvious the start field does something
@@ -5038,6 +5108,7 @@ var UI = (function(){
       if(!confirm(I18N.t("cond.confirmDel"))) return;
       var id=b.getAttribute("data-id");
       st.conditions=(st.conditions||[]).filter(function(e){ return e.id!==id; });
+      if(st.settings.panelOpen) delete st.settings.panelOpen[id];
       if(condOpenId===id){ condOpenId=null; condSeed=null; }
       STORE.save(); viewDiary();
     });});
