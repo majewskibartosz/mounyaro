@@ -558,7 +558,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v183";
+var BUILD = "mj-v184";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -5026,16 +5026,16 @@ var UI = (function(){
       b.title=I18N.t(open?"common.less":"common.more");
       b.innerHTML=jMoreLabel(open);
     }
-    // A tap anywhere in the note unrolls it; only "Zwiń" rolls it back, so
-    // brushing the text while reading does not fold it away again. One listener
-    // on the note covers the button too -- it sits inside, and Enter on it
-    // fires a click that bubbles here, so the keyboard path is the same one.
-    $all(".jnote").forEach(function(n){ n.addEventListener("click",function(ev){
+    // A tap anywhere in the note rolls it up and down alike -- on a long one
+    // "Zwiń" sits screens below, so a tap is the only control within reach. One
+    // listener on the note covers the button too: it sits inside, and Enter on
+    // it fires a click that bubbles here, so the keyboard path is the same one.
+    $all(".jnote").forEach(function(n){ n.addEventListener("click",function(){
       if(n.classList.contains("short")) return;
-      var open=n.classList.contains("open");
-      if(open && !(ev.target.closest && ev.target.closest(".jmore"))) return;
-      if(!open && String(window.getSelection())) return;   // that was selecting text, not a tap
-      setNoteOpen(n, !open);
+      // selecting a word inside an unrolled note is exactly what it is for --
+      // folding it away on the same gesture would take the selection with it
+      if(String(window.getSelection())) return;
+      setNoteOpen(n, !n.classList.contains("open"));
     });});
     $all(".symLineToggle").forEach(function(b){ b.addEventListener("click",function(){
       var id=b.getAttribute("data-id"); symLineOpenId=(symLineOpenId===id)?null:id; viewDiary();
