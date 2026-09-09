@@ -212,6 +212,21 @@
   .logentry .lbody{flex:1;min-width:0}
   .logentry .lmeta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .logentry .ltext{font-size:14.5px;white-space:pre-wrap;overflow-wrap:break-word}
+  /* a long note must not eat the whole list: the block is cut to one height and
+     faded out, and unrolls on tap. The fade is a mask, not an overlay in the
+     card colour, because an entry from a sick day paints its own tinted
+     background inline -- a mask fades the text itself, so it is right on both. */
+  .jnote{position:relative}
+  .jnote .jbody{line-height:1.5}
+  .jnote:not(.open) .jbody{max-height:10.5em;overflow:hidden}   /* 7 lines */
+  .jnote:not(.open):not(.short) .jbody{
+    -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
+            mask-image:linear-gradient(180deg,#000 62%,transparent 100%)}
+  /* .short = measured as fitting, so no cut and no fade at all */
+  .jnote.short .jbody{max-height:none}
+  .jnote.short .jmore{display:none}
+  .jmore{margin-top:2px}
+  .jdots{font-size:14px;letter-spacing:1px;line-height:1}
   /* illness/infection days: a coloured rail down every entry inside an episode,
      so a sick stretch reads as one unbroken stripe while scrolling. The hue
      comes inline from the severity, hence only the geometry lives here. */
@@ -535,7 +550,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v180";
+var BUILD = "mj-v181";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -867,6 +882,8 @@ var I18N = (function(){
     "common.dow6":{pl:"so",en:"Sa"},
     "common.dow7":{pl:"nd",en:"Su"},
     "common.note":{pl:"Notatka",en:"Note"},
+    "common.more":{pl:"Rozwiń",en:"Show more"},
+    "common.less":{pl:"Zwiń",en:"Show less"},
     "common.optional":{pl:"opcjonalnie",en:"optional"},
     "install.btn":{pl:"Zainstaluj",en:"Install app"},
     "install.ios":{pl:"Aby zainstalować na iPhone: dotknij przycisku Udostępnij (kwadrat ze strzałką) na dole ekranu, a następnie wybierz „Do ekranu początkowego”.",
@@ -4616,6 +4633,22 @@ var UI = (function(){
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
   var journalPage=0;     // notes list page (5 each)
   var symLineOpenId=null; // id of the journal entry whose symptom detail is expanded (one at a time)
+  // which notes are unrolled. A module var, not STORE: notes only ever pile
+  // up, so a map keyed by their ids would grow in the file without end. It
+  // survives a re-render of the list, not a reload.
+  var jNoteOpen={};
+  function jMoreLabel(open){
+    return (open ? esc(I18N.t("common.less")) : '<span class="jdots">&hellip;</span>')+icon("chevron");
+  }
+  // Only a measurement knows whether a note actually overruns the cut, so the
+  // toggle and the fade appear only where there is something left to show.
+  // Runs right after innerHTML, in the same frame -- nothing flashes.
+  function markShortNotes(){
+    $all(".jnote").forEach(function(n){
+      var b=n.querySelector(".jbody");
+      n.classList.toggle("short", !n.classList.contains("open") && b.scrollHeight<=b.clientHeight+2);
+    });
+  }
   function viewDiary(){
     var st=s(), today=todayISO();
     var editing=null;
@@ -4871,6 +4904,18 @@ var UI = (function(){
         }
         return h;
       }
+      // the note text gets its own box: the pills above it and the symptom
+      // line below stay out of the cut, or rolling a note up would also hide
+      // the "Details" toggle that belongs to them
+      function noteTextHTML(id, text, spaced){
+        if(!text) return '';
+        var open=!!jNoteOpen[id];
+        return '<div class="jnote'+(open?" open":"")+'"'+(spaced?' style="margin-top:3px"':'')+'>'
+          + '<div class="jbody">'+esc(text)+'</div>'
+          + '<button type="button" class="jmore chevToggle'+(open?" open":"")+'" data-id="'+esc(id)+'"'
+          + ' aria-expanded="'+(open?"true":"false")+'" title="'+esc(I18N.t(open?"common.less":"common.more"))+'">'
+          + jMoreLabel(open)+'</button></div>';
+      }
       journalPage=pageClamp(journalPage, items.length);
       var lastDay=null;
       pageSlice(items, journalPage).forEach(function(it){
@@ -4891,7 +4936,7 @@ var UI = (function(){
           : '<span>'+esc(fmtTime(it.ts))+'</span>');
         var body = it.state ? statePillsHTML(it.state)
           : (it.vals?statePillsHTML(it.vals):'')
-            + (it.text ? ((it.vals?'<div style="margin-top:3px">':'')+esc(it.text)+(it.vals?'</div>':'')) : '')
+            + noteTextHTML(it.id, it.text, !!it.vals)
             + symptomLineHTML(it.symptoms, it.id);
         html+='<div class="logentry'+(ill?' ill':'')+'"'
           +(ill?' style="border-left-color:'+ic+';background:linear-gradient(90deg,'+ic+'14,transparent 55%)"':'')
@@ -4909,6 +4954,7 @@ var UI = (function(){
     html+='<div class="rellinks"><a class="btn ghost" href="#inject">'+icon("inject")+esc(I18N.t("rel.toInject"))+icon("arrow")+'</a></div>';
 
     app.innerHTML=html;
+    markShortNotes();
 
     function saveNote(){
       // one entry carries the text, the wellbeing dots and the per-condition
@@ -4956,6 +5002,17 @@ var UI = (function(){
       journalEdit=null; stateDraft={ energy:null, mood:null, clarity:null }; symDraft={}; viewDiary();
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
+    // in place, never viewDiary(): a re-render would throw away the typed note
+    $all(".jmore").forEach(function(b){ b.addEventListener("click",function(){
+      var n=b.parentNode, open=!n.classList.contains("open");
+      jNoteOpen[b.getAttribute("data-id")]=open;
+      n.classList.toggle("open", open);
+      n.classList.remove("short");
+      b.classList.toggle("open", open);
+      b.setAttribute("aria-expanded", open?"true":"false");
+      b.title=I18N.t(open?"common.less":"common.more");
+      b.innerHTML=jMoreLabel(open);
+    });});
     $all(".symLineToggle").forEach(function(b){ b.addEventListener("click",function(){
       var id=b.getAttribute("data-id"); symLineOpenId=(symLineOpenId===id)?null:id; viewDiary();
     });});
