@@ -353,6 +353,14 @@
   .pep.late .pepbig{color:var(--bad)}
   .pepwhen{flex:0 0 auto;font-size:11px;color:var(--muted);white-space:nowrap;
            font-variant-numeric:tabular-nums}
+  /* weeks of a cycle counted off the way they are counted on a wall: a mark a
+     week, four of them struck through, the fifth starting the next group. Its
+     own strip, because the marks grow all cycle long and the top line has as
+     little as 21 px to spare next to a long name. Groups wrap on their own, so
+     even a year-long cycle stays inside the card. */
+  .tally{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:0 12px 7px}
+  .tallyg{flex:none;overflow:visible}
+  .tallyg line{stroke:var(--c);stroke-width:1.5;stroke-linecap:round}
   .wbar.flush{height:12px;border:0;border-radius:0;margin:0}
   .wbar.slim{height:8px;border:0;margin:5px 0 0;background:var(--soft)}
   /* the wave mask is 26x12; scale its width with the height or the squiggle
@@ -566,7 +574,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v188";
+var BUILD = "mj-v189";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -696,6 +704,7 @@ var I18N = (function(){
     // one letter, glued to the figure: "2/8t" / "17/112d"
     "inj.cycleMarkDay":{pl:"d",en:"d"},
     "inj.cycleMarkWeek":{pl:"t",en:"w"},
+    "inj.tallyWeeks":{pl:"{n} tyg. cyklu za tobą",en:"{n} weeks of the cycle done"},
     "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
     "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
     "inj.cycleNone":{pl:"Ustaw start cyklu, aby śledzić postęp.",en:"Set a cycle start to track progress."},
@@ -2347,7 +2356,11 @@ var DOMAIN = (function(){
     var dayN=Math.max(0, Math.round((new Date(todayISOstr+"T12:00:00")-new Date(cfg.cycleStart+"T12:00:00"))/86400000))+1;
     var done=dayN>total, d=Math.min(dayN,total);
     return { dayN:d, total:total, frac:Math.max(0,Math.min(1,dayN/total)), done:done,
-             weekN:Math.max(1, Math.ceil(d/7)), weeks:Math.ceil(total/7) };
+             weekN:Math.max(1, Math.ceil(d/7)), weeks:Math.ceil(total/7),
+             // full weeks BEHIND you: the first mark falls when the first week
+             // is over, on day 8. Past the end, all of them -- the last week
+             // closes too, or a finished cycle would read 15 of 16.
+             weeksDone: done ? Math.ceil(total/7) : Math.floor((d-1)/7) };
   }
 
   // Dosing countdown from one shot to the next. The interval may be fractional
@@ -5605,8 +5618,27 @@ var UI = (function(){
       +'" data-row="'+esc(sub)+'" style="--c:'+substColor(st,sub)
       +';--ct:'+substColor(st,sub)+PAL.tintA+'">'
       +head
+      +(cyc?tallyHTML(cyc.weeksDone):"")
       +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
+  }
+  // Four marks with a stroke through them: a closed group, four weeks, near
+  // enough a month. Fewer than four is a group still being filled, so no stroke.
+  function tallyGroupSVG(n, crossed){
+    var w=(n-1)*5+1.5, s='';
+    for(var i=0;i<n;i++) s+='<line x1="'+(i*5+0.75)+'" y1="1" x2="'+(i*5+0.75)+'" y2="11"/>';
+    if(crossed) s+='<line x1="-1.5" y1="11.5" x2="'+(w+1.5)+'" y2="0.5"/>';
+    return '<svg class="tallyg" width="'+(w+3)+'" height="12" viewBox="-1.5 0 '+(w+3)+' 12" aria-hidden="true">'+s+'</svg>';
+  }
+  // One small SVG per group inside a wrapping row -- a single big one would
+  // either overflow the card or have to be squashed, and squashed marks blur.
+  function tallyHTML(weeksDone){
+    if(!(weeksDone>0)) return "";
+    var out="", full=Math.floor(weeksDone/4), rest=weeksDone%4, i;
+    for(i=0;i<full;i++) out+=tallyGroupSVG(4, true);
+    if(rest) out+=tallyGroupSVG(rest, false);
+    return '<div class="tally" role="img" aria-label="'
+      +esc(I18N.t("inj.tallyWeeks").replace("{n}", String(weeksDone)))+'">'+out+'</div>';
   }
   // One row of the compound picker. `dim` marks a compound already on the list:
   // still choosable, it just opens that entry instead of making a second one.

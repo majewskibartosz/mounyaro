@@ -603,6 +603,38 @@ test("cycleProgress: past the end the week clamps with the day", function () {
   assert.strictEqual(r.weeks, 2);
 });
 
+test("cycleProgress: weeksDone counts full weeks behind you, not the one you are in", function () {
+  function done(day) {
+    return DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 112 }, day).weeksDone;
+  }
+  assert.strictEqual(done("2026-08-01"), 0, "day 1: nothing is behind you yet");
+  assert.strictEqual(done("2026-08-07"), 0, "day 7: the first week is not over");
+  assert.strictEqual(done("2026-08-08"), 1, "day 8: the first week is behind you");
+  assert.strictEqual(done("2026-08-14"), 1, "day 14: still one");
+  assert.strictEqual(done("2026-08-15"), 2, "day 15: two");
+  assert.strictEqual(done("2026-08-29"), 4, "day 29: four, the first group closes");
+});
+
+test("cycleProgress: a finished cycle has every week behind it", function () {
+  // day 112 is the last one and its week has not run out, so 15 -- but once the
+  // cycle is over the last week has closed too, or it would read 15 of 16
+  var last = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 112 }, "2026-11-20");
+  assert.strictEqual(last.dayN, 112);
+  assert.strictEqual(last.done, false);
+  assert.strictEqual(last.weeksDone, 15);
+  var over = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 112 }, "2026-11-21");
+  assert.strictEqual(over.done, true);
+  assert.strictEqual(over.weeksDone, 16);
+  assert.strictEqual(over.weeksDone, over.weeks, "never more marks than the cycle has weeks");
+});
+
+test("cycleProgress: a cycle shorter than a week never earns a mark until it ends", function () {
+  var r = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 3 }, "2026-08-03");
+  assert.strictEqual(r.weeksDone, 0);
+  var over = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 3 }, "2026-08-09");
+  assert.strictEqual(over.weeksDone, 1, "one week, because that is what the cycle rounds to");
+});
+
 test("seriesFor: a peptide id reads only that peptide's shots", function () {
   var log = [
     { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg" },
