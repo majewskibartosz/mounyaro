@@ -216,6 +216,7 @@
      faded out, and unrolls on tap. The fade is a mask, not an overlay in the
      card colour, because an entry from a sick day paints its own tinted
      background inline -- a mask fades the text itself, so it is right on both. */
+  .symwrap:not(.open) .symdet{display:none}
   .jnote{position:relative}
   .jnote .jbody{line-height:1.5}
   .jnote:not(.open){cursor:pointer}
@@ -558,7 +559,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v184";
+var BUILD = "mj-v185";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -4645,7 +4646,10 @@ var UI = (function(){
   }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
   var journalPage=0;     // notes list page (5 each)
-  var symLineOpenId=null; // id of the journal entry whose symptom detail is expanded (one at a time)
+  // "entry:condition" -> its symptom rows are unrolled. Ephemeral like
+  // jNoteOpen, and keyed per condition because an entry can carry two of
+  // them and the rule below can land differently on each.
+  var symLineOpen={};
   // which notes are unrolled. A module var, not STORE: notes only ever pile
   // up, so a map keyed by their ids would grow in the file without end. It
   // survives a re-render of the list, not a reload.
@@ -4894,28 +4898,30 @@ var UI = (function(){
         if(!ids.length) return '';
         function condLabel(g){ return (g.cond.type==="illness"?'&#129298;':'&#129657;')+' '
           +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic")); }
-        var open=(symLineOpenId===entryId);
-        var h='<div class="muted tiny" style="margin-top:2px">'
-          +ids.map(function(cid){ return condLabel(byCond[cid]); }).join(' &middot; ')
-          +' <button type="button" class="chevToggle symLineToggle'+(open?' open':'')+'" data-id="'+esc(entryId)+'">'
-          +esc(I18N.t("cond.sectionDetails"))+icon("chevron")+'</button></div>';
-        if(open){
-          // the condition's own full name is already on the chip line right
-          // above — repeating it as a heading per group just doubles that
-          // same text. When there's more than one condition in this entry,
-          // its icon alone in front of each symptom is enough to tell the
-          // groups apart. Each symptom still gets its own line — several
-          // dots run together read as one soup, same reasoning as giving
-          // each its own colour.
-          h+=ids.map(function(cid){
-            var g=byCond[cid];
-            var prefix=ids.length>1 ? ((g.cond.type==="illness"?'&#129298;':'&#129657;')+' ') : '';
-            return g.parts.map(function(p){
-              return '<div class="muted tiny" style="margin-top:2px;display:flex;align-items:center">'+prefix+p+'</div>';
-            }).join('');
+        // Each condition stands on its own, because how much of it is worth
+        // showing depends on how much of it there is. Each symptom keeps its
+        // own line -- several dots run together read as one soup, same reason
+        // they each get a colour.
+        return ids.map(function(cid){
+          var g=byCond[cid], n=g.parts.length, key=entryId+":"+cid;
+          // one symptom fits beside the name; a button for a single number
+          // would be a tap that goes nowhere
+          if(n===1) return '<div class="muted tiny" style="margin-top:2px">'
+            +condLabel(g)+' &middot; '+g.parts[0]+'</div>';
+          var rows=g.parts.map(function(p){
+            return '<div class="muted tiny" style="margin-top:2px;display:flex;align-items:center">'+p+'</div>';
           }).join('');
-        }
-        return h;
+          // two or three lines do not crowd the list -- say them outright
+          if(n<=3) return '<div class="muted tiny" style="margin-top:2px">'+condLabel(g)+'</div>'+rows;
+          // a longer list gets the button, and the rows sit in the DOM either
+          // way, so unrolling the note can reveal them without a re-render
+          var open=!!symLineOpen[key];
+          return '<div class="symwrap'+(open?" open":"")+'" data-key="'+esc(key)+'">'
+            +'<div class="muted tiny" style="margin-top:2px">'+condLabel(g)
+            +' <button type="button" class="chevToggle symLineToggle'+(open?" open":"")+'">'
+            +esc(I18N.t("cond.sectionDetails"))+icon("chevron")+'</button></div>'
+            +'<div class="symdet">'+rows+'</div></div>';
+        }).join('');
       }
       // the note text gets its own box: the pills above it and the symptom
       // line below stay out of the cut, or rolling a note up would also hide
@@ -5016,6 +5022,12 @@ var UI = (function(){
     });
     bindPager("jPg", function(){return journalPage;}, function(v){journalPage=v;}, viewDiary);
     // in place, never viewDiary(): a re-render would throw away the typed note
+    function setSymOpen(w, open){
+      symLineOpen[w.getAttribute("data-key")]=open;
+      w.classList.toggle("open", open);
+      var b=w.querySelector(".symLineToggle");
+      if(b) b.classList.toggle("open", open);
+    }
     function setNoteOpen(n, open){
       var b=n.querySelector(".jmore");
       jNoteOpen[b.getAttribute("data-id")]=open;
@@ -5025,6 +5037,8 @@ var UI = (function(){
       b.setAttribute("aria-expanded", open?"true":"false");
       b.title=I18N.t(open?"common.less":"common.more");
       b.innerHTML=jMoreLabel(open);
+      // reading the whole note means wanting the whole of what is pinned to it
+      $all(".symwrap", n.parentNode).forEach(function(w){ setSymOpen(w, open); });
     }
     // A tap anywhere in the note rolls it up and down alike -- on a long one
     // "Zwiń" sits screens below, so a tap is the only control within reach. One
@@ -5037,8 +5051,10 @@ var UI = (function(){
       if(String(window.getSelection())) return;
       setNoteOpen(n, !n.classList.contains("open"));
     });});
-    $all(".symLineToggle").forEach(function(b){ b.addEventListener("click",function(){
-      var id=b.getAttribute("data-id"); symLineOpenId=(symLineOpenId===id)?null:id; viewDiary();
+    $all(".symLineToggle").forEach(function(b){ b.addEventListener("click",function(ev){
+      ev.stopPropagation();          // this is not a tap on the note
+      var w=b.parentNode.parentNode;
+      setSymOpen(w, !w.classList.contains("open"));
     });});
     // backfilling? recompute the therapy-week/dose pills for the picked date
     // (innerHTML on these two containers only — the textarea keeps what's typed)
