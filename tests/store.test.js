@@ -78,7 +78,33 @@ test("condition episodes survive a load/save round-trip, open one included", fun
   STORE.load();
   STORE.save();
   var out = JSON.parse(ls.getItem(KEY));
-  assert.deepStrictEqual(out.conditions, eps);
+  // Since mj-v186 a load also hands every condition an icon and a colour slot,
+  // so the round-trip adds those two fields on top of what went in -- everything
+  // else has to come back byte for byte.
+  out.conditions.forEach(function (c, i) {
+    assert.ok(c.icon, "condition " + i + " got an icon");
+    assert.ok(c.tone, "condition " + i + " got a colour slot");
+    var bare = Object.assign({}, c);
+    delete bare.icon; delete bare.tone;
+    assert.deepStrictEqual(bare, eps[i]);
+  });
+  assert.notStrictEqual(out.conditions[0].tone, out.conditions[1].tone,
+    "two conditions never share a colour");
+});
+
+test("a condition that already has an icon and a colour keeps them", function () {
+  var eps = [
+    { id: "e1", type: "chronic", start: "2026-07-01", end: null, label: "plecy", symptoms: [], icon: "🦴", tone: "p5" },
+    { id: "e2", type: "chronic", start: "2026-07-02", end: null, label: "jelita", symptoms: [] }
+  ];
+  var ls = harness.fakeLocalStorage();
+  ls.setItem(KEY, JSON.stringify({ schemaVersion: 1, conditions: eps }));
+  var STORE = harness.loadStore(ls);
+  STORE.load();
+  var out = Array.from(STORE.state.conditions);
+  assert.strictEqual(out[0].icon, "🦴");
+  assert.strictEqual(out[0].tone, "p5");
+  assert.notStrictEqual(out[1].tone, "p5", "the free slot is picked around the taken one");
 });
 
 test("migration: a legacy illness backup becomes typed conditions, and old key is dropped", function () {

@@ -191,6 +191,13 @@
   .statepill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 3px;border-radius:999px;font-size:12px;font-weight:800;color:var(--on-brand);margin-right:4px}
   .statepill .pemoji{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
     border-radius:50%;background:rgba(0,0,0,.32);font-size:11px;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+  .condmark{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+    border-radius:50%;font-size:12px;line-height:1;flex:none;vertical-align:-4px}
+  /* icon grid in the condition form -- same idiom as the peptide colour swatches */
+  .condIcons{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .condIcon{appearance:none;border:0;border-radius:9px;height:32px;font-size:17px;line-height:1;
+    background:var(--soft);cursor:pointer}
+  .condIcon:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   /* injection-day marker (syringe next to dates); .pre = reading taken before that day's shot */
   .injmark{display:inline-flex;vertical-align:-2px;margin-left:4px}
   .injmark svg{width:13px;height:13px}
@@ -559,7 +566,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v185";
+var BUILD = "mj-v186";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -835,6 +842,9 @@ var I18N = (function(){
     "cond.symptomPh":{pl:"np. Gorączka",en:"e.g. Fever"},
     "cond.symptomAdd":{pl:"Dodaj",en:"Add"},
     "cond.sectionDetails":{pl:"Szczegóły",en:"Details"},
+    "cond.icon":{pl:"Ikona",en:"Icon"},
+    "cond.color":{pl:"Kolor",en:"Colour"},
+    "cond.colorTaken":{pl:"Kolor zajęty przez inne schorzenie",en:"Colour already used by another condition"},
     "common.cancel":{pl:"Anuluj",en:"Cancel"},
     "common.weekLetter":{pl:"t",en:"w"},
     "common.doseWeekLetter":{pl:"d",en:"d"},
@@ -2630,7 +2640,27 @@ var STORE = (function(){
     delete st.illness;
     return st;
   }
-  function hydrate(parsed){ return ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), parsed))))); }
+  // Old conditions carry neither an icon nor a colour. The icon falls back to
+  // the type -- exactly what was on screen before -- and the colours are handed
+  // out in order, skipping ones already taken, so several of them can be told
+  // apart the moment this ships, without opening the editor first.
+  function ensureCondLooks(st){
+    if(!st || !st.conditions) return st;
+    var taken={};
+    st.conditions.forEach(function(e){ if(e && e.tone) taken[e.tone]=true; });
+    var i=0;
+    st.conditions.forEach(function(e){
+      if(!e) return;
+      if(!e.icon) e.icon = (e.type==="illness" ? "\ud83e\udd12" : "\ud83e\ude79");
+      if(!e.tone){
+        while(i<PEP_MIGRATE_TONES.length && taken[PEP_MIGRATE_TONES[i]]) i++;
+        e.tone = PEP_MIGRATE_TONES[i % PEP_MIGRATE_TONES.length];
+        taken[e.tone]=true; i++;
+      }
+    });
+    return st;
+  }
+  function hydrate(parsed){ return ensureCondLooks(ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), parsed)))))); }
   function merge(base, over){
     if(typeof over!=="object"||over===null) return base;
     var out = Array.isArray(base)? base.slice():Object.assign({},base);
@@ -4552,12 +4582,30 @@ var UI = (function(){
   // Severity 1-3 (mild -> severe). The 🤒 glyph labels every chip, so sharing
   // amber with the peptide pill can't be misread.
   function illColor(sev){ return sev?PAL.sev[sev-1]:PAL.sev[1]; }
+  // Body parts and everyday complaints, the two type defaults first. Plain text
+  // -- an emoji needs no asset and no network, which the CSP would block anyway.
+  var COND_ICONS=["\ud83e\ude79","\ud83e\udd12","\ud83e\uddb4","\ud83e\uddb5","\ud83e\uddb6","\ud83d\udcaa","\ud83e\udde0","\ud83e\udec1",
+                  "\ud83e\udec0","\ud83e\uddb7","\ud83d\udc41\ufe0f","\ud83d\udc42","\ud83d\udc43","\ud83e\udd27","\ud83e\udd22","\ud83d\udca9",
+                  "\ud83d\udd25","\u26a1","\ud83c\udf21\ufe0f","\ud83d\udca4","\ud83c\udf00","\ud83e\ude78"];
+  function condIcon(e){ return (e&&e.icon) || (e&&e.type==="illness" ? "\ud83e\udd12" : "\ud83e\ude79"); }
+  function condColor(e){ return toneColor(e&&e.tone) || PAL.pep[0]; }
+  // The icon rides in a ring of the condition's own colour, so two conditions
+  // stay apart even when someone picks two similar emoji -- or cannot tell the
+  // two colours apart.
+  function condMark(e){
+    var c=condColor(e);
+    return '<span class="condmark" style="background:'+c+PAL.tintA+';box-shadow:inset 0 0 0 1.5px '+c+'">'
+      +condIcon(e)+'</span>';
+  }
+  function condName(e){ return esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic")); }
   // "🤒 Choroba d3 · angina" — the day number is what makes a run of sick days
   // scannable without opening anything.
   function illPill(ill){
     if(!ill) return "";
     var c=illColor(ill.severity);
-    return '<span class="pill illpill" style="background:'+c+PAL.tintA+';color:'+c+'">&#129298; '
+    // the icon says which condition, the colour says how bad it is today --
+    // two channels, two questions, neither taking the other's job
+    return '<span class="pill illpill" style="background:'+c+PAL.tintA+';color:'+c+'">'+condIcon(ill)+' '
       +esc(I18N.t("ill.short"))+' '+esc(I18N.t("common.dayLetter"))+ill.dayN
       +(ill.label?' &middot; '+esc(ill.label):'')+'</span>';
   }
@@ -4590,13 +4638,14 @@ var UI = (function(){
   // Chronic conditions have no such limit: several can run independently.
   // A retrospective episode (endISO given) is born closed, so it never touches
   // that invariant and can be backfilled even while another episode is running.
-  function startCondition(type, startISO, endISO, label, severity, symptoms){
+  function startCondition(type, startISO, endISO, label, severity, symptoms, icon, tone){
     var st=s();
     if(type==="illness" && !endISO && DOMAIN.openIllness(st)){ toast(I18N.t("ill.alreadyOpen")); return false; }
     if(!st.conditions) st.conditions=[];
     st.conditions.push({ id:uid(), type:type, start:startISO,
                       end:endISO ? ((endISO<startISO)?startISO:endISO) : null,
-                      label:String(label||"").trim().slice(0,60), severity:severity||null, symptoms:symptoms||[] });
+                      label:String(label||"").trim().slice(0,60), severity:severity||null, symptoms:symptoms||[],
+                      icon:icon||(type==="illness"?"\ud83e\udd12":"\ud83e\ude79"), tone:tone||PEP_TONES[0] });
     return true;
   }
   // Closing before the start would make the episode cover nothing — clamp to the start.
@@ -4619,7 +4668,7 @@ var UI = (function(){
   var condAddType=null;    // null | "illness" | "chronic" — which "add new" form is open
   var condOpenId=null;     // id of the ONE condition card expanded to its full editor (open or past — same editor)
   var condPage=0;          // past-episode list page
-  var condDraft={ severity:null };  // severity pick for whichever form condSeed names
+  var condDraft={ severity:null, icon:null, tone:null };  // picks for whichever form condSeed names
   var symDraft={};  // "<conditionId>:<symptomKey>" -> 1..5, drafted in the composer like stateDraft
   var condSeed=null;
   var condNewSymptoms=[];  // labels typed while composing a brand-new condition, before it is saved
@@ -4641,8 +4690,12 @@ var UI = (function(){
   }
   // Seed the draft once per form identity, so a re-render doesn't undo a
   // deliberate deselect but switching forms doesn't inherit another's pick.
-  function condSeedFor(key, sev){
-    if(condSeed!==key){ condSeed=key; condDraft.severity=(sev==null?null:sev); }
+  function condSeedFor(key, e){
+    if(condSeed===key) return;
+    condSeed=key;
+    condDraft.severity=(e&&e.severity!=null)?e.severity:null;
+    condDraft.icon=(e&&e.icon)||null;
+    condDraft.tone=(e&&e.tone)||null;
   }
   var journalEdit=null;  // id of the note being edited (null = composing a new one)
   var journalPage=0;     // notes list page (5 each)
@@ -4687,7 +4740,7 @@ var UI = (function(){
     if(condOpenId && !condAll.some(function(e){ return e.id===condOpenId; })) condOpenId=null;
     if(condAddType==="illness" && DOMAIN.openIllness(st)) condAddType=null;   // started elsewhere meanwhile
     var condEd = condOpenId ? condAll.filter(function(e){ return e.id===condOpenId; })[0] : null;
-    if(condEd) condSeedFor("edit:"+condEd.id, condEd.severity);
+    if(condEd) condSeedFor("edit:"+condEd.id, condEd);
     else if(condAddType) condSeedFor("new:"+condAddType, null);
     else condSeed=null;
 
@@ -4714,6 +4767,33 @@ var UI = (function(){
     }
     // Shared editor body for any condition, open or past — the only difference
     // is whether there is still an "end it" action to offer.
+    // Icon and colour, the two things that tell one condition from another at a
+    // glance. Colours already taken by another condition are struck through, the
+    // same rule the peptide swatches follow -- unless every one is taken, in
+    // which case none is blocked: a duplicate beats not being able to choose.
+    function condLookHTML(type, selfId){
+      var icon0 = condDraft.icon || (type==="illness" ? "\ud83e\udd12" : "\ud83e\ude79");
+      var taken={};
+      (st.conditions||[]).forEach(function(o){ if(o && o.id!==selfId && o.tone) taken[o.tone]=true; });
+      var free=0; PEP_TONES.forEach(function(t){ if(!taken[t]) free++; });
+      if(!condDraft.tone){
+        for(var i=0;i<PEP_TONES.length && !condDraft.tone;i++) if(!taken[PEP_TONES[i]]) condDraft.tone=PEP_TONES[i];
+        if(!condDraft.tone) condDraft.tone=PEP_TONES[0];
+      }
+      var tone0=condDraft.tone, mark='outline:2px solid var(--ink);outline-offset:2px';
+      var icons=COND_ICONS.map(function(ic){
+        return '<button type="button" class="condIcon" data-icon="'+esc(ic)+'"'
+          +(ic===icon0?' style="'+mark+'"':'')+'>'+ic+'</button>';
+      }).join("");
+      var cols=PEP_TONES.map(function(t){
+        var c=toneColor(t), busy=(free>0) && !!taken[t] && t!==tone0;
+        return '<button type="button" class="pfCol condTone'+(busy?" taken":"")+'" data-tone="'+t+'"'+(busy?' disabled':'')
+          +' style="background-color:'+c+';'+(t===tone0?mark:'')+'"'
+          +' title="'+esc(busy?I18N.t("cond.colorTaken"):c)+'" aria-label="'+esc(busy?I18N.t("cond.colorTaken"):c)+'"></button>';
+      }).join("");
+      return '<div class="field"><label>'+esc(I18N.t("cond.icon"))+'</label><div class="condIcons">'+icons+'</div></div>'
+        +'<div class="field"><label>'+esc(I18N.t("cond.color"))+'</label><div class="pfcols">'+cols+'</div></div>';
+    }
     function condEditorHTML(e, sh){
       var labelKey = e.type==="illness" ? "ill.labelPh" : "cond.labelPhChronic";
       // for something still ongoing, ending it is the action you actually come
@@ -4729,6 +4809,7 @@ var UI = (function(){
         + '<div class="field"><label>'+esc(I18N.t("ill.startDate"))+(sh?' <span class="muted tiny">('+esc(I18N.t("ill.startHint"))+')</span>':'')+'</label><input type="date" class="condEdStart" value="'+esc(e.start)+'"></div>'
         + (e.end ? '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+'</label><input type="date" class="condEdEnd" value="'+esc(e.end)+'"></div>' : '')
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" class="condEdLabel" maxlength="60" placeholder="'+esc(I18N.t(labelKey))+'" value="'+esc(e.label||"")+'"></div>'
+        + condLookHTML(e.type, e.id)
         + illSevHtml(condDraft.severity, "condsev")
         + symptomBuilderHTML((e.symptoms||[]).filter(function(sy){ return !sy.archived; }), "condSymDel")
         + '<div class="row" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)"><button class="btn ghost" id="condEdSave" data-id="'+esc(e.id)+'">'+esc(I18N.t(sh?"ill.applyChanges":"ill.update"))+'</button>'
@@ -4749,6 +4830,7 @@ var UI = (function(){
         + '<div class="grid g2"><div class="field"><label>'+esc(I18N.t("ill.startDate"))+'</label><input type="date" id="condStart" value="'+esc(today)+'"></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.endDate"))+' <span class="muted tiny">('+esc(I18N.t("ill.endNewHint"))+')</span></label><input type="date" id="condEndNew"></div></div>'
         + '<div class="field"><label>'+esc(I18N.t("ill.label"))+'</label><input type="text" id="condLabel" maxlength="60" placeholder="'+esc(I18N.t(condAddType==="illness"?"ill.labelPh":"cond.labelPhChronic"))+'"></div>'
+        + condLookHTML(condAddType, null)
         + illSevHtml(condDraft.severity, "condsev")
         + symptomBuilderHTML(condNewSymptoms.map(function(lbl){ return {label:lbl}; }), "condSymDelNew")
         + '<div class="row" style="margin-top:10px"><button class="btn" id="condSave">'+esc(I18N.t("ill.save"))+'</button>'
@@ -4764,9 +4846,9 @@ var UI = (function(){
       // and everything else only shows up once you actually tap it open
       html+='<div class="logentry condRow" data-id="'+esc(e.id)+'" style="margin-top:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px">'
         + '<div class="lbody" style="display:flex;align-items:center;gap:8px;min-width:0">'
-        + '<span style="font-size:18px;flex:none">'+(e.type==="illness" ? '&#129298;' : '&#129657;')+'</span>'
+        + condMark(e)
         + '<span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-          +esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic"))+'</span></div>'
+          +condName(e)+'</span></div>'
         + '<span class="muted" style="padding:0 8px;flex:none">'+(open?'&#9650;':'&#9660;')+'</span></div>';
       if(open) html+='<div class="logentry"><div class="lbody">'+condEditorHTML(e, sh)+'</div></div>';
     });
@@ -4780,7 +4862,7 @@ var UI = (function(){
         // the edit icon toggles: tap again on an already-open one to collapse
         // it back, same as the open-conditions row above.
         html+='<div class="logentry"><div class="lbody"><div class="lmeta">'
-          + (e.type==="illness" ? '&#129298;' : '&#129657;')+' '
+          + condMark(e)+' '
           +'<span class="pill" style="background:'+c+PAL.tintA+';color:'+c+'">'+esc(fmtDate(e.start,true))+' &ndash; '+esc(fmtDate(e.end,true))+'</span>'
           +'<span>'+n+' '+esc(I18N.t(n===1?"ill.day1":"ill.days"))+'</span>'
           +(e.severity?'<span style="color:'+c+';font-weight:700">'+esc(I18N.t("ill.sev"+e.severity))+'</span>':'')
@@ -4829,9 +4911,7 @@ var UI = (function(){
           }
           body+='</span></div>';
         });
-        h+=panelHTML(e.id,
-          (e.type==="illness"?'&#129298;':'&#129657;')+' '+esc(e.label||I18N.t(e.type==="illness"?"cond.typeIllness":"cond.typeChronic")),
-          body, active.length);
+        h+=panelHTML(e.id, condMark(e)+' '+condName(e), body, active.length);
       });
       return h;
     }
@@ -4896,8 +4976,7 @@ var UI = (function(){
         });
         var ids=Object.keys(byCond);
         if(!ids.length) return '';
-        function condLabel(g){ return (g.cond.type==="illness"?'&#129298;':'&#129657;')+' '
-          +esc(g.cond.label||I18N.t(g.cond.type==="illness"?"cond.typeIllness":"cond.typeChronic")); }
+        function condLabel(g){ return condMark(g.cond)+' '+condName(g.cond); }
         // Each condition stands on its own, because how much of it is worth
         // showing depends on how much of it there is. Each symptom keeps its
         // own line -- several dots run together read as one soup, same reason
@@ -5123,7 +5202,8 @@ var UI = (function(){
     if($("#condAddCancel")) $("#condAddCancel").addEventListener("click",function(){ condAddType=null; condSeed=null; condNewSymptoms=[]; viewDiary(); });
     if($("#condSave")) $("#condSave").addEventListener("click",function(){
       var syms=condNewSymptoms.map(function(lbl){ return { key:"sym_"+uid(), label:lbl, archived:false }; });
-      if(!startCondition(condAddType, $("#condStart").value||today, $("#condEndNew").value||null, $("#condLabel").value, condDraft.severity, syms)) return;
+      if(!startCondition(condAddType, $("#condStart").value||today, $("#condEndNew").value||null, $("#condLabel").value,
+                         condDraft.severity, syms, condDraft.icon, condDraft.tone)) return;
       condAddType=null; condSeed=null; condNewSymptoms=[]; illCommit();
     });
     $all(".condRow").forEach(function(b){ b.addEventListener("click",function(){
@@ -5171,6 +5251,7 @@ var UI = (function(){
       e.start=a; if(endEl) e.end=(endEl.value<a)?a:endEl.value;
       e.label=String($(".condEdLabel").value||"").trim().slice(0,60);
       e.severity=condDraft.severity||null;
+      e.icon=condDraft.icon||e.icon; e.tone=condDraft.tone||e.tone;
       condOpenId=null; condSeed=null; illCommit();
     });
     if($("#condEdDrop")) $("#condEdDrop").addEventListener("click",function(){
@@ -5194,6 +5275,7 @@ var UI = (function(){
       e.start=$(".condEdStart").value||e.start;
       e.label=String($(".condEdLabel").value||"").trim().slice(0,60);
       e.severity=condDraft.severity||null;
+      e.icon=condDraft.icon||e.icon; e.tone=condDraft.tone||e.tone;
       if(!endCondition(id, $("#condEndDate").value||today)) return;
       condOpenId=null; condSeed=null; illCommit();
     });
@@ -5209,6 +5291,16 @@ var UI = (function(){
       if(condOpenId===id){ condOpenId=null; condSeed=null; }
       STORE.save(); viewDiary();
     });});
+    function bindPickRow(cls, attr, field){
+      $all("."+cls).forEach(function(b){ b.addEventListener("click",function(){
+        if(b.disabled) return;
+        condDraft[field]=b.getAttribute(attr);
+        $all("."+cls).forEach(function(x){ x.style.outline=""; x.style.outlineOffset=""; });
+        b.style.outline="2px solid var(--ink)"; b.style.outlineOffset="2px";
+      });});
+    }
+    bindPickRow("condIcon", "data-icon", "icon");
+    bindPickRow("condTone", "data-tone", "tone");
     bindIllSev("condsev", condDraft);
     bindPager("condPg", function(){return condPage;}, function(v){condPage=v;}, viewDiary);
   }
@@ -7202,7 +7294,7 @@ var UI = (function(){
       var ic=illColor(illNow.severity);
       html+='<a class="banner" href="#diary" style="background:'+ic+'1a;border-color:'+ic+'59;color:'+ic
         +';text-decoration:none;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">'
-        +'<span>&#129298; <b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+illNow.dayN
+        +'<span>'+condIcon(illNow)+' <b>'+esc(I18N.t("ill.ongoing"))+'</b> &middot; '+esc(I18N.t("ill.dayN"))+' '+illNow.dayN
         +(illNow.label?' &middot; '+esc(illNow.label):'')+'</span>'
         +'<span class="btn ghost sm">'+esc(I18N.t("ill.end"))+'</span></a>';
     }
