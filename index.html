@@ -566,7 +566,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v186";
+var BUILD = "mj-v187";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -688,7 +688,11 @@ var I18N = (function(){
     "inj.hoursShort":{pl:"godz.",en:"h"},
     "inj.dueNow":{pl:"termin teraz",en:"due now"},
     "inj.dueBadge":{pl:"TERAZ",en:"NOW"},
-    "inj.cycleLen":{pl:"Długość cyklu (dni)",en:"Cycle length (days)"},
+    "inj.cycleLen":{pl:"Długość cyklu",en:"Cycle length"},
+    // "Jednostka" alone already labels the dose unit higher up the same form
+    "inj.cycleUnit":{pl:"Jednostka cyklu",en:"Cycle unit"},
+    "inj.cycleUnitDays":{pl:"dni",en:"days"},
+    "inj.cycleUnitWeeks":{pl:"tygodnie",en:"weeks"},
     "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
     "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
     "inj.cycleNone":{pl:"Ustaw start cyklu, aby śledzić postęp.",en:"Set a cycle start to track progress."},
@@ -2330,12 +2334,17 @@ var DOMAIN = (function(){
   }
 
   // Peptide cycle progress. cfg:{cycleDays,cycleStart}. Returns null if no start.
+  // Days stay the unit a cycle is measured in; weeks ride along because that is
+  // how a long one is usually spoken about. weekN is the week you are in (day
+  // 1-7 is week 1), and a part-week at the end still counts as a week -- its
+  // days have to belong somewhere.
   function cycleProgress(cfg, todayISOstr){
     if(!cfg || !cfg.cycleStart || !cfg.cycleDays) return null;
     var total=Math.max(1, cfg.cycleDays);
     var dayN=Math.max(0, Math.round((new Date(todayISOstr+"T12:00:00")-new Date(cfg.cycleStart+"T12:00:00"))/86400000))+1;
-    var done=dayN>total;
-    return { dayN:Math.min(dayN,total), total:total, frac:Math.max(0,Math.min(1,dayN/total)), done:done };
+    var done=dayN>total, d=Math.min(dayN,total);
+    return { dayN:d, total:total, frac:Math.max(0,Math.min(1,dayN/total)), done:done,
+             weekN:Math.max(1, Math.ceil(d/7)), weeks:Math.ceil(total/7) };
   }
 
   // Dosing countdown from one shot to the next. The interval may be fractional
@@ -2519,7 +2528,9 @@ var STORE = (function(){
             // never has to be complete: anything missing keeps its natural place.
             order:[],
             // every peptide/blend is tracked on its own:
-            // {id,name,color,unit,intervalDays,days,times,perDay,cycleDays,cycleStart,archived}
+            // {id,name,color,unit,intervalDays,days,times,perDay,cycleDays,cycleUnit,cycleStart,archived}
+            // cycleDays is always days; cycleUnit only says how to write it and
+            // read it back ("days" when missing, which is what old data is).
             // Injections reference one by id in their `substance` field.
             peptides:[] }
     };
@@ -5559,7 +5570,9 @@ var UI = (function(){
     else if(ev===1) bits.push(esc(I18N.t("inj.schedAllDays")+rhTxt));
     else if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
       +I18N.t(ev%1?"inj.dayGen":"inj.daysShort")+rhTxt));
-    if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "+cyc.dayN+"/"+cyc.total));
+    if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "
+      +((p && p.cycleUnit==="weeks") ? cyc.weekN+"/"+cyc.weeks+" "+I18N.t("diary.weekShort")
+                                     : cyc.dayN+"/"+cyc.total)));
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
     // inert row means the list cannot scroll out from under the arrows.
@@ -5736,6 +5749,11 @@ var UI = (function(){
     var pfPerDay=(pepDraft.perDay!==undefined) ? pepDraft.perDay
                                                : (isNew?1:pepPerDay(st,p));
     var cycOn=isNew?false:!!(p.cycleDays && p.cycleStart);
+    // the number in the box is written in the unit the card is set to; what is
+    // stored stays in days either way
+    var cycU=(!isNew && p.cycleUnit==="weeks") ? "weeks" : "days";
+    var cycDays=(!isNew && p.cycleDays) || 56;
+    var cycLen=(cycU==="weeks") ? Math.max(1, Math.round(cycDays/7)) : cycDays;
     // Colours worn by another substance are struck through, so two cards can
     // never end up the same colour on the abdomen map. Archived peptides count:
     // their dots and history rows keep their colour. If somehow every colour is
@@ -5788,9 +5806,14 @@ var UI = (function(){
       +vialSectionHTML(st, isNew?null:p, unit)
       +'<label class="toggle" style="margin:2px 0 8px"><input type="checkbox" id="pfCycleOn"'+(cycOn?" checked":"")+'>'
         +'<span class="switch"></span><span>'+esc(I18N.t("inj.cycleOn"))+'</span></label>'
-      +'<div id="pfCycle" class="grid g2"'+(cycOn?"":' style="display:none"')+'>'
+      +'<div id="pfCycle"'+(cycOn?"":' style="display:none"')+'>'
+        +'<div class="grid g2">'
         +'<div class="field"><label>'+esc(I18N.t("inj.cycleLen"))+'</label>'
-          +'<input type="number" inputmode="numeric" id="pfCycleLen" min="1" value="'+((!isNew&&p.cycleDays)||56)+'"></div>'
+          +'<input type="number" inputmode="numeric" id="pfCycleLen" min="1" value="'+cycLen+'"></div>'
+        +'<div class="field"><label>'+esc(I18N.t("inj.cycleUnit"))+'</label><select id="pfCycleUnit">'
+          +'<option value="days"'+(cycU==="days"?" selected":"")+'>'+esc(I18N.t("inj.cycleUnitDays"))+'</option>'
+          +'<option value="weeks"'+(cycU==="weeks"?" selected":"")+'>'+esc(I18N.t("inj.cycleUnitWeeks"))+'</option>'
+        +'</select></div></div>'
         +'<div class="field"><label>'+esc(I18N.t("inj.cycleStart"))+'</label>'
           +'<input type="date" id="pfCycleStart" value="'+esc((!isNew&&p.cycleStart)||"")+'"></div>'
       +'</div>'
@@ -5825,6 +5848,17 @@ var UI = (function(){
     });
     if($("#pepEdit")) $("#pepEdit").addEventListener("click",function(){
       pepEditId=pepSel; pepDraft={}; viewInject();
+    });
+    // the box is written in whatever unit the select shows; days are what gets stored
+    function cycleLenDays(){
+      var n=Math.max(1, parseInt($("#pfCycleLen").value,10)||56);
+      return ($("#pfCycleUnit") && $("#pfCycleUnit").value==="weeks") ? n*7 : n;
+    }
+    if($("#pfCycleUnit")) $("#pfCycleUnit").addEventListener("change",function(){
+      // rewrite the number the moment the unit changes, so a cycle that is not
+      // a whole number of weeks shows what it rounds to before it is saved
+      var box=$("#pfCycleLen"), n=Math.max(1, parseInt(box.value,10)||56);
+      box.value = (this.value==="weeks") ? Math.max(1, Math.round(n/7)) : n*7;
     });
     $all(".pfCol").forEach(function(b){ b.addEventListener("click",function(){
       if(b.disabled) return;
@@ -5935,7 +5969,8 @@ var UI = (function(){
                    times:readTimePick("pfTimes"),
                    perDay:$("#pfPerDay")?DOMAIN.normPerDay($("#pfPerDay").value):1,
                    // a cycle without a start date is no cycle at all (cycleProgress agrees)
-                   cycleDays:(cycOn&&cs)?Math.max(1,parseInt($("#pfCycleLen").value,10)||56):null,
+                   cycleDays:(cycOn&&cs)?cycleLenDays():null,
+                   cycleUnit:$("#pfCycleUnit")?$("#pfCycleUnit").value:"days",
                    cycleStart:(cycOn&&cs)?cs:null };
       var gapRounded=false;
       if(isNew){

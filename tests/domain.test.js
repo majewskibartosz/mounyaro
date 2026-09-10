@@ -568,6 +568,41 @@ test("cycleProgress: a whole peptide record is a valid config", function () {
   assert.strictEqual(r.total, 56);
 });
 
+test("cycleProgress: weeks count the week you are in, day 1-7 being the first", function () {
+  function wk(day) {
+    return DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 112 }, day).weekN;
+  }
+  assert.strictEqual(wk("2026-08-01"), 1, "day 1");
+  assert.strictEqual(wk("2026-08-07"), 1, "day 7 is still week 1");
+  assert.strictEqual(wk("2026-08-08"), 2, "day 8 opens week 2");
+  assert.strictEqual(wk("2026-08-14"), 2, "day 14 closes week 2");
+  assert.strictEqual(wk("2026-08-15"), 3, "day 15 opens week 3");
+  assert.strictEqual(DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 112 }, "2026-11-20").weeks, 16);
+});
+
+test("cycleProgress: a part-week at the end still counts as a week", function () {
+  // 100 days is fourteen weeks and two days -- the tail is week fifteen, not a
+  // rounding error, or the last two days would belong to no week at all
+  var r = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 100 }, "2026-11-08");
+  assert.strictEqual(r.weeks, 15);
+  assert.strictEqual(r.dayN, 100, "day 100 is the last one");
+  assert.strictEqual(r.weekN, 15);
+});
+
+test("cycleProgress: a cycle shorter than a week is one week long", function () {
+  var r = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 3 }, "2026-08-02");
+  assert.strictEqual(r.weeks, 1);
+  assert.strictEqual(r.weekN, 1);
+});
+
+test("cycleProgress: past the end the week clamps with the day", function () {
+  var r = DOMAIN.cycleProgress({ cycleStart: "2026-08-01", cycleDays: 14 }, "2026-09-30");
+  assert.strictEqual(r.done, true);
+  assert.strictEqual(r.dayN, 14);
+  assert.strictEqual(r.weekN, 2, "never past the last week");
+  assert.strictEqual(r.weeks, 2);
+});
+
 test("seriesFor: a peptide id reads only that peptide's shots", function () {
   var log = [
     { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg" },
