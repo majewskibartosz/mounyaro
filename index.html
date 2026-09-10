@@ -566,7 +566,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v187";
+var BUILD = "mj-v188";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -693,6 +693,9 @@ var I18N = (function(){
     "inj.cycleUnit":{pl:"Jednostka cyklu",en:"Cycle unit"},
     "inj.cycleUnitDays":{pl:"dni",en:"days"},
     "inj.cycleUnitWeeks":{pl:"tygodnie",en:"weeks"},
+    // one letter, glued to the figure: "2/8t" / "17/112d"
+    "inj.cycleMarkDay":{pl:"d",en:"d"},
+    "inj.cycleMarkWeek":{pl:"t",en:"w"},
     "inj.cycleStart":{pl:"Start cyklu",en:"Cycle start"},
     "inj.cycleDay":{pl:"dzień cyklu",en:"cycle day"},
     "inj.cycleNone":{pl:"Ustaw start cyklu, aby śledzić postęp.",en:"Set a cycle start to track progress."},
@@ -5570,9 +5573,12 @@ var UI = (function(){
     else if(ev===1) bits.push(esc(I18N.t("inj.schedAllDays")+rhTxt));
     else if(ev!=null) bits.push(esc(I18N.t("inj.pepEvery")+" "+fmtEvery(ev)+" "
       +I18N.t(ev%1?"inj.dayGen":"inj.daysShort")+rhTxt));
+    // One letter for the unit, glued to the figure: the subtitle is full to the
+    // pixel in every row, and a spelled-out "tydz." was the thing that pushed
+    // the line past its end.
     if(cyc) bits.push(esc(I18N.t("inj.cycleShort")+" "
-      +((p && p.cycleUnit==="weeks") ? cyc.weekN+"/"+cyc.weeks+" "+I18N.t("diary.weekShort")
-                                     : cyc.dayN+"/"+cyc.total)));
+      +((p && p.cycleUnit==="weeks") ? cyc.weekN+"/"+cyc.weeks+I18N.t("inj.cycleMarkWeek")
+                                     : cyc.dayN+"/"+cyc.total+I18N.t("inj.cycleMarkDay"))));
     var on=(selectedSubst()===sub);
     // Reordering makes the row inert — a nested button is invalid markup, and an
     // inert row means the list cannot scroll out from under the arrows.
