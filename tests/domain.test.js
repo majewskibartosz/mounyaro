@@ -750,6 +750,40 @@ test("describe: nothing to describe is not an error", function () {
   assert.deepStrictEqual(DOMAIN.stripDescribed(null), null);
 });
 
+test("convertDose: mcg and mg are the same scale, read either way", function () {
+  assert.strictEqual(DOMAIN.convertDose(833, "mcg", "mg"), 0.833);
+  assert.strictEqual(DOMAIN.convertDose(0.833, "mg", "mcg"), 833);
+  assert.strictEqual(DOMAIN.convertDose(400, "mcg", "mcg"), 400, "same unit passes through");
+  assert.strictEqual(DOMAIN.convertDose(2.5, "mg", "mg"), 2.5);
+});
+
+test("convertDose: syringe and international units convert to nothing", function () {
+  // "j" is syringe units and "IU" international units -- neither is a weight,
+  // so there is no factor. null tells the caller to keep the original unit
+  // rather than print a number that now means something else.
+  assert.strictEqual(DOMAIN.convertDose(10, "j", "mg"), null);
+  assert.strictEqual(DOMAIN.convertDose(5000, "IU", "mcg"), null);
+  assert.strictEqual(DOMAIN.convertDose(10, "mg", "j"), null);
+  assert.strictEqual(DOMAIN.convertDose(10, "j", "j"), 10, "but the same unit still passes");
+});
+
+test("convertDose: a missing unit means no conversion is being asked for", function () {
+  assert.strictEqual(DOMAIN.convertDose(400, null, "mg"), 400);
+  assert.strictEqual(DOMAIN.convertDose(400, "mcg", null), 400);
+  assert.strictEqual(DOMAIN.convertDose("nope", "mcg", "mg"), null);
+});
+
+test("unitsForDose: the same shot draws the same amount whichever unit names it", function () {
+  // 833 mcg at 3.33 mg/ml is the thing that was wrong on screen: read as 833 mg
+  // it came out as 24990 syringe units instead of 25.
+  var conc = 3.33;
+  var fromMcg = DOMAIN.unitsForDose(833, "mcg", conc);
+  var fromMg = DOMAIN.unitsForDose(0.833, "mg", conc);
+  assert.ok(Math.abs(fromMcg - fromMg) < 1e-9, "same draw either way");
+  assert.ok(Math.abs(fromMcg - 25) < 0.1, "about 25 units, not 24990");
+  assert.ok(DOMAIN.unitsForDose(833, "mg", conc) > 24000, "and that is what reading it as mg gave");
+});
+
 test("seriesFor: a peptide id reads only that peptide's shots", function () {
   var log = [
     { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg" },

@@ -582,7 +582,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v192";
+var BUILD = "mj-v193";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -1364,6 +1364,18 @@ var DOMAIN = (function(){
     if(!isFinite(d) || d<=0) return null;
     if(unit==="mg") return d;
     if(unit==="mcg") return d/1000;
+    return null;
+  }
+  // A dose logged in one unit read under another. Only mcg and mg share a
+  // scale; "j" and "IU" are syringe and international units and convert to
+  // nothing, so the answer is null and the caller keeps the original unit
+  // rather than printing a number that means something else.
+  function convertDose(dose, from, to){
+    var d=Number(dose);
+    if(!isFinite(d)) return null;
+    if(!from || !to || from===to) return d;
+    if(from==="mcg" && to==="mg") return d/1000;
+    if(from==="mg" && to==="mcg") return d*1000;
     return null;
   }
   // The vial is labelled in mg whenever the dose is a weight (mcg doses scale
@@ -2621,7 +2633,7 @@ var DOMAIN = (function(){
     GOLDEN_UNITS:GOLDEN_UNITS,
     mgPerClick:mgPerClick, clicksForDose:clicksForDose, mgForClicks:mgForClicks,
     SYRINGE_UNITS_PER_ML:SYRINGE_UNITS_PER_ML, vialConc:vialConc, doseToMg:doseToMg,
-    unitsForDose:unitsForDose, vialAsOf:vialAsOf, vialSpans:vialSpans,
+    unitsForDose:unitsForDose, vialAsOf:vialAsOf, vialSpans:vialSpans, convertDose:convertDose,
     normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     normTimes:normTimes, timesKey:timesKey, nextSlotMs:nextSlotMs,
     DUE_SOON_MS:DUE_SOON_MS, dueNow:dueNow,
@@ -5714,8 +5726,13 @@ var UI = (function(){
     var last=DOMAIN.lastDoseAsOf(st, sub);
     var bits=[];
     if(last && last.dose!=null){
-      bits.push(esc(String(last.dose)+" "+((p?p.unit:last.unit)||"")));
-      var u=p?pepUnits(st, p, last.dose):null;
+      // A shot logged in mcg keeps meaning mcg after the card is switched to mg.
+      // Show it in the card's unit when the two share a scale, otherwise in its
+      // own -- and never label an old number with a new unit.
+      var shown=p?DOMAIN.convertDose(last.dose, last.unit, p.unit):null;
+      bits.push(esc(shown!=null ? fmtDose(shown)+" "+p.unit
+                                : String(last.dose)+" "+(last.unit||"")));
+      var u=p?pepUnits(st, p, last.dose, null, last.unit):null;
       if(u!=null) bits.push('<b style="color:'+substColor(st,sub)+'">'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
     } else if(p){
       // no shot yet: show the mix so the card is not blank
@@ -5894,8 +5911,12 @@ var UI = (function(){
     var vu=DOMAIN.vialUnitFor(unit);
     var out='= <b>'+esc(fmtConc(conc)+" "+vu+"/ml")+'</b>';
     var last=p?DOMAIN.lastDoseAsOf(st, p.id):null;
-    var u=last&&last.dose!=null ? DOMAIN.unitsForDose(last.dose, unit, conc) : null;
-    if(u!=null) out+=' &middot; '+esc(String(last.dose)+" "+unit)+' &rarr; <b>'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>';
+    var u=last&&last.dose!=null ? DOMAIN.unitsForDose(last.dose, last.unit||unit, conc) : null;
+    if(u!=null){
+      var shown=DOMAIN.convertDose(last.dose, last.unit, unit);
+      out+=' &middot; '+esc(shown!=null ? fmtDose(shown)+" "+unit : String(last.dose)+" "+(last.unit||unit))
+        +' &rarr; <b>'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>';
+    }
     return out;
   }
   // The one number that matters at the needle: how many units to pull.
@@ -5913,7 +5934,7 @@ var UI = (function(){
       +'<div style="font-size:20px;font-weight:800;color:'+pc+'">'
         +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
       +'<div class="tiny muted" style="margin-top:2px">'
-        +esc(String(dose)+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
+        +esc(fmtDose(Number(dose))+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
       +'</div>';
   }
   function pepFormHTML(st){
@@ -6384,9 +6405,9 @@ var UI = (function(){
     return v ? DOMAIN.vialConc(v.mg, v.ml) : null;
   }
   // Units to draw for a dose, measured against the vial open on that date.
-  function pepUnits(st, p, dose, dISO){
+  function pepUnits(st, p, dose, dISO, unit){
     if(!p) return null;
-    return DOMAIN.unitsForDose(dose, p.unit, pepConcAsOf(st, p, dISO));
+    return DOMAIN.unitsForDose(dose, unit||p.unit, pepConcAsOf(st, p, dISO));
   }
   // Freeze onto the entry what was actually drawn, at the concentration of its
   // own day. Every write of a dose or a date goes through here, so a later vial
@@ -6397,10 +6418,16 @@ var UI = (function(){
     if(!entry) return entry;
     var p=peptideById(st, entry.substance);
     var conc=p?pepConcAsOf(st, p, entry.date):null;
-    var u=p?DOMAIN.unitsForDose(entry.dose, p.unit, conc):null;
+    var u=p?DOMAIN.unitsForDose(entry.dose, entry.unit||p.unit, conc):null;
     if(u!=null){ entry.units=Math.round(u*10)/10; entry.mgPerMl=Math.round(conc*1000)/1000; }
     else { delete entry.units; delete entry.mgPerMl; }
     return entry;
+  }
+  // 833 mcg is 0,833 mg -- three places, and no trailing zeros on 2,5
+  function fmtDose(d){
+    if(d==null || !isFinite(d)) return "";
+    var t=String(Math.round(d*1000)/1000);
+    return I18N.lang==="pl" ? t.replace(".",",") : t;
   }
   function fmtUnits(u){
     if(u==null) return "";
@@ -7126,7 +7153,12 @@ var UI = (function(){
     var dosePh=(sub==="mounjaro"&&st.calc.strengthMg!=null)?st.calc.strengthMg:(pepCur?"":"");
     // default the dose to the previous shot of this substance for one-tap logging
     var lastD=DOMAIN.lastDoseAsOf(st, sub);
-    var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||(lastD?lastD.dose:""));
+    // the previous shot may have been logged in another unit; offer it in the
+    // one the field is labelled with, or the number would change meaning
+    var lastDose=lastD ? DOMAIN.convertDose(lastD.dose, lastD.unit, pepCur?pepCur.unit:lastD.unit) : null;
+    // a dot, never fmtDose: <input type="number"> silently renders empty on "0,833"
+    var lastTxt=(lastDose!=null) ? String(Math.round(lastDose*1000)/1000) : "";
+    var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||lastTxt);
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
       +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
     // how much to draw on a U-100 syringe, recomputed live as the dose is typed
