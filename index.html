@@ -361,10 +361,11 @@
   /* .pepHead already leaves 11px between the subtitle and the bar; the marks
      move into that gap instead of adding a line of their own. Absolute takes
      them out of the layout by definition, so the row's height no longer depends
-     on how tall they are. The band runs 13-21px up from the bottom: the bar owns
-     the first 12, and .pepHead's content stops at 23, which leaves the subtitle
-     2px of clearance. No wrapping -- a second line would land on one of them. */
-  .tally{position:absolute;left:12px;right:12px;bottom:13px;height:8px;
+     on how tall they are. The band runs 15-23px up from the bottom: the bar owns
+     the first 12 and its wave crests reach its very top, so the clearance below
+     the marks is the one that has to be visible -- 1px read as touching. No
+     wrapping either: a second line would land on the bar or on the subtitle. */
+  .tally{position:absolute;left:12px;right:12px;bottom:15px;height:8px;
     display:flex;align-items:flex-end;gap:4px;overflow:hidden;pointer-events:none}
   .tallyg{flex:none;overflow:visible}
   .tallyg line{stroke:var(--c);stroke-width:1.2;stroke-linecap:round}
@@ -581,7 +582,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v190";
+var BUILD = "mj-v191";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
