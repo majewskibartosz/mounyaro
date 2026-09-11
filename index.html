@@ -298,13 +298,13 @@
   .peplist{display:flex;flex-direction:column;gap:9px}
   .archlist .pep{opacity:.66}
   .archlist .pep.on{opacity:1}
-  .pep{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
+  .pep{position:relative;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
        border-radius:14px;overflow:hidden}
   .pep.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
   /* edit mode: dashed, handled, and gently rocking so it reads as movable */
   .pep.reord{display:grid;grid-template-columns:1fr auto;align-items:center;
     border-style:dashed;background:var(--soft);touch-action:none;user-select:none;-webkit-user-select:none}
-  .pep.reord .wbar{display:none}
+  .pep.reord .wbar,.pep.reord .tally{display:none}
   /* the content column of the reorder grid must be free to shrink, so the handle
      column keeps the same position whatever the row happens to say */
   .pep.reord .pepHead{cursor:default;min-width:0}
@@ -358,9 +358,16 @@
      own strip, because the marks grow all cycle long and the top line has as
      little as 21 px to spare next to a long name. Groups wrap on their own, so
      even a year-long cycle stays inside the card. */
-  .tally{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:0 12px 7px}
+  /* .pepHead already leaves 11px between the subtitle and the bar; the marks
+     move into that gap instead of adding a line of their own. Absolute takes
+     them out of the layout by definition, so the row's height no longer depends
+     on how tall they are. The band runs 13-21px up from the bottom: the bar owns
+     the first 12, and .pepHead's content stops at 23, which leaves the subtitle
+     2px of clearance. No wrapping -- a second line would land on one of them. */
+  .tally{position:absolute;left:12px;right:12px;bottom:13px;height:8px;
+    display:flex;align-items:flex-end;gap:4px;overflow:hidden;pointer-events:none}
   .tallyg{flex:none;overflow:visible}
-  .tallyg line{stroke:var(--c);stroke-width:1.5;stroke-linecap:round}
+  .tallyg line{stroke:var(--c);stroke-width:1.2;stroke-linecap:round}
   .wbar.flush{height:12px;border:0;border-radius:0;margin:0}
   .wbar.slim{height:8px;border:0;margin:5px 0 0;background:var(--soft)}
   /* the wave mask is 26x12; scale its width with the height or the squiggle
@@ -574,7 +581,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v189";
+var BUILD = "mj-v190";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -5625,10 +5632,10 @@ var UI = (function(){
   // Four marks with a stroke through them: a closed group, four weeks, near
   // enough a month. Fewer than four is a group still being filled, so no stroke.
   function tallyGroupSVG(n, crossed){
-    var w=(n-1)*5+1.5, s='';
-    for(var i=0;i<n;i++) s+='<line x1="'+(i*5+0.75)+'" y1="1" x2="'+(i*5+0.75)+'" y2="11"/>';
-    if(crossed) s+='<line x1="-1.5" y1="11.5" x2="'+(w+1.5)+'" y2="0.5"/>';
-    return '<svg class="tallyg" width="'+(w+3)+'" height="12" viewBox="-1.5 0 '+(w+3)+' 12" aria-hidden="true">'+s+'</svg>';
+    var w=(n-1)*4+1.2, s='';
+    for(var i=0;i<n;i++) s+='<line x1="'+(i*4+0.6)+'" y1="0.6" x2="'+(i*4+0.6)+'" y2="7.4"/>';
+    if(crossed) s+='<line x1="-1.2" y1="7.6" x2="'+(w+1.2)+'" y2="0.4"/>';
+    return '<svg class="tallyg" width="'+(w+2.4)+'" height="8" viewBox="-1.2 0 '+(w+2.4)+' 8" aria-hidden="true">'+s+'</svg>';
   }
   // One small SVG per group inside a wrapping row -- a single big one would
   // either overflow the card or have to be squashed, and squashed marks blur.
