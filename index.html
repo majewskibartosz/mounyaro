@@ -582,7 +582,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v193";
+var BUILD = "mj-v194";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -6234,8 +6234,17 @@ var UI = (function(){
             // were drawn at — a reading once written is never rewritten.
             curV.date=vd; curV.mg=vmg; curV.ml=vml;
           } else {
-            var prev=pepVialAsOf(st, p, vd);
-            if(!prev || prev.mg!==vmg || prev.ml!==vml){
+            // Mixing again is an event in itself: a fresh batch dissolved on a
+            // new day counts even when it lands on the same concentration as the
+            // last one. Matching mg/ml used to swallow it, so the vial someone
+            // deliberately reached for "+ Nowa fiolka" to record never appeared.
+            // The only thing still turned away is the exact same row twice --
+            // same day, same mix -- which is a double tap, not a second vial.
+            var dup=false;
+            (p.vials||[]).forEach(function(v){
+              if(v && v.date===vd && v.mg===vmg && v.ml===vml) dup=true;
+            });
+            if(!dup){
               p.vials.push({ id:"v_"+uid(), date:vd, mg:vmg, ml:vml });
               // A vial dated back before shots that were logged without one fills
               // in what they were drawn at. Only the blanks: a row that already

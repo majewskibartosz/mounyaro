@@ -784,6 +784,28 @@ test("unitsForDose: the same shot draws the same amount whichever unit names it"
   assert.ok(DOMAIN.unitsForDose(833, "mg", conc) > 24000, "and that is what reading it as mg gave");
 });
 
+test("vialSpans: mixing the same concentration again is still a second vial", function () {
+  // Two 10 mg / 3 ml vials dissolved three weeks apart are two batches, not one
+  // long one -- the second has to close the first, or the list shows a single
+  // row and the day the new one was mixed is lost.
+  var spans = Array.from(DOMAIN.vialSpans([
+    { id: "v1", date: "2026-08-25", mg: 10, ml: 3 },
+    { id: "v2", date: "2026-09-11", mg: 10, ml: 3 }
+  ]));
+  assert.strictEqual(spans.length, 2);
+  assert.strictEqual(spans[0].until, "2026-09-10", "the first one ends the day before the second");
+  assert.strictEqual(spans[1].until, null, "and the new one runs to now");
+});
+
+test("vialSpans: two rows on the same day are one correction, not two vials", function () {
+  var spans = Array.from(DOMAIN.vialSpans([
+    { id: "v1", date: "2026-09-11", mg: 10, ml: 3 },
+    { id: "v2", date: "2026-09-11", mg: 10, ml: 2 }
+  ]));
+  assert.strictEqual(spans.length, 1, "the later row wins the day");
+  assert.strictEqual(spans[0].ml, 2);
+});
+
 test("seriesFor: a peptide id reads only that peptide's shots", function () {
   var log = [
     { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg" },
