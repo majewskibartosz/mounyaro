@@ -635,6 +635,121 @@ test("cycleProgress: a cycle shorter than a week never earns a mark until it end
   assert.strictEqual(over.weeksDone, 1, "one week, because that is what the cycle rounds to");
 });
 
+// A stub translator: real labels come from I18N, and DOMAIN must never reach
+// for it. Returning the key back is exactly what I18N.t does for a missing one,
+// which is also how describe() decides to fall back to the raw code.
+function tStub(map) {
+  return function (k) { return Object.prototype.hasOwnProperty.call(map || {}, k) ? map[k] : k; };
+}
+var DESC_T = tStub({
+  "cond.typeIllness": "Infekcja", "cond.typeChronic": "Schorzenie / kontuzja",
+  "ill.sev1": "łagodne", "ill.sev2": "umiarkowane", "ill.sev3": "ciężkie",
+  "site.belly_ll": "Brzuch — dół lewy", "inj.seg.trt": "TRT", "inj.seg.mounjaro": "Mounjaro",
+  "glu.tagFasting": "na czczo", "glu.tagPre": "przed posiłkiem",
+  "glu.tagPost": "po posiłku", "glu.tagBed": "przed snem",
+  "inj.cycleUnitWeeks": "tygodnie", "inj.cycleUnitDays": "dni"
+});
+
+function descState() {
+  return {
+    conditions: [
+      { id: "c1", type: "chronic", label: "GI issues / IBS", severity: 2,
+        symptoms: [{ key: "sym_a", label: "biegunka" }, { key: "sym_b", label: "wzdęcia", archived: true }] }
+    ],
+    journal: [
+      { id: "j1", ts: "2026-09-07T09:38:00.000Z", text: "note",
+        symptoms: { "c1:sym_a": 4, "c1:sym_b": 1, "ghost:sym_x": 3, "c1:sym_gone": 2 } }
+    ],
+    injLog: [
+      { id: "i1", ts: "2026-09-07T06:00:00.000Z", substance: "pep_1", dose: 400, unit: "mcg", site: "belly_ll" },
+      { id: "i2", ts: "2026-09-06T06:00:00.000Z", substance: "trt", dose: 25, unit: "mg", site: "nowhere_odd" }
+    ],
+    glu: { log: [{ id: "g1", ts: "2026-09-07T05:00:00.000Z", mgdl: 92, tag: "fasting" }] },
+    inj: { peptides: [{ id: "pep_1", name: "KPV", unit: "mcg", cycleUnit: "weeks", archived: true }] },
+    profile: { sex: "m" }
+  };
+}
+
+test("describe: a symptom key becomes the condition and symptom in words", function () {
+  var out = DOMAIN.describe(descState(), DESC_T);
+  var r = Array.from(out.journal[0].symptomsReadable);
+  assert.deepStrictEqual(r.map(function (x) { return x.condition + "/" + x.symptom + "/" + x.severity; }),
+    ["GI issues / IBS/biegunka/4", "GI issues / IBS/wzdęcia/1"]);
+});
+
+test("describe: a deleted condition or symptom is skipped, not guessed at", function () {
+  // "ghost:sym_x" names a condition that no longer exists, "c1:sym_gone" a
+  // symptom that was deleted outright -- the diary already says nothing about
+  // either, and a file that invented a label would be worse than a quiet gap.
+  var out = DOMAIN.describe(descState(), DESC_T);
+  assert.strictEqual(out.journal[0].symptomsReadable.length, 2);
+  assert.ok(out.journal[0].symptoms["ghost:sym_x"], "the raw key still stands, untouched");
+});
+
+test("describe: an archived peptide still gives its shots a name", function () {
+  var out = DOMAIN.describe(descState(), DESC_T);
+  assert.strictEqual(out.injLog[0].substanceName, "KPV");
+  assert.strictEqual(out.injLog[1].substanceName, "TRT");
+});
+
+test("describe: an unknown code falls back to itself, never to a lookup key", function () {
+  var out = DOMAIN.describe(descState(), DESC_T);
+  assert.strictEqual(out.injLog[0].siteName, "Brzuch — dół lewy");
+  assert.strictEqual(out.injLog[1].siteName, "nowhere_odd", "not \"site.nowhere_odd\"");
+});
+
+test("describe: every code the app can write has an entry in the legend", function () {
+  // The point of this test is the next code someone adds: if it is not in the
+  // legend, the file stops explaining itself and nobody notices.
+  var out = DOMAIN.describe(descState(), DESC_T);
+  DOMAIN.SITE_CODES.forEach(function (c) {
+    assert.ok(out.legend.sites[c], "site " + c + " is in the legend");
+  });
+  DOMAIN.GLU_TAGS.forEach(function (c) {
+    assert.ok(out.legend.glucoseTags[c], "glucose tag " + c + " is in the legend");
+  });
+  ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "brand", "accent"].forEach(function (c) {
+    assert.ok(out.legend.tones[c], "tone " + c + " is in the legend");
+  });
+  ["mcg", "mg", "j", "IU"].forEach(function (c) {
+    assert.ok(out.legend.units[c], "unit " + c + " is in the legend");
+  });
+  ["illness", "chronic"].forEach(function (c) {
+    assert.ok(out.legend.conditionTypes[c], "condition type " + c + " is in the legend");
+  });
+  ["1", "2", "3"].forEach(function (c) {
+    assert.ok(out.legend.severity[c], "severity " + c + " is in the legend");
+  });
+  assert.ok(out.legend.joins["journal[].symptoms"], "the compound key is explained");
+  assert.ok(/HIGHER IS WORSE/.test(out.legend.scales["journal[].symptoms values"]),
+    "the direction of the symptom scale is stated, because it runs opposite to wellbeing");
+  assert.ok(/HIGHER IS BETTER/.test(out.legend.scales["journal[].energy / mood / clarity, stateLog[]"]));
+  assert.ok(out.legend.conventions["injLog[].pos"], "cm-from-navel is stated");
+  assert.ok(out.legend.conventions["glu.log[].mgdl"], "always-mg/dL is stated");
+  assert.ok(out.readme, "and the file says what it is");
+});
+
+test("describe: the live state is left exactly as it was", function () {
+  var st = descState(), before = JSON.stringify(st);
+  DOMAIN.describe(st, DESC_T);
+  assert.strictEqual(JSON.stringify(st), before);
+});
+
+test("stripDescribed: reading an enriched file back leaves no derived field behind", function () {
+  var st = descState();
+  var stripped = DOMAIN.stripDescribed(DOMAIN.describe(st, DESC_T));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(stripped)), JSON.parse(JSON.stringify(st)));
+  assert.ok(!/"(readme|legend|symptomsReadable|substanceName|siteName|tagName|typeName|severityName|cycleUnitName|sexName|gluUnitName|tripUnitName)"/
+    .test(JSON.stringify(stripped)), "not one of them survives anywhere in the tree");
+});
+
+test("describe: nothing to describe is not an error", function () {
+  var out = DOMAIN.describe({}, DESC_T);
+  assert.ok(out.legend && out.readme);
+  assert.strictEqual(DOMAIN.describe(null, DESC_T).journal, undefined);
+  assert.deepStrictEqual(DOMAIN.stripDescribed(null), null);
+});
+
 test("seriesFor: a peptide id reads only that peptide's shots", function () {
   var log = [
     { id: "a", date: "2026-08-01", substance: "pep1", dose: 250, unit: "mcg" },

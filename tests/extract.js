@@ -39,9 +39,14 @@ function loadStore(ls) {
     console: console,
     localStorage: ls || fakeLocalStorage(),
     setTimeout: function () { return 0; },
-    clearTimeout: function () {}
+    clearTimeout: function () {},
+    // STORE serialises through DOMAIN.describe and strips the derived fields
+    // back off on load, so the module has to be there; I18N is only reached
+    // for labels on the way out, which a stub answers well enough.
+    I18N: { t: function (k) { return k; } }
   };
   vm.createContext(ctx);
+  vm.runInContext(extractModule("DOMAIN", "var STORE = (function(){"), ctx, { filename: "index.html#DOMAIN" });
   vm.runInContext(extractModule("STORE", "function $(sel,root)"), ctx, { filename: "index.html#STORE" });
   return ctx.STORE;
 }

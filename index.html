@@ -582,7 +582,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v191";
+var BUILD = "mj-v192";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -2481,6 +2481,141 @@ var DOMAIN = (function(){
       .map(function(x){ return x.p; });
   }
 
+
+  /* ---- a JSON that explains itself ------------------------------------------
+     The file on disk used to be the app's own state, so a reader met keys like
+     "mt5hu8t95x2r7:sym_mt5hu8t96gu0s": 1 and had no way to know what they meant.
+     The ids stay -- they are what joins the data, and a name in their place
+     would orphan history the moment a condition is renamed. What changes is the
+     document: every id gets a name beside it, every code a word, and the rules
+     that no value can express get written down in a legend.
+     Pure, like everything here: the translator arrives as an argument, so this
+     never reaches for I18N and a test can hand it a stub. */
+  var SITE_CODES=["belly_ul","belly_ur","belly_ll","belly_lr",
+                  "love_l1","love_l2","love_r1","love_r2",
+                  "thigh_l","thigh_r","thigh_l1","thigh_l2","thigh_r1","thigh_r2"];
+  var DESCRIBED_KEYS=["readme","legend","symptomsReadable","substanceName","siteName",
+                      "tagName","typeName","severityName","cycleUnitName","sexName",
+                      "methodName","gluUnitName","tripUnitName"];
+  // A condition or a symptom that was deleted outright leaves nothing to resolve,
+  // so its key is skipped -- the same silence the diary already keeps.
+  function symptomParts(conditions, compoundKey){
+    var sep=String(compoundKey||"").indexOf(":");
+    if(sep<0) return null;
+    var condId=compoundKey.slice(0,sep), symKey=compoundKey.slice(sep+1), cond=null, sym=null;
+    (conditions||[]).forEach(function(c){ if(c && c.id===condId) cond=c; });
+    if(!cond) return null;
+    (cond.symptoms||[]).forEach(function(sy){ if(sy && sy.key===symKey) sym=sy; });
+    if(!sym) return null;
+    return { cond:cond, sym:sym };
+  }
+  function substName(st, sub){
+    var hit=null;
+    (((st.inj||{}).peptides)||[]).forEach(function(p){ if(p && p.id===sub) hit=p; });
+    if(hit) return hit.name;
+    return null;   // "mounjaro"/"trt"/"peptide" are named by the caller's translator
+  }
+  function describe(state, t){
+    t = t || function(k){ return k; };
+    function tt(key, code){ var v=t(key); return (v===key) ? code : v; }
+    var st = JSON.parse(JSON.stringify(state||{}));   // never touch the live state
+    var conds = st.conditions||[];
+    function condLabel(c){ return c.label || tt(c.type==="illness"?"cond.typeIllness":"cond.typeChronic", c.type); }
+
+    (st.journal||[]).forEach(function(e){
+      if(!e || !e.symptoms) return;
+      var out=[];
+      Object.keys(e.symptoms).forEach(function(k){
+        var v=e.symptoms[k]; if(v==null) return;
+        var hit=symptomParts(conds, k);
+        if(!hit) return;
+        out.push({ condition:condLabel(hit.cond), symptom:hit.sym.label, severity:v });
+      });
+      if(out.length) e.symptomsReadable=out;
+    });
+    (st.injLog||[]).forEach(function(e){
+      if(!e) return;
+      var nm=substName(st, e.substance);
+      e.substanceName = nm || tt("inj.seg."+e.substance, e.substance);
+      if(e.site) e.siteName = tt("site."+e.site, e.site);
+    });
+    (((st.glu||{}).log)||[]).forEach(function(e){
+      if(e && e.tag) e.tagName = tt("glu.tag"+e.tag.charAt(0).toUpperCase()+e.tag.slice(1), e.tag);
+    });
+    conds.forEach(function(c){
+      if(!c) return;
+      c.typeName = tt(c.type==="illness"?"cond.typeIllness":"cond.typeChronic", c.type);
+      if(c.severity) c.severityName = tt("ill.sev"+c.severity, String(c.severity));
+    });
+    (((st.inj||{}).peptides)||[]).forEach(function(p){
+      if(!p) return;
+      p.cycleUnitName = tt(p.cycleUnit==="weeks"?"inj.cycleUnitWeeks":"inj.cycleUnitDays", p.cycleUnit||"days");
+    });
+    if(st.profile && st.profile.sex) st.profile.sexName = tt(st.profile.sex==="f"?"bmi.female":"bmi.male", st.profile.sex);
+    if(st.calc && st.calc.prog && st.calc.prog.method)
+      st.calc.prog.methodName = tt("prog.m"+st.calc.prog.method.charAt(0).toUpperCase()+st.calc.prog.method.slice(1), st.calc.prog.method);
+    if(st.settings){
+      if(st.settings.gluUnit) st.settings.gluUnitName = tt(st.settings.gluUnit==="mmol"?"glu.unitMmol":"glu.unitMgdl", st.settings.gluUnit);
+      if(st.settings.travel && st.settings.travel.tripUnit)
+        st.settings.travel.tripUnitName = tt(st.settings.travel.tripUnit==="months"?"trv.months":"trv.weeks", st.settings.travel.tripUnit);
+    }
+
+    var sites={}; SITE_CODES.forEach(function(c){ sites[c]=tt("site."+c, c); });
+    var tags={}; GLU_TAGS.forEach(function(c){
+      tags[c]=tt("glu.tag"+c.charAt(0).toUpperCase()+c.slice(1), c); });
+    var tones={}; ["p1","p2","p3","p4","p5","p6","p7","p8"].forEach(function(c,i){
+      tones[c]="identity colour slot "+(i+1)+" of 8; the hex for the current theme is in the record's `color`"; });
+    tones.brand="the colour reserved for Mounjaro";
+    tones.accent="the colour reserved for TRT";
+
+    st.readme = "Mounjaro Tracker export. Every `*Name` and `*Readable` field is derived at "
+      + "write time for readers -- the ids are the source of truth and the only thing joined on. "
+      + "`legend` explains the codes and the conventions that no single value can state. "
+      + "Times are ISO 8601; dates without a time are local days.";
+    st.legend = {
+      joins: {
+        "journal[].symptoms": "keys are \"<conditions[].id>:<conditions[].symptoms[].key>\", values 1-5. The same thing spelled out in symptomsReadable.",
+        "injLog[].substance": "\"mounjaro\", \"trt\", or an inj.peptides[].id. The name is in substanceName.",
+        "inj.order[]": "the order substance rows are shown in, by the same ids; may be incomplete.",
+        "settings.panelOpen": "keys are conditions[].id (or \"state\" for the wellbeing panel); UI state only.",
+        "dailyLog[].values": "legacy; keys are \"metric:<metrics[].id>\"."
+      },
+      sites: sites,
+      glucoseTags: tags,
+      conditionTypes: { illness:tt("cond.typeIllness","illness"), chronic:tt("cond.typeChronic","chronic") },
+      severity: { "1":tt("ill.sev1","1"), "2":tt("ill.sev2","2"), "3":tt("ill.sev3","3") },
+      tones: tones,
+      units: { mcg:"micrograms", mg:"milligrams", j:"syringe units (Polish \"jednostki\")", IU:"international units" },
+      scales: {
+        "journal[].energy / mood / clarity, stateLog[]": "1-5, HIGHER IS BETTER (1 worst, 5 best)",
+        "journal[].symptoms values": "1-5 severity, HIGHER IS WORSE -- the opposite direction from wellbeing",
+        "conditions[].severity": "1 mild, 2 moderate, 3 severe"
+      },
+      conventions: {
+        "injLog[].pos": "centimetres from the navel; +x to the subject's right, +y downwards",
+        "injLog[].days, inj.*.days": "ISO weekdays, 1 = Monday ... 7 = Sunday; null means a fixed gap instead of set days",
+        "injLog[].times": "local wall-clock \"HH:MM\"",
+        "injLog[].every": "the interval in days as it stood when the shot was logged, frozen",
+        "injLog[].sandbag": "true = deliberately excluded from every calculation and chart",
+        "glu.log[].mgdl": "always mg/dL, whatever settings.gluUnit shows on screen",
+        "inj.peptides[].cycleDays": "always days; cycleUnit only says how it is written and read back",
+        "conditions[].end": "null means the condition is still running",
+        "conditions[].symptoms[].archived": "true = removed from the form but kept so old entries still resolve",
+        "settings.travel.tripUnit": "\"months\" counts 28-day months, not calendar months",
+        "updatedAt": "epoch milliseconds of the last save; the linked-file sync picks the newer copy by it"
+      }
+    };
+    return st;
+  }
+  // Reading an enriched file back: the derived fields must not settle into the
+  // state, or they would go stale the first time something is renamed.
+  function stripDescribed(obj){
+    if(!obj || typeof obj!=="object") return obj;
+    if(Array.isArray(obj)){ obj.forEach(stripDescribed); return obj; }
+    DESCRIBED_KEYS.forEach(function(k){ delete obj[k]; });
+    Object.keys(obj).forEach(function(k){ stripDescribed(obj[k]); });
+    return obj;
+  }
   return {
     CLICKS_PER_PEN:CLICKS_PER_PEN, CLICKS_PER_DOSE:CLICKS_PER_DOSE, DOSES_PER_PEN:DOSES_PER_PEN,
     GOLDEN_UNITS:GOLDEN_UNITS,
@@ -2504,6 +2639,7 @@ var DOMAIN = (function(){
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
     gluToMgdl:gluToMgdl, gluFromMgdl:gluFromMgdl, gluTagFor:gluTagFor, gluWindowStats:gluWindowStats,
     gluTypicalRange:gluTypicalRange, GLU_TAGS:GLU_TAGS,
+    describe:describe, stripDescribed:stripDescribed, symptomParts:symptomParts, SITE_CODES:SITE_CODES,
     parseRoute:parseRoute, buildRoute:buildRoute,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
@@ -2695,7 +2831,10 @@ var STORE = (function(){
     });
     return st;
   }
-  function hydrate(parsed){ return ensureCondLooks(ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), parsed)))))); }
+  // stripDescribed first: an enriched file carries names next to its ids, and
+  // those must not settle into the state -- they would go stale the first time
+  // something is renamed. A file without them passes through untouched.
+  function hydrate(parsed){ return ensureCondLooks(ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), DOMAIN.stripDescribed(parsed))))))); }
   function merge(base, over){
     if(typeof over!=="object"||over===null) return base;
     var out = Array.isArray(base)? base.slice():Object.assign({},base);
@@ -2725,7 +2864,7 @@ var STORE = (function(){
     setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 500);
   }
   function exportFile(){
-    var data = JSON.stringify(state, null, 2);
+    var data = JSON.stringify(DOMAIN.describe(state, I18N.t), null, 2);
     var fname = "mounjaro-tracker-"+new Date().toISOString().slice(0,10)+".json";
     // On devices that can share files (mostly mobile), offer the native share
     // sheet so the backup can go straight into MEGA/Drive/Files — no account,
@@ -2794,7 +2933,7 @@ var STORE = (function(){
     if(!linkedHandle || !linkedReady) return;
     try{
       linkedHandle.createWritable().then(function(w){
-        return w.write(JSON.stringify(state, null, 2)).then(function(){ return w.close(); });
+        return w.write(JSON.stringify(DOMAIN.describe(state, I18N.t), null, 2)).then(function(){ return w.close(); });
       }).catch(function(){ /* file vanished / perm lost; keep localStorage */ });
     }catch(e){}
   }
