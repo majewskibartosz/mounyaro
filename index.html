@@ -390,9 +390,14 @@
   /* due now: an hour out, or already past. Tinted in the substance's own colour
      so it reads as "this one, now" at a glance, and in the alarm colour once the
      moment has passed — late still looks different from nearly-there. */
-  .duebadge{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.06em;
-    padding:2px 6px;border-radius:999px;background:var(--c);color:var(--on-brand);
-    line-height:1.4;align-self:center}
+  /* inline-block, centred on the line: an inline span hangs from the text's
+     baseline and its padding paints outside the line box, so on a font with a
+     deeper descent the bottom edge lands below .pepname and overflow:hidden
+     shaves it off. Centred and 15.5px tall it sits inside the 18px line on any
+     font, and the line does not grow -- every card stays the same height. */
+  .duebadge{flex:0 0 auto;display:inline-block;vertical-align:middle;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+    padding:3px 6px;border-radius:999px;background:var(--c);color:var(--on-brand);
+    line-height:1;align-self:center;position:relative;top:-1px}
   a.rrow.due,.rrow.due{background:var(--ct);border-left:3px solid var(--c);
     border-radius:10px;margin-left:-9px;padding:6px 7px 4px 7px}
   /* reorder mode owns the row's look (dashed, soft, no bar); the due tint must
