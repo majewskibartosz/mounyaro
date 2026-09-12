@@ -860,7 +860,7 @@ test("vialSpans: mixing the same concentration again is still a second vial", fu
     { id: "v2", date: "2026-09-11", mg: 10, ml: 3 }
   ]));
   assert.strictEqual(spans.length, 2);
-  assert.strictEqual(spans[0].until, "2026-09-10", "the first one ends the day before the second");
+  assert.strictEqual(spans[0].until, "2026-09-11", "the first one ends the day the second was mixed");
   assert.strictEqual(spans[1].until, null, "and the new one runs to now");
 });
 
@@ -1362,11 +1362,12 @@ test("vialSpans: one record holds every mix with the days it covers", function (
   assert.strictEqual(one.length, 1);
   assert.strictEqual(one[0].until, null);
 
-  // KLOW at 10 mg/ml, then at 20 mg/ml: the periods meet without a gap or overlap
+  // KLOW at 10 mg/ml, then at 20 mg/ml: the periods meet on the changeover day,
+  // which belongs to both -- the old one was drawn from before the new was mixed
   var two = Array.from(DOMAIN.vialSpans([{ id: "v2", date: "2026-09-01", mg: 20, ml: 1 },
                                          { id: "v1", date: "2026-06-01", mg: 10, ml: 1 }]));
   assert.deepStrictEqual(pluck(two, "id"), ["v1", "v2"]);          // sorted oldest first
-  assert.deepStrictEqual(pluck(two, "until"), ["2026-08-31", null]);
+  assert.deepStrictEqual(pluck(two, "until"), ["2026-09-01", null]);
   assert.deepStrictEqual(pluck(two, "mg"), [10, 20]);
 
   // three in a row, entered out of order
@@ -1374,7 +1375,7 @@ test("vialSpans: one record holds every mix with the days it covers", function (
                                            { id: "c", date: "2026-03-01", mg: 5, ml: 2 },
                                            { id: "a", date: "2026-01-01", mg: 5, ml: 3 }]));
   assert.deepStrictEqual(pluck(three, "id"), ["a", "b", "c"]);
-  assert.deepStrictEqual(pluck(three, "until"), ["2026-02-09", "2026-02-28", null]);
+  assert.deepStrictEqual(pluck(three, "until"), ["2026-02-10", "2026-03-01", null]);
 
   // a mix corrected on its own date covers no days, so it is not a period
   var same = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-06-01", mg: 10, ml: 2 },
@@ -1417,11 +1418,13 @@ test("vialSpans: a recorded end beats a guessed one", function () {
   assert.deepStrictEqual(pluck(gap, "until"), ["2026-09-01", null]);
   assert.deepStrictEqual(pluck(gap, "end"), ["2026-09-01", null]);
 
-  // no end: the day before the next mix, as it has always been
+  // no end on file (old data, or a row written before mixing closed it): the
+  // guess is the day the next one was mixed -- the same day a recorded end
+  // would name, so both kinds of row read alike
   var guessed = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 },
                                              { id: "v2", date: "2026-09-08", mg: 20, ml: 2 }]));
-  assert.deepStrictEqual(pluck(guessed, "until"), ["2026-09-07", null]);
-  assert.deepStrictEqual(pluck(guessed, "end"), [null, null]);
+  assert.deepStrictEqual(pluck(guessed, "until"), ["2026-09-08", null]);
+  assert.deepStrictEqual(pluck(guessed, "end"), [null, null]);   // guessed, never written
 
   // the last vial holds open even when it is finished
   var done = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-08-01", end: "2026-09-01", mg: 10, ml: 2 }]));

@@ -1440,8 +1440,11 @@ var DOMAIN = (function(){
     });
     return best;
   }
-  // The vial log read as periods, oldest first: each mix holds until the day
-  // before the next one is dissolved, and the newest holds open (until:null).
+  // The vial log read as periods, oldest first: each mix holds through the day
+  // the next one is dissolved -- that day is still its own, you drew from it
+  // before mixing the replacement -- and the newest holds open (until:null).
+  // The same rule a recorded `end` follows, so old rows that never got one read
+  // exactly like new ones that do.
   // A mix superseded on its own date covers no days at all and is left out,
   // which is exactly the vial vialAsOf would skip.
   function vialSpans(vials){
@@ -1454,7 +1457,7 @@ var DOMAIN = (function(){
       // ran out, in which case one really did end and another really did start.
       if(nxt && nxt.date===v.date && !v.end) return;
       out.push({ id:v.id, date:v.date, mg:v.mg, ml:v.ml, end:v.end||null,
-                 until:v.end || (nxt?addDaysISO(nxt.date,-1):null) });
+                 until:v.end || (nxt?nxt.date:null) });
     });
     return out;
   }
@@ -6348,6 +6351,13 @@ var UI = (function(){
               if(v && v.date===vd && v.mg===vmg && v.ml===vml) dup=true;
             });
             if(!dup){
+              // You mix a new one because the old one is done, so this IS its
+              // end -- and it ends on the day the replacement was mixed, not the
+              // day before: you were still drawing from it that morning. Read
+              // before the push so it can never find the row being added. One
+              // that already carries its own end keeps it.
+              var prevV=DOMAIN.vialAsOf(p.vials, vd);
+              if(prevV && !prevV.end) prevV.end=vd;
               p.vials.push({ id:"v_"+uid(), date:vd, mg:vmg, ml:vml });
               // A vial dated back before shots that were logged without one fills
               // in what they were drawn at. Only the blanks: a row that already
