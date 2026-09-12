@@ -593,7 +593,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v196";
+var BUILD = "mj-v197";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -765,6 +765,7 @@ var I18N = (function(){
     "pep.vialEnd":{pl:"Zakończ fiolkę",en:"Finish the vial"},
     "pep.vialEndDate":{pl:"Skończyła się",en:"Ran out on"},
     "pep.vialDone":{pl:"Skończona",en:"Finished"},
+    "pep.vialSave":{pl:"Zapisz fiolkę",en:"Save the vial"},
     "pep.colorTaken":{pl:"Kolor zajęty przez inny środek",en:"Colour already used by another substance"},
     "pep.colorBrand":{pl:"Tirzepatyd nosi kolor wiodący motywu — zmienia się razem z nim.",en:"Tirzepatyd wears the theme's brand colour and changes with it."},
     "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
@@ -5967,6 +5968,21 @@ var UI = (function(){
         +'<input type="date" id="pfVialDate" value="'+esc(vDate)+'"></div>'
       +'<div id="pfConc" class="note" style="margin:-2px 0 10px">'+vialPreviewHTML(st, p, unit)+'</div>';
     }
+    // The form's own "Save" sits ~290 px lower, under the cycle settings, off
+    // the bottom of a phone screen: from an open vial field there was nothing
+    // to confirm with and no way back to the other buttons. So the section
+    // carries its own pair. "Save the vial" runs the very same save as the
+    // form's button -- nothing typed anywhere is lost -- but leaves the editor
+    // open with the summary back on screen, so finishing a vial and mixing the
+    // next one is two taps in one place. Cancel only appears once a button has
+    // opened a sub-mode: with no vial at all these fields ARE the form, and
+    // there is no summary to go back to.
+    if(mode && p){
+      html+='<div class="row" style="gap:6px;margin:-2px 0 10px;flex-wrap:wrap">'
+        +'<button type="button" class="btn sm" id="pfVialSave">'+esc(I18N.t("pep.vialSave"))+'</button>'
+        +(pepDraft.vialMode?'<button type="button" class="btn ghost sm" id="pfVialCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
+      +'</div>';
+    }
     // One record holds every mix it has ever had, each with the stretch of days
     // it covers — so KLOW at 10 mg/ml and KLOW at 20 mg/ml sit here side by side
     // and it is plain which shots were measured against which.
@@ -6240,6 +6256,12 @@ var UI = (function(){
     if($("#pfVialEnd")) $("#pfVialEnd").addEventListener("click",function(){
       pepDraft.vialMode="end"; viewInject();
     });
+    // Never mind: back to the summary, nothing written. It re-renders from the
+    // record, so it also drops anything typed elsewhere and not yet saved --
+    // which is what "Zapisz fiolkę" next to it is for.
+    if($("#pfVialCancel")) $("#pfVialCancel").addEventListener("click",function(){
+      pepDraft.vialMode=null; viewInject();
+    });
     bindDowPick("pfDays", function(sel){ pepDraft.days=sel; });
     bindTimePick("pfTimes", function(sel){ pepDraft.times=sel; });
     if($("#pfPerDay")) $("#pfPerDay").addEventListener("change",function(){ pepDraft.perDay=DOMAIN.normPerDay(this.value); });
@@ -6253,7 +6275,10 @@ var UI = (function(){
       if($("#pfDaysBox")) $("#pfDaysBox").style.display=onDays?"":"none";
       pepDraft.days=onDays?(readDowPick("pfDays")||[]):null;
     });
-    if($("#pfSave")) $("#pfSave").addEventListener("click",function(){
+    // One save, two buttons: the form's own closes the editor, the vial
+    // section's keeps it open. Everything between them is identical, so a vial
+    // saved from where it stands commits exactly what the bottom button would.
+    function savePepForm(stayOpen){
       var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
       var name=String($("#pfName").value||"").trim().slice(0,60);
       var cycOn=$("#pfCycleOn").checked, cs=$("#pfCycleStart").value||null;
@@ -6372,10 +6397,15 @@ var UI = (function(){
       }
       // A rounded gap is worth more than "Saved": the field is about to show a
       // number the user did not type, and this is the only place that says why.
-      pepEditId=null; pepDraft={}; STORE.save();
+      // `pepDraft` goes either way: whatever it held is on the record now, and
+      // clearing it is what puts the vial section back to its summary.
+      if(!stayOpen) pepEditId=null;
+      pepDraft={}; STORE.save();
       toast(I18N.t(gapRounded ? "inj.schedWholeDays" : "common.saved"));
       syncInjectRoute(); viewInject();
-    });
+    }
+    if($("#pfSave")) $("#pfSave").addEventListener("click",function(){ savePepForm(false); });
+    if($("#pfVialSave")) $("#pfVialSave").addEventListener("click",function(){ savePepForm(true); });
     if($("#pepResume")) $("#pepResume").addEventListener("click",function(){
       var p=peptideById(st, selectedSubst()); if(!p) return;
       p.archived=false;
