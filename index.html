@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v202";
+var BUILD = "mj-v203";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -794,6 +794,8 @@ var I18N = (function(){
     "pep.vialEndDate":{pl:"Skończyła się",en:"Ran out on"},
     "pep.vialDone":{pl:"Skończona",en:"Finished"},
     "pep.vialSave":{pl:"Zapisz fiolkę",en:"Save the vial"},
+    "pep.vialTrack":{pl:"Śledź stan fiolki (on/off)",en:"Track what is left in the vial (on/off)"},
+    "pep.vialTrackOff":{pl:"Licznik wyłączony — stężenie liczy się dalej.",en:"Counter off — the concentration still counts."},
     "pep.dosesLeft":{pl:"{n} dawka|{n} dawki|{n} dawek",en:"{n} dose|{n} doses|{n} doses"},
     "pep.vialTill":{pl:"starczy do {d}",en:"lasts until {d}"},
     "pep.vialSpent":{pl:"nie starczy na dawkę",en:"not enough for a dose"},
@@ -2809,6 +2811,7 @@ var DOMAIN = (function(){
         "injLog[].sandbag": "true = deliberately excluded from every calculation and chart",
         "glu.log[].mgdl": "always mg/dL, whatever settings.gluUnit shows on screen",
         "inj.peptides[].cycleDays": "always days; cycleUnit only says how it is written and read back",
+        "inj.peptides[].vialTrack": "false = stop counting what is left in the vial; missing means it is counted",
         "conditions[].end": "null means the condition is still running",
         "conditions[].symptoms[].archived": "true = removed from the form but kept so old entries still resolve",
         "settings.travel.tripUnit": "\"months\" counts 28-day months, not calendar months",
@@ -5995,12 +5998,8 @@ var UI = (function(){
   // disagree about what is in the vial.
   var VIAL_WARN_DOSES=3;
   function vialBadgeHTML(st, p, last){
-    if(!p || !last || last.dose==null) return "";
-    var log=DOMAIN.visibleInjLog(st).filter(function(e){ return e && e.substance===p.id; });
-    var vs=DOMAIN.vialStatus(pepVials(st,p), log, todayISO(), last.dose, last.unit||p.unit,
-                             DOMAIN.daysPerDose(substInterval(st,p.id), substDays(st,p.id),
-                                                substTimes(st,p.id), substPerDay(st,p.id)),
-                             nextDoseISO(st, p.id));
+    if(!p || !last) return "";
+    var vs=pepVialStatus(st, p, last.dose, last.unit||p.unit);
     if(!vs || vs.doses==null || vs.doses>VIAL_WARN_DOSES) return "";
     // Just the count: 3, 2, 1, 0. The words live in the tooltip and, in full,
     // in the draw box -- on the row there is only room for the number.
@@ -6093,8 +6092,15 @@ var UI = (function(){
     var mode=pepDraft.vialMode || (shown?null:"new");
     var mg=shown?shown.mg:"", ml=shown?shown.ml:"";
     var vDate=(mode==="edit"&&shown)?shown.date:todayISO();
+    var trackOn=(pepDraft.vialTrack!==undefined) ? pepDraft.vialTrack : (pepVialTracked(p) || !p);
     var html='<div id="pfVialBox">'
-      +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>';
+      +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>'
+      // Only the counting is switchable. The mix itself stays on file either
+      // way: it is what "Nabierz X j." is measured against, and turning off a
+      // tally is no reason to forget the concentration.
+      +'<label class="toggle" style="margin:-2px 0 10px"><input type="checkbox" id="pfVialTrack"'+(trackOn?" checked":"")+'>'
+        +'<span class="switch"></span><span>'+esc(I18N.t("pep.vialTrack"))+'</span></label>'
+      +(trackOn?'':'<p class="tiny muted" style="margin:-6px 0 10px">'+esc(I18N.t("pep.vialTrackOff"))+'</p>');
     if(!mode && shown){
       var when = doneV
         ? I18N.t("pep.vialDone")+" \u00b7 "+fmtDate(doneV.date,true)+" \u2192 "+fmtDate(doneV.end,true)
@@ -6132,10 +6138,14 @@ var UI = (function(){
     // next one is two taps in one place. Cancel only appears once a button has
     // opened a sub-mode: with no vial at all these fields ARE the form, and
     // there is no summary to go back to.
-    if(mode && p){
+    // Anything pending in this section gets its pair of buttons -- an open vial
+    // field, or a flipped switch. The switch had the same trap the end date had:
+    // nothing to confirm it with short of scrolling past the cycle settings.
+    var vialPending=(pepDraft.vialMode!==undefined && pepDraft.vialMode!==null) || pepDraft.vialTrack!==undefined;
+    if(p && (mode || vialPending)){
       html+='<div class="row" style="gap:6px;margin:-2px 0 10px;flex-wrap:wrap">'
         +'<button type="button" class="btn sm" id="pfVialSave">'+esc(I18N.t("pep.vialSave"))+'</button>'
-        +(pepDraft.vialMode?'<button type="button" class="btn ghost sm" id="pfVialCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
+        +(vialPending?'<button type="button" class="btn ghost sm" id="pfVialCancel">'+esc(I18N.t("common.cancel"))+'</button>':'')
       +'</div>';
     }
     // One record holds every mix it has ever had, each with the stretch of days
@@ -6207,11 +6217,7 @@ var UI = (function(){
   // is read, nothing is stored -- it recomputes on every keystroke in the dose
   // field, which is what makes it follow a changed dose or unit by itself.
   function vialLeftCells(st, p, dose, dISO){
-    var log=DOMAIN.visibleInjLog(st).filter(function(e){ return e && e.substance===p.id; });
-    var vs=DOMAIN.vialStatus(pepVials(st,p), log, dISO||todayISO(), dose, p.unit,
-                             DOMAIN.daysPerDose(substInterval(st,p.id), substDays(st,p.id),
-                                                substTimes(st,p.id), substPerDay(st,p.id)),
-                             nextDoseISO(st, p.id));
+    var vs=pepVialStatus(st, p, dose, p.unit, dISO);
     if(!vs || vs.doses==null) return { head:"", foot:"", tip:"" };
     var vu=DOMAIN.vialUnitFor(p.unit);
     // Always "~": this is what the log says was drawn, not what a scale says is
@@ -6403,6 +6409,11 @@ var UI = (function(){
     if($("#pfCycleOn")) $("#pfCycleOn").addEventListener("change",function(){
       var box=$("#pfCycle"); if(box) box.style.display=this.checked?"":"none";
     });
+    // A note appears under the switch when counting is off, so the section says
+    // out loud that the concentration is still being kept.
+    if($("#pfVialTrack")) $("#pfVialTrack").addEventListener("change",function(){
+      pepDraft.vialTrack=this.checked; viewInject();
+    });
     if($("#pfCancel")) $("#pfCancel").addEventListener("click",function(){
       pepEditId=null; pepDraft={}; pepPickOpen=false; document.body.style.overflow=""; viewInject();
     });
@@ -6461,7 +6472,7 @@ var UI = (function(){
     // record, so it also drops anything typed elsewhere and not yet saved --
     // which is what "Zapisz fiolkę" next to it is for.
     if($("#pfVialCancel")) $("#pfVialCancel").addEventListener("click",function(){
-      pepDraft.vialMode=null; viewInject();
+      pepDraft.vialMode=null; delete pepDraft.vialTrack; viewInject();
     });
     bindDowPick("pfDays", function(sel){ pepDraft.days=sel; });
     bindTimePick("pfTimes", function(sel){ pepDraft.times=sel; });
@@ -6497,6 +6508,9 @@ var UI = (function(){
                    cycleDays:(cycOn&&cs)?cycleLenDays():null,
                    cycleUnit:$("#pfCycleUnit")?$("#pfCycleUnit").value:"days",
                    cycleStart:(cycOn&&cs)?cs:null };
+      // Only the deviation is stored -- `area` and `end` are kept the same way --
+      // so a compound nobody switched off never grows the field at all.
+      var trackNow=$("#pfVialTrack") ? $("#pfVialTrack").checked : true;
       var gapRounded=false;
       if(isNew){
         // Looks like something already known? Offer to resume that record rather
@@ -6596,6 +6610,7 @@ var UI = (function(){
           }
         }
       }
+      if(p){ if(trackNow) delete p.vialTrack; else p.vialTrack=false; }
       // A rounded gap is worth more than "Saved": the field is about to show a
       // number the user did not type, and this is the only place that says why.
       // `pepDraft` goes either way: whatever it held is on the record now, and
@@ -6757,6 +6772,22 @@ var UI = (function(){
   // out and nothing has replaced it -- the last row on file, so the summary can
   // say "finished" and "Popraw" corrects that row instead of mixing a phantom
   // new one. Never a row that simply predates today: only one that ended.
+  // How much is left in the vial -- or nothing at all, when this compound has
+  // the counter switched off. Both readers (the badge on the card and the draw
+  // box) come through here, so they can never differ about the number, nor
+  // about whether to count in the first place.
+  // The switch exists because the count can only ever subtract: a vial mixed
+  // and not written down leaves the counter stuck at zero with no way back up,
+  // and a red zero that cannot be right is worse than no zero at all.
+  function pepVialTracked(p){ return !!p && p.vialTrack!==false; }
+  function pepVialStatus(st, p, dose, unit, dISO){
+    if(!pepVialTracked(p) || dose==null) return null;
+    var log=DOMAIN.visibleInjLog(st).filter(function(e){ return e && e.substance===p.id; });
+    return DOMAIN.vialStatus(pepVials(st,p), log, dISO||todayISO(), dose, unit||p.unit,
+                             DOMAIN.daysPerDose(substInterval(st,p.id), substDays(st,p.id),
+                                                substTimes(st,p.id), substPerDay(st,p.id)),
+                             nextDoseISO(st, p.id));
+  }
   function pepVialShown(st, p){
     var cur=pepVialAsOf(st, p);
     if(cur) return cur;

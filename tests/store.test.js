@@ -213,6 +213,23 @@ test("migration: named and unnamed rows coexist — unnamed stay on the legacy i
   assert.notStrictEqual(log[0].substance, "peptide");
 });
 
+test("vialTrack: switched off it survives, left alone it never appears", function () {
+  var saved = {
+    schemaVersion: 1,
+    inj: { peptides: [
+      { id: "p1", name: "KPV", unit: "mcg", intervalDays: 1, vialTrack: false, vials: [] },
+      { id: "p2", name: "Selank", unit: "mcg", intervalDays: 1, vials: [] }] },
+    injLog: []
+  };
+  var STORE = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(saved) }));
+  STORE.load();
+  var peps = Array.from(STORE.state.inj.peptides);
+  assert.strictEqual(peps[0].vialTrack, false, "the compound that was switched off stays off");
+  // only the deviation is stored: a compound nobody touched must not grow the
+  // field, or every old record would quietly gain one on the next save
+  assert.ok(!("vialTrack" in peps[1]), "and the other one has no such field at all");
+});
+
 test("migration: runs once — a second load does not duplicate peptides", function () {
   var ls = harness.fakeLocalStorage({
     "mounjaro.v1": JSON.stringify({
