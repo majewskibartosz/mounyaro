@@ -1443,6 +1443,60 @@ test("vialSpans: finishing one and mixing another the same day is two vials, not
   assert.deepStrictEqual(pluck(corr, "id"), ["v2"]);
 });
 
+// ---- one dose, two ways of writing it ----
+test("sameDose: 1.6 mg and 1600 mcg are the same dose", function () {
+  assert.strictEqual(DOMAIN.sameDose(1.6, "mg", 1600, "mcg"), true);
+  assert.strictEqual(DOMAIN.sameDose(1600, "mcg", 1.6, "mg"), true);
+  assert.strictEqual(DOMAIN.sameDose(0.9, "mg", 900, "mcg"), true);
+  assert.strictEqual(DOMAIN.sameDose(2.5, "mg", 2.5, "mg"), true);
+  // a different dose is still a different dose
+  assert.strictEqual(DOMAIN.sameDose(1.6, "mg", 1500, "mcg"), false);
+  assert.strictEqual(DOMAIN.sameDose(1.6, "mg", 1.7, "mg"), false);
+  // units on different scales have no conversion, so they are not the same
+  assert.strictEqual(DOMAIN.sameDose(1.6, "mg", 1.6, "IU"), false);
+  // nothing compares to nothing
+  assert.strictEqual(DOMAIN.sameDose(null, "mg", 1, "mg"), false);
+  assert.strictEqual(DOMAIN.sameDose(null, "mg", null, "mg"), true);
+});
+
+test("doseStreakAsOf: relabelling mg to mcg starts no new regimen", function () {
+  var mixed = { settings: {}, inj: { peptides: [{ id: "kpv", unit: "mcg" }] }, injLog: [
+    { id: "a", date: "2026-08-01", substance: "kpv", dose: 1.6, unit: "mg", every: 1 },
+    { id: "b", date: "2026-08-08", substance: "kpv", dose: 1.6, unit: "mg", every: 1 },
+    { id: "c", date: "2026-08-15", substance: "kpv", dose: 1600, unit: "mcg", every: 1 },
+    { id: "d", date: "2026-08-22", substance: "kpv", dose: 1600, unit: "mcg", every: 1 }] };
+  var s = DOMAIN.doseStreakAsOf(mixed, "kpv", "2026-08-22");
+  assert.strictEqual(s.sinceISO, "2026-08-01", "one dose throughout, however it was written");
+  assert.strictEqual(s.weeks, 4);
+  // and a real change still ends the run
+  mixed.injLog[3].dose = 800;
+  var cut = DOMAIN.doseStreakAsOf(mixed, "kpv", "2026-08-22");
+  assert.strictEqual(cut.sinceISO, "2026-08-22");
+});
+
+test("seriesFor: one unit for the whole injection series", function () {
+  var mixed = { settings: {}, inj: { peptides: [{ id: "kpv", unit: "mcg" }] }, injLog: [
+    { id: "a", date: "2026-08-01", substance: "kpv", dose: 1.6, unit: "mg" },
+    { id: "b", date: "2026-08-15", substance: "kpv", dose: 1600, unit: "mcg" }] };
+  // written two ways, plotted as one flat line rather than a thousandfold cliff
+  assert.deepStrictEqual(pluck(DOMAIN.seriesFor(mixed, "inj:kpv"), "value"), [1600, 1600]);
+  // the compound's own unit decides; switch it and the whole series follows
+  mixed.inj.peptides[0].unit = "mg";
+  assert.deepStrictEqual(pluck(DOMAIN.seriesFor(mixed, "inj:kpv"), "value"), [1.6, 1.6]);
+  // no compound on file: the newest logged unit carries the series
+  var loose = { settings: {}, injLog: mixed.injLog };
+  assert.deepStrictEqual(pluck(DOMAIN.seriesFor(loose, "inj:kpv"), "value"), [1600, 1600]);
+});
+
+test("doseUnitFor: the compound's own unit, else the newest logged, else mg", function () {
+  var st = { settings: {}, inj: { peptides: [{ id: "kpv", unit: "mcg" }], trt: { unit: "mg" } }, injLog: [
+    { id: "a", date: "2026-08-01", substance: "other", dose: 1, unit: "IU" }] };
+  assert.strictEqual(DOMAIN.doseUnitFor(st, "kpv"), "mcg");
+  assert.strictEqual(DOMAIN.doseUnitFor(st, "trt"), "mg");
+  assert.strictEqual(DOMAIN.doseUnitFor(st, "other"), "IU");
+  assert.strictEqual(DOMAIN.doseUnitFor(st, "nothing"), "mg");
+});
+
 // ---- what is left in the vial, and how far it reaches ----
 function shot(date, dose, unit, extra) {
   return Object.assign({ id: "s" + date, date: date, substance: "kpv", dose: dose, unit: unit || "mg" }, extra || {});

@@ -1447,6 +1447,17 @@ var DOMAIN = (function(){
     if(!isFinite(d) || d<=0) return null;
     return unit==="mcg" ? d/1000 : d;
   }
+  // Two entries carrying the same dose written two ways. 1.6 mg and 1600 mcg
+  // are one dose, so nothing downstream may treat the unit switch as a change of
+  // therapy. Units on different scales (mg against IU) have no conversion and
+  // are therefore genuinely different. The epsilon is for the division: the
+  // doubles agree for every figure a syringe can hold, but not by law.
+  function sameDose(a, aUnit, b, bUnit){
+    if(a==null || b==null) return a===b;
+    var c=convertDose(b, bUnit||aUnit, aUnit||bUnit);
+    if(c==null) return false;
+    return Math.abs(Number(a)-c) <= 1e-9*Math.max(1, Math.abs(Number(a)));
+  }
   function unitsForDose(dose, unit, concPerMl, unitsPerMl){
     var d=doseInVialUnit(dose, unit);
     if(d==null || !concPerMl || concPerMl<=0) return null;
@@ -1897,6 +1908,19 @@ var DOMAIN = (function(){
     if(state && state.settings && state.settings.sandbagging) return log;
     return log.filter(function(e){ return !(e&&e.sandbag); });
   }
+  // The unit a substance's doses are read in: the compound's own, or failing
+  // that the newest one logged, or plain mg. Only a log that mixes units needs
+  // it -- which is exactly what switching a compound from mcg to mg leaves.
+  function doseUnitFor(state, substance){
+    var peps=(state && state.inj && state.inj.peptides) || [];
+    for(var i=0;i<peps.length;i++) if(peps[i] && peps[i].id===substance && peps[i].unit) return peps[i].unit;
+    if(substance==="trt" && state && state.inj && state.inj.trt && state.inj.trt.unit) return state.inj.trt.unit;
+    var best=null;
+    visibleInjLog(state).forEach(function(e){
+      if(e && e.substance===substance && e.unit && e.date && (!best || e.date>best.date)) best=e;
+    });
+    return best ? best.unit : "mg";
+  }
   // Everything trackable becomes a time series [{date,value}] sorted ascending.
   // sourceId formats: "metric:<id>", "inj:<substance>", "vital:sys|dia|pulse"
   // (read from bp.log), "weight", "mounjaroDose".
@@ -1909,9 +1933,15 @@ var DOMAIN = (function(){
           out.push({date:e.date, value:Number(e.values[key])});
       });
     } else if(kind==="inj"){
+      // One unit for the whole series, or a compound relabelled mid-log draws a
+      // thousandfold cliff that never happened. The compound's own unit is what
+      // the rest of the screen is labelled in; failing that, the newest logged.
+      var tgt=doseUnitFor(state, key);
       visibleInjLog(state).forEach(function(e){
-        if(e && e.substance===key && e.dose!=null && e.dose!=="")
-          out.push({date:e.date, value:Number(e.dose)});
+        if(e && e.substance===key && e.dose!=null && e.dose!==""){
+          var v=convertDose(e.dose, e.unit||tgt, tgt);
+          if(v!=null) out.push({date:e.date, value:v});
+        }
       });
     } else if(kind==="vital"){
       (state.bp && state.bp.log ? state.bp.log : []).forEach(function(e){
@@ -2041,7 +2071,9 @@ var DOMAIN = (function(){
     var cur=doses[0], since=cur.date, cad=cur.cad, ev=cur.every, dys=cur.days, tms=cur.times, changed=false;
     for(var i=1;i<doses.length;i++){
       var d=doses[i];
-      if(d.dose!==cur.dose){ changed=true; break; }
+      // the dose, not the way it was written: relabelling a compound from mg to
+      // mcg rewrites every figure by 1000 and starts no new regimen
+      if(!sameDose(cur.dose, cur.unit, d.dose, d.unit)){ changed=true; break; }
       if(d.cad!=null){
         if(cad!=null && d.cad!==cad){ changed=true; break; }
         if(cad==null){ cad=d.cad; ev=d.every; dys=d.days; tms=d.times; }
@@ -2789,6 +2821,7 @@ var DOMAIN = (function(){
     rampLevelsByStep:rampLevelsByStep, rampLevelsByWeeks:rampLevelsByWeeks, rampSchedule:rampSchedule,
     seriesFor:seriesFor, visibleInjLog:visibleInjLog, cycleProgress:cycleProgress, doseCountdown:doseCountdown,
     firstInjDateFor:firstInjDateFor, therapyWeek:therapyWeek, lastDoseAsOf:lastDoseAsOf, doseStreakAsOf:doseStreakAsOf, dowIndex:dowIndex,
+    sameDose:sameDose, doseUnitFor:doseUnitFor,
     illnessEpisodes:illnessEpisodes, openIllness:openIllness, illnessAsOf:illnessAsOf, illnessSpans:illnessSpans,
     conditionEpisodes:conditionEpisodes, openConditions:openConditions, conditionSpans:conditionSpans,
     normName:normName, nameScore:nameScore, similarCompounds:similarCompounds,
