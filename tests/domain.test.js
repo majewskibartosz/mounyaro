@@ -1316,6 +1316,60 @@ test("vialSpans: one record holds every mix with the days it covers", function (
   assert.deepStrictEqual(pluck(DOMAIN.vialSpans([{ id: "x", mg: 5, ml: 1 }]), "id"), []);
 });
 
+test("vialAsOf: a finished vial stops being a concentration after its last day", function () {
+  var vials = [{ id: "v1", date: "2026-08-01", end: "2026-09-11", mg: 10, ml: 2 }];
+  // the day it ran out still counts -- you drew from it that day
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-09-11").id, "v1");
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-09-10").id, "v1");
+  // after it there is nothing to draw from until the next mix
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-09-12"), null);
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-10-01"), null);
+});
+
+test("vialAsOf: no end means still going, exactly as before", function () {
+  var vials = [{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 }];
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2027-05-01").id, "v1");
+});
+
+test("vialAsOf: after a gap the next vial takes over on its own day", function () {
+  var vials = [{ id: "v1", date: "2026-08-01", end: "2026-09-01", mg: 10, ml: 2 },
+               { id: "v2", date: "2026-09-08", mg: 20, ml: 2 }];
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-09-01").id, "v1");
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-09-04"), null);   // nothing to draw from
+  assert.strictEqual(DOMAIN.vialAsOf(vials, "2026-09-08").id, "v2");
+});
+
+test("vialSpans: a recorded end beats a guessed one", function () {
+  // ran out a week before the next was mixed: the gap is real, not papered over
+  var gap = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-08-01", end: "2026-09-01", mg: 10, ml: 2 },
+                                         { id: "v2", date: "2026-09-08", mg: 20, ml: 2 }]));
+  assert.deepStrictEqual(pluck(gap, "id"), ["v1", "v2"]);
+  assert.deepStrictEqual(pluck(gap, "until"), ["2026-09-01", null]);
+  assert.deepStrictEqual(pluck(gap, "end"), ["2026-09-01", null]);
+
+  // no end: the day before the next mix, as it has always been
+  var guessed = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 },
+                                             { id: "v2", date: "2026-09-08", mg: 20, ml: 2 }]));
+  assert.deepStrictEqual(pluck(guessed, "until"), ["2026-09-07", null]);
+  assert.deepStrictEqual(pluck(guessed, "end"), [null, null]);
+
+  // the last vial holds open even when it is finished
+  var done = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-08-01", end: "2026-09-01", mg: 10, ml: 2 }]));
+  assert.deepStrictEqual(pluck(done, "until"), ["2026-09-01"]);
+});
+
+test("vialSpans: finishing one and mixing another the same day is two vials, not a correction", function () {
+  var both = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-09-11", end: "2026-09-11", mg: 10, ml: 3 },
+                                          { id: "v2", date: "2026-09-11", mg: 10, ml: 2 }]));
+  assert.deepStrictEqual(pluck(both, "id"), ["v1", "v2"]);
+  assert.deepStrictEqual(pluck(both, "until"), ["2026-09-11", null]);
+
+  // without an end the same two rows are still one correction -- old data unchanged
+  var corr = Array.from(DOMAIN.vialSpans([{ id: "v1", date: "2026-09-11", mg: 10, ml: 3 },
+                                          { id: "v2", date: "2026-09-11", mg: 10, ml: 2 }]));
+  assert.deepStrictEqual(pluck(corr, "id"), ["v2"]);
+});
+
 test("reconstitution end to end: 10 mg vial, 2 ml water, 2.5 mg dose", function () {
   var v = DOMAIN.vialAsOf([{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 }], "2026-08-05");
   var conc = DOMAIN.vialConc(v.mg, v.ml);

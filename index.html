@@ -582,7 +582,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v194";
+var BUILD = "mj-v195";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -735,9 +735,13 @@ var I18N = (function(){
     "pep.vialFrom":{pl:"od",en:"since"},
     "pep.vialFix":{pl:"Popraw",en:"Correct it"},
     "pep.vialNew":{pl:"+ Nowa fiolka",en:"+ New vial"},
+    "pep.vialEnd":{pl:"Zakończ fiolkę",en:"Finish the vial"},
+    "pep.vialEndDate":{pl:"Skończyła się",en:"Ran out on"},
+    "pep.vialDone":{pl:"Skończona",en:"Finished"},
     "pep.colorTaken":{pl:"Kolor zajęty przez inny środek",en:"Colour already used by another substance"},
     "pep.colorBrand":{pl:"Tirzepatyd nosi kolor wiodący motywu — zmienia się razem z nim.",en:"Tirzepatyd wears the theme's brand colour and changes with it."},
     "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
+    "pep.vialOut":{pl:"Fiolka się skończyła. Rozrób nową w „Edytuj peptyd\", żeby zobaczyć ile nabrać.",en:"The vial has run out. Mix a new one under \"Edit peptide\" to see how much to draw."},
     "pep.vialNone":{pl:"Podaj fiolkę i wodę, aby liczyć jednostki na insulinówce.",en:"Enter the vial and water to get units on an insulin syringe."},
     "pep.vialDel":{pl:"Usunąć ten wpis fiolki?",en:"Delete this vial entry?"},
     "inj.pepAdd":{pl:"Dodaj peptyd",en:"Add peptide"},
@@ -1394,10 +1398,15 @@ var DOMAIN = (function(){
   }
   // The vial in use on a date: the newest one dissolved on or before it, so a
   // backdated shot is measured against the concentration of its own time.
+  // `end` is the day it ran out, and that day still counts -- you drew from it.
+  // After it there is nothing to draw from until the next one is mixed, which is
+  // the honest answer: a finished vial is not a concentration you can use.
+  // No `end` means it is still going, which is what every older record is.
   function vialAsOf(vials, dateISO){
     var best=null;
     (vials||[]).forEach(function(v){
       if(!v || !v.date || (dateISO && v.date>dateISO)) return;
+      if(v.end && dateISO && dateISO>v.end) return;
       // >= so a mix re-entered on a date already on file supersedes it: the
       // later row is the correction, not the one being corrected.
       if(!best || v.date>=best.date) best=v;
@@ -1414,9 +1423,11 @@ var DOMAIN = (function(){
     var out=[];
     list.forEach(function(v,i){
       var nxt=list[i+1];
-      if(nxt && nxt.date===v.date) return;               // corrected the same day
-      out.push({ id:v.id, date:v.date, mg:v.mg, ml:v.ml,
-                 until:nxt?addDaysISO(nxt.date,-1):null });
+      // Two rows on one day are a correction -- unless the earlier one says it
+      // ran out, in which case one really did end and another really did start.
+      if(nxt && nxt.date===v.date && !v.end) return;
+      out.push({ id:v.id, date:v.date, mg:v.mg, ml:v.ml, end:v.end||null,
+                 until:v.end || (nxt?addDaysISO(nxt.date,-1):null) });
     });
     return out;
   }
@@ -5858,20 +5869,39 @@ var UI = (function(){
     // change their injection days mid-cycle. So the vial is a summary until it
     // is deliberately opened, and `mode` says which of the two things is meant:
     // correcting the mix on file, or recording a new one.
-    var mode=cur?(pepDraft.vialMode||null):"new";       // no vial yet = this is the first
-    var mg=cur?cur.mg:"", ml=cur?cur.ml:"";
-    var vDate=(mode==="edit"&&cur)?cur.date:todayISO();
+    // `cur` is only what is in use; once it runs out there is none, and the
+    // summary has to fall back to the last row on file to say so.
+    var shown=cur||(p?pepVialShown(st,p):null);
+    // A recorded end is what makes a vial finished -- not the calendar. Marking
+    // it done today has to say "finished" the moment it is saved, even though a
+    // shot dated today can still be measured against it: the last day counts.
+    var doneV=(shown && shown.end)?shown:null;
+    // Same rule `pfSave` saves by: a row on screen means the summary until a
+    // button says otherwise; nothing on screen means these fields are the first
+    // vial. A finished vial is still a row -- "Popraw" must correct it, not open
+    // a blank form dated today.
+    var mode=pepDraft.vialMode || (shown?null:"new");
+    var mg=shown?shown.mg:"", ml=shown?shown.ml:"";
+    var vDate=(mode==="edit"&&shown)?shown.date:todayISO();
     var html='<div id="pfVialBox">'
       +'<div class="field"><label>'+esc(I18N.t("pep.vial"))+'</label></div>';
-    if(!mode){
+    if(!mode && shown){
+      var when = doneV
+        ? I18N.t("pep.vialDone")+" \u00b7 "+fmtDate(doneV.date,true)+" \u2192 "+fmtDate(doneV.end,true)
+        : I18N.t("pep.vialCur")+" \u00b7 "+I18N.t("pep.vialFrom")+" "+fmtDate(cur.date,true);
       html+='<div class="row" style="justify-content:space-between;gap:8px;align-items:center;margin:-4px 0 10px">'
-        +'<span style="min-width:0"><b>'+esc(fmtConc(DOMAIN.vialConc(cur.mg,cur.ml))+" "+vu+"/ml")+'</b>'
-        +' <span class="muted">&middot; '+esc(String(cur.mg)+" "+vu+" / "+String(cur.ml)+" ml")+'</span>'
-        +'<br><span class="muted tiny">'+esc(I18N.t("pep.vialCur")+" \u00b7 "+I18N.t("pep.vialFrom")+" "+fmtDate(cur.date,true))+'</span></span>'
-        +'<span class="row" style="flex:0 0 auto;gap:6px">'
+        +'<span style="min-width:0"><b>'+esc(fmtConc(DOMAIN.vialConc(shown.mg,shown.ml))+" "+vu+"/ml")+'</b>'
+        +' <span class="muted">&middot; '+esc(String(shown.mg)+" "+vu+" / "+String(shown.ml)+" ml")+'</span>'
+        +'<br><span class="muted tiny">'+esc(when)+'</span></span></div>'
+        +'<div class="row" style="gap:6px;margin:-6px 0 10px;flex-wrap:wrap">'
           +'<button type="button" class="btn ghost sm" id="pfVialFix">'+esc(I18N.t("pep.vialFix"))+'</button>'
+          // nothing to finish once it is finished
+          +(doneV?'':'<button type="button" class="btn ghost sm" id="pfVialEnd">'+esc(I18N.t("pep.vialEnd"))+'</button>')
           +'<button type="button" class="btn ghost sm" id="pfVialAdd">'+esc(I18N.t("pep.vialNew"))+'</button>'
-        +'</span></div>';
+        +'</div>';
+    } else if(mode==="end" && cur){
+      html+='<div class="field"><label>'+esc(I18N.t("pep.vialEndDate"))+'</label>'
+        +'<input type="date" id="pfVialEndDate" min="'+esc(cur.date)+'" value="'+esc(todayISO())+'"></div>';
     } else {
       html+='<div class="grid g2">'
         +'<div class="field"><label><span id="pfVialUnitLbl">'+esc(I18N.t("pep.vialMg").replace("mg",vu))+'</span></label>'
@@ -5924,9 +5954,15 @@ var UI = (function(){
     var conc=pepConcAsOf(st, p, dISO);
     var u=DOMAIN.unitsForDose(dose, p.unit, conc);
     if(u==null){
-      // A dose is typed but no vial is on file — say so rather than leave a gap.
-      if(conc==null && Number(dose)>0)
-        return '<div class="note" style="margin:-2px 0 12px">'+esc(I18N.t("pep.setVial"))+'</div>';
+      // A dose is typed but nothing to measure it against — say so rather than
+      // leave a gap. Two different reasons, two different answers: nothing has
+      // been mixed yet, or the vial ran out and nothing has replaced it. Telling
+      // someone to "set the vial" when they just finished one is a lie.
+      if(conc==null && Number(dose)>0){
+        var on=dISO||todayISO(), ranOut=false;
+        pepVials(st, p).forEach(function(v){ if(v && v.end && v.end<on) ranOut=true; });
+        return '<div class="note" style="margin:-2px 0 12px">'+esc(I18N.t(ranOut?"pep.vialOut":"pep.setVial"))+'</div>';
+      }
       return "";
     }
     var pc=substColor(st, p.id);
@@ -6147,6 +6183,9 @@ var UI = (function(){
     if($("#pfVialAdd")) $("#pfVialAdd").addEventListener("click",function(){
       pepDraft.vialMode="new"; viewInject();
     });
+    if($("#pfVialEnd")) $("#pfVialEnd").addEventListener("click",function(){
+      pepDraft.vialMode="end"; viewInject();
+    });
     bindDowPick("pfDays", function(sel){ pepDraft.days=sel; });
     bindTimePick("pfTimes", function(sel){ pepDraft.times=sel; });
     if($("#pfPerDay")) $("#pfPerDay").addEventListener("change",function(){ pepDraft.perDay=DOMAIN.normPerDay(this.value); });
@@ -6221,18 +6260,31 @@ var UI = (function(){
       // Same rule the form renders by: with no vial on file the open fields ARE
       // the first one. Keying this off `isNew` instead missed an existing
       // peptide that simply had no vial yet — its first save recorded nothing.
-      var vialMode=pepDraft.vialMode || (pepVialAsOf(st, p) ? null : "new");
-      if(vialMode && $("#pfVialMg") && $("#pfVialMl")){
+      var vialMode=pepDraft.vialMode || (pepVialShown(st, p) ? null : "new");
+      // Running out and mixing again are two events, so they are two saves:
+      // this one writes a date and nothing else -- no mg, no ml, no new row.
+      if(vialMode==="end" && $("#pfVialEndDate")){
+        var curE=pepVialAsOf(st, p);
+        if(curE){
+          var ed=$("#pfVialEndDate").value||todayISO();
+          curE.end = (ed<curE.date) ? curE.date : ed;
+        }
+      }
+      else if(vialMode && $("#pfVialMg") && $("#pfVialMl")){
         var vmg=parseFloat($("#pfVialMg").value), vml=parseFloat($("#pfVialMl").value);
         if(DOMAIN.vialConc(vmg, vml)!=null){
           var vd=$("#pfVialDate").value||todayISO();
           if(!p.vials) p.vials=[];
-          var curV=pepVialAsOf(st, p);
+          // The row on screen, finished or not -- correcting a vial that has
+          // run out must not silently become a new one.
+          var curV=pepVialShown(st, p);
           if(vialMode==="edit" && curV){
             // Correcting what is on file, not mixing again: the row keeps its id
             // and its place in the log. Shots already logged keep the units they
             // were drawn at — a reading once written is never rewritten.
             curV.date=vd; curV.mg=vmg; curV.ml=vml;
+            // A mix cannot have run out before it was mixed.
+            if(curV.end && curV.end<vd) curV.end=vd;
           } else {
             // Mixing again is an event in itself: a fresh batch dissolved on a
             // new day counts even when it lands on the same concentration as the
@@ -6409,6 +6461,17 @@ var UI = (function(){
   // ---- reconstitution: vials, concentration and units to draw ----
   function pepVials(st, p){ return (p && p.vials) || []; }
   function pepVialAsOf(st, p, dISO){ return DOMAIN.vialAsOf(pepVials(st,p), dISO || todayISO()); }
+  // The vial the form is talking about: the one in use, or -- once it has run
+  // out and nothing has replaced it -- the last row on file, so the summary can
+  // say "finished" and "Popraw" corrects that row instead of mixing a phantom
+  // new one. Never a row that simply predates today: only one that ended.
+  function pepVialShown(st, p){
+    var cur=pepVialAsOf(st, p);
+    if(cur) return cur;
+    var last=null;
+    pepVials(st,p).forEach(function(v){ if(v && v.date && (!last || v.date>=last.date)) last=v; });
+    return (last && last.end) ? last : null;
+  }
   function pepConcAsOf(st, p, dISO){
     var v=pepVialAsOf(st, p, dISO);
     return v ? DOMAIN.vialConc(v.mg, v.ml) : null;
