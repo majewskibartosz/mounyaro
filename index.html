@@ -451,17 +451,22 @@
   .bodymap .site{cursor:pointer}
   /* abdomen close-up spot picker */
   /* the draw box: units to pull on the left, what is left in the vial on the
-     right, on ONE line whatever the words say. Wrapping made the box grow a
-     second storey on a phone whose font is wider than the one this was measured
-     in -- so nothing wraps here, and what will not fit ellipsises instead. The
-     box is then exactly as tall as it was before the vial figure existed. */
-  .drawbox{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:nowrap;
+     right. Two columns by two rows, NOT two stacks side by side -- as stacks,
+     a 20px figure and a 13px one set their own line heights and the small print
+     of each landed at a different height. A grid puts the two coloured figures
+     in one row and the two notes under them in another, and `align-items:
+     baseline` sits them on a shared line rather than merely in the same band.
+     Nothing wraps: what will not fit ellipsises inside the border, so the box
+     is exactly as tall as it was before the vial figure existed. */
+  .drawbox{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;
+    column-gap:8px;row-gap:2px;
     overflow:hidden;border:2px solid var(--c);border-radius:14px;padding:10px 12px;margin:-2px 0 12px}
-  .drawbox>div{min-width:0}
-  .drawbox .dbunits{font-size:20px;font-weight:800;color:var(--c);white-space:nowrap}
-  .drawbox .dbsub,.drawbox .dbleft>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .drawbox .dbleft{flex:0 1 auto;text-align:right;margin-left:auto}
-  .drawbox .dbleft b{font-size:13px;font-weight:800;color:var(--c);display:block}
+  .drawbox.solo{grid-template-columns:minmax(0,1fr)}   /* no vial on file: one column, no dead gutter */
+  .drawbox>*{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drawbox .dbunits{font-size:20px;font-weight:800;color:var(--c)}
+  .drawbox .dbleft{font-size:13px;font-weight:800;color:var(--c);text-align:right}
+  /* plainly smaller than the count above it -- 12px against 13px read as one size */
+  .drawbox .dbtill{font-size:11px;color:var(--muted);text-align:right}
   .bellymap{max-width:360px;width:100%;margin:6px auto 2px;display:block;cursor:crosshair;touch-action:manipulation}
   /* a flank is 12 x 18 cm to the belly's 43 x 29: drawn to the belly's width it
      would tower over the form, so it is capped narrower and stands taller */
@@ -605,7 +610,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v199";
+var BUILD = "mj-v200";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -6149,28 +6154,29 @@ var UI = (function(){
       }
       return "";
     }
-    var pc=substColor(st, p.id);
-    return '<div class="drawbox" style="--c:'+pc+'">'
-      +'<div>'
-        +'<div class="dbunits">'
-          +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
-        +'<div class="tiny muted dbsub" style="margin-top:2px">'
-          +esc(fmtDose(Number(dose))+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
-      +'</div>'
-      +vialLeftHTML(st, p, dose, dISO)
+    var pc=substColor(st, p.id), vial=vialLeftCells(st, p, dose, dISO);
+    // Row 1 both figures, row 2 both notes -- the grid pairs them up, so the
+    // cells are emitted in that order rather than as two stacks.
+    return '<div class="drawbox'+(vial.head?"":" solo")+'" style="--c:'+pc+'"'+(vial.tip?' title="'+esc(vial.tip)+'"':'')+'>'
+      +'<div class="dbunits">'
+        +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
+      +(vial.head?'<div class="dbleft">'+esc(vial.head)+'</div>':'')
+      +'<div class="tiny muted dbsub">'
+        +esc(fmtDose(Number(dose))+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
+      +(vial.head?'<div class="dbtill">'+esc(vial.foot)+'</div>':'')
       +'</div>';
   }
   // The other half of the same question: the vial holds so much, this draw takes
   // so much, so how many more are in there and how far do they reach. Everything
   // is read, nothing is stored -- it recomputes on every keystroke in the dose
   // field, which is what makes it follow a changed dose or unit by itself.
-  function vialLeftHTML(st, p, dose, dISO){
+  function vialLeftCells(st, p, dose, dISO){
     var log=DOMAIN.visibleInjLog(st).filter(function(e){ return e && e.substance===p.id; });
     var vs=DOMAIN.vialStatus(pepVials(st,p), log, dISO||todayISO(), dose, p.unit,
                              DOMAIN.daysPerDose(substInterval(st,p.id), substDays(st,p.id),
                                                 substTimes(st,p.id), substPerDay(st,p.id)),
                              nextDoseISO(st, p.id));
-    if(!vs || vs.doses==null) return "";
+    if(!vs || vs.doses==null) return { head:"", foot:"", tip:"" };
     var vu=DOMAIN.vialUnitFor(p.unit);
     // Always "~": this is what the log says was drawn, not what a scale says is
     // in the vial. The title spells the arithmetic out, and admits it when a
@@ -6180,13 +6186,12 @@ var UI = (function(){
       + (vs.unknown ? " \u00b7 "+I18N.plural("pep.vialNoDose", vs.unknown) : "");
     // The count carries the number, the line under it carries the sense -- so
     // the wide half of the phrase sits in the small print, where there is room.
-    var head=I18N.plural("pep.dosesLeft", vs.doses, "\u2248"+vs.doses);
-    var foot=vs.doses>0
-      ? (vs.runOutISO ? I18N.t("pep.vialTill").replace("{d}", fmtDate(vs.runOutISO,true)) : "")
-      : I18N.t("pep.vialSpent");
-    return '<div class="dbleft" title="'+esc(tip)+'"><b>'+esc(head)+'</b>'
-      +(foot?'<span class="tiny muted">'+esc(foot)+'</span>':'')
-      +'</div>';
+    return {
+      head: I18N.plural("pep.dosesLeft", vs.doses, "\u2248"+vs.doses),
+      foot: vs.doses>0
+        ? (vs.runOutISO ? I18N.t("pep.vialTill").replace("{d}", fmtDate(vs.runOutISO,true)) : "")
+        : I18N.t("pep.vialSpent"),
+      tip: tip };
   }
   // The day the next dose is due, as a plain date -- the anchor a "lasts until"
   // estimate counts forward from, so it agrees with the countdown on the card
