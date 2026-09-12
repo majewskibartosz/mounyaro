@@ -451,14 +451,17 @@
   .bodymap .site{cursor:pointer}
   /* abdomen close-up spot picker */
   /* the draw box: units to pull on the left, what is left in the vial on the
-     right. They sit on one line and wrap to two only when the words are too
-     long for the width -- the right column keeps its edge either way. */
-  .drawbox{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;
-    border:2px solid var(--c);border-radius:14px;padding:10px 12px;margin:-2px 0 12px}
+     right, on ONE line whatever the words say. Wrapping made the box grow a
+     second storey on a phone whose font is wider than the one this was measured
+     in -- so nothing wraps here, and what will not fit ellipsises instead. The
+     box is then exactly as tall as it was before the vial figure existed. */
+  .drawbox{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:nowrap;
+    overflow:hidden;border:2px solid var(--c);border-radius:14px;padding:10px 12px;margin:-2px 0 12px}
   .drawbox>div{min-width:0}
-  .drawbox .dbunits{font-size:20px;font-weight:800;color:var(--c)}
-  .drawbox .dbleft{text-align:right;margin-left:auto}
-  .drawbox .dbleft b{font-size:15px;font-weight:800;color:var(--c);display:block}
+  .drawbox .dbunits{font-size:20px;font-weight:800;color:var(--c);white-space:nowrap}
+  .drawbox .dbsub,.drawbox .dbleft>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drawbox .dbleft{flex:0 1 auto;text-align:right;margin-left:auto}
+  .drawbox .dbleft b{font-size:13px;font-weight:800;color:var(--c);display:block}
   .bellymap{max-width:360px;width:100%;margin:6px auto 2px;display:block;cursor:crosshair;touch-action:manipulation}
   /* a flank is 12 x 18 cm to the belly's 43 x 29: drawn to the belly's width it
      would tower over the form, so it is capped narrower and stands taller */
@@ -602,7 +605,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v198";
+var BUILD = "mj-v199";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -775,8 +778,7 @@ var I18N = (function(){
     "pep.vialEndDate":{pl:"Skończyła się",en:"Ran out on"},
     "pep.vialDone":{pl:"Skończona",en:"Finished"},
     "pep.vialSave":{pl:"Zapisz fiolkę",en:"Save the vial"},
-    "pep.dosesLeft":{pl:"Została {n} dawka|Zostały {n} dawki|Zostało {n} dawek",
-                     en:"{n} dose left|{n} doses left|{n} doses left"},
+    "pep.dosesLeft":{pl:"{n} dawka|{n} dawki|{n} dawek",en:"{n} dose|{n} doses|{n} doses"},
     "pep.vialTill":{pl:"starczy do {d}",en:"lasts until {d}"},
     "pep.vialSpent":{pl:"nie starczy na dawkę",en:"not enough for a dose"},
     "pep.vialOf":{pl:"{left} z {cap} {u}",en:"{left} of {cap} {u}"},
@@ -6152,7 +6154,7 @@ var UI = (function(){
       +'<div>'
         +'<div class="dbunits">'
           +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
-        +'<div class="tiny muted" style="margin-top:2px">'
+        +'<div class="tiny muted dbsub" style="margin-top:2px">'
           +esc(fmtDose(Number(dose))+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
       +'</div>'
       +vialLeftHTML(st, p, dose, dISO)
@@ -6176,11 +6178,14 @@ var UI = (function(){
     var tip=I18N.t("pep.vialOf").replace("{left}", fmtDose(vs.left)).replace("{cap}", fmtDose(vs.cap)).replace("{u}", vu)
       + (vs.mlLeft!=null ? " \u00b7 "+fmtDose(vs.mlLeft)+" ml" : "")
       + (vs.unknown ? " \u00b7 "+I18N.plural("pep.vialNoDose", vs.unknown) : "");
-    var head = vs.doses>0
-      ? I18N.plural("pep.dosesLeft", vs.doses, "\u2248"+vs.doses)
+    // The count carries the number, the line under it carries the sense -- so
+    // the wide half of the phrase sits in the small print, where there is room.
+    var head=I18N.plural("pep.dosesLeft", vs.doses, "\u2248"+vs.doses);
+    var foot=vs.doses>0
+      ? (vs.runOutISO ? I18N.t("pep.vialTill").replace("{d}", fmtDate(vs.runOutISO,true)) : "")
       : I18N.t("pep.vialSpent");
     return '<div class="dbleft" title="'+esc(tip)+'"><b>'+esc(head)+'</b>'
-      +(vs.runOutISO?'<span class="tiny muted">'+esc(I18N.t("pep.vialTill").replace("{d}", fmtDate(vs.runOutISO,true)))+'</span>':'')
+      +(foot?'<span class="tiny muted">'+esc(foot)+'</span>':'')
       +'</div>';
   }
   // The day the next dose is due, as a plain date -- the anchor a "lasts until"
