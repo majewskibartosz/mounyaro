@@ -451,6 +451,12 @@
   .bodymap .site{cursor:pointer}
   /* abdomen close-up spot picker */
   .bellymap{max-width:360px;width:100%;margin:6px auto 2px;display:block;cursor:crosshair;touch-action:manipulation}
+  /* a flank is 12 x 18 cm to the belly's 43 x 29: drawn to the belly's width it
+     would tower over the form, so it is capped narrower and stands taller */
+  .bellymap.side{max-width:230px}
+  .areaseg{margin:10px 0 4px}
+  .areaseg button{font-size:13px;padding:8px 4px}
+  .areaseg button .n{font-weight:600;opacity:.6;margin-left:3px}
   .maplegend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px}
   .maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
   /* cross-links to twin tabs */
@@ -587,7 +593,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v195";
+var BUILD = "mj-v196";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -677,6 +683,22 @@ var I18N = (function(){
     "inj.fromNavel":{pl:"od pępka",en:"from the navel"},
     "inj.selected":{pl:"Wybrane miejsce",en:"Selected site"},
     "inj.suggested":{pl:"sugerowane",en:"suggested"},
+    // flanks: a vertical line down from the nipple is the front edge, the
+    // navel's level the horizontal reference
+    "inj.areaFront":{pl:"Brzuch",en:"Abdomen"},
+    "inj.areaLeft":{pl:"Lewy bok",en:"Left flank"},
+    "inj.areaRight":{pl:"Prawy bok",en:"Right flank"},
+    "inj.pickSiteSide":{pl:"Dotknij dokładne miejsce wkłucia na boku",en:"Tap the exact injection spot on your flank"},
+    "inj.mapHintSide":{pl:"Pion = linia w dół od sutka, poziom = wysokość pępka. Pierścienie = min. 3 cm (dwa palce) od wkłuć z ostatnich 14 dni.",en:"Vertical = the line down from the nipple, horizontal = the navel's level. Rings = keep 3 cm (two fingers) from shots of the last 14 days."},
+    "inj.nippleLine":{pl:"linia sutka",en:"nipple line"},
+    "inj.navelLevel":{pl:"poziom pępka",en:"navel level"},
+    "inj.onNippleLine":{pl:"na linii sutka",en:"on the nipple line"},
+    "inj.behindNipple":{pl:"za linią sutka",en:"behind the nipple line"},
+    "inj.behindNippleShort":{pl:"za sutkiem",en:"behind nipple"},
+    "inj.aboveNavel":{pl:"nad pępkiem",en:"above the navel"},
+    "inj.belowNavel":{pl:"pod pępkiem",en:"below the navel"},
+    "inj.front":{pl:"przód",en:"front"},
+    "inj.back":{pl:"tył",en:"back"},
     "inj.history":{pl:"Historia",en:"History"},
     "inj.empty":{pl:"Brak zastrzyków tej substancji.",en:"No injections for this substance yet."},
     "inj.intervalSet":{pl:"Co ile dni",en:"Days between shots"},
@@ -2130,42 +2152,63 @@ var DOMAIN = (function(){
      so stored data is independent of how any map is drawn. Rules: keep >= 3 cm
      (two finger widths) from recent shots and >= 5 cm from the navel. */
   var SPOT_MIN_CM=3, SPOT_NAVEL_CM=5;
+  // Where on the body a spot is, and what its centimetres mean there. `front`
+  // is the abdomen: x and y from the navel. `left`/`right` are the flanks: x
+  // behind the vertical line dropped from the nipple (0 = the line, + towards
+  // the back), y from the navel's LEVEL (+ down) -- the same y as the front, so
+  // one belt line runs round the whole body. The bounds are the grid
+  // suggestSpot scans and the skin each map draws; cx/cy is where suggestions
+  // are nudged towards, and `cap` is the distance from other shots beyond
+  // which farther is no better -- on a 12 x 18 cm flank "farthest from
+  // everything" is always a corner, so the cap is what lets the nudge towards
+  // the middle have a say. No `area` on a record means front, which is what
+  // every older record is.
+  var SPOT_AREAS={
+    front:{ xMin:-16, xMax:16, yMin:-11, yMax:9, cx:0, cy:0,  cap:12, navel:true  },
+    left: { xMin:0,   xMax:12, yMin:-10, yMax:8, cx:6, cy:-1, cap:6,  navel:false },
+    right:{ xMin:0,   xMax:12, yMin:-10, yMax:8, cx:6, cy:-1, cap:6,  navel:false }
+  };
+  function spotArea(e){ return (e && e.area && SPOT_AREAS[e.area]) ? e.area : "front"; }
   function spotDist(a,b){ var dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
-  function spotCheck(pos, recent, minDistCm, navelCm){
-    minDistCm=minDistCm||SPOT_MIN_CM; navelCm=navelCm||SPOT_NAVEL_CM;
+  // Only shots on the same patch of skin count: a flank is not the belly, and
+  // measuring across the body's curve would be a guess dressed up as a number.
+  // The navel zone exists only where the navel is.
+  function spotCheck(pos, recent, minDistCm, navelCm, area){
+    minDistCm=minDistCm||SPOT_MIN_CM; navelCm=navelCm||SPOT_NAVEL_CM; area=SPOT_AREAS[area]?area:"front";
     var res={ ok:true, nearNavel:false, nearShot:false, nearestCm:null };
-    if(Math.sqrt(pos.x*pos.x+pos.y*pos.y) < navelCm){ res.ok=false; res.nearNavel=true; }
+    if(SPOT_AREAS[area].navel && Math.sqrt(pos.x*pos.x+pos.y*pos.y) < navelCm){ res.ok=false; res.nearNavel=true; }
     (recent||[]).forEach(function(r){
-      if(!r || !r.pos) return;
+      if(!r || !r.pos || spotArea(r)!==area) return;
       var d=spotDist(pos, r.pos);
       if(res.nearestCm==null || d<res.nearestCm) res.nearestCm=d;
       if(d < minDistCm){ res.ok=false; res.nearShot=true; }
     });
     return res;
   }
-  // Suggest a clear spot: scan a 2 cm grid over the belly area and pick the
-  // point farthest from all recent shots (capped), slightly preferring spots
+  // Suggest a clear spot: scan a 2 cm grid over the area and pick the point
+  // farthest from all recent shots there (capped), slightly preferring spots
   // closer to the middle so suggestions don't drift to the extreme edges.
-  function suggestSpot(recent, minDistCm, navelCm){
-    minDistCm=minDistCm||SPOT_MIN_CM; navelCm=navelCm||SPOT_NAVEL_CM;
-    var best=null, bestScore=-Infinity;
-    for(var y=-11;y<=9;y+=2){
-      for(var x=-16;x<=16;x+=2){
-        if(Math.sqrt(x*x+y*y) < navelCm+1) continue;
+  function suggestSpot(recent, minDistCm, navelCm, area){
+    minDistCm=minDistCm||SPOT_MIN_CM; navelCm=navelCm||SPOT_NAVEL_CM; area=SPOT_AREAS[area]?area:"front";
+    var A=SPOT_AREAS[area], best=null, bestScore=-Infinity;
+    for(var y=A.yMin;y<=A.yMax;y+=2){
+      for(var x=A.xMin;x<=A.xMax;x+=2){
+        if(A.navel && Math.sqrt(x*x+y*y) < navelCm+1) continue;
         var p={x:x,y:y}, minD=Infinity;
-        (recent||[]).forEach(function(r){ if(r&&r.pos){ var d=spotDist(p,r.pos); if(d<minD) minD=d; } });
+        (recent||[]).forEach(function(r){ if(r&&r.pos&&spotArea(r)===area){ var d=spotDist(p,r.pos); if(d<minD) minD=d; } });
         if(minD===Infinity) minD=99;
         if(minD < minDistCm) continue;
-        var score=Math.min(minD,12) - (Math.abs(x)/32 + Math.abs(y)/24);
+        var score=Math.min(minD,A.cap) - (Math.abs(x-A.cx)/32 + Math.abs(y-A.cy)/24);
         if(score>bestScore){ bestScore=score; best=p; }
       }
     }
     return best;
   }
   // Injections from the last maxDays that have a plottable position. legacyCm
-  // maps old fixed-site ids to approximate cm positions (supplied by the UI so
-  // this layer stays free of presentation constants). order: 1 = the most
-  // recent shot of that substance.
+  // maps old fixed-site ids to approximate cm positions -- with the `area` they
+  // belong to, so an old "left flank, upper" lands on the left flank -- (supplied
+  // by the UI so this layer stays free of presentation constants). order: 1 =
+  // the most recent shot of that substance.
   function recentInjPos(state, todayISOstr, maxDays, legacyCm){
     maxDays=maxDays||14;
     var t0=new Date(todayISOstr+"T12:00:00"), out=[];
@@ -2173,9 +2216,11 @@ var DOMAIN = (function(){
       if(!e || !e.date) return;
       var age=Math.round((t0-new Date(e.date+"T12:00:00"))/86400000);
       if(age<0 || age>maxDays) return;
-      var pos=e.pos || (legacyCm && e.site && legacyCm[e.site]) || null;
+      var legacy=(legacyCm && e.site && legacyCm[e.site]) || null;
+      var pos=e.pos || legacy || null;
       if(!pos) return;
-      out.push({ pos:{x:pos.x,y:pos.y}, substance:e.substance, date:e.date, ts:e.ts||null,
+      var area=e.area ? spotArea(e) : ((!e.pos && legacy && legacy.area) || "front");
+      out.push({ pos:{x:pos.x,y:pos.y}, area:area, substance:e.substance, date:e.date, ts:e.ts||null,
                  dose:e.dose, unit:e.unit, ageDays:age, sandbag:!!e.sandbag });
     });
     out.sort(function(a,b){ var ka=a.ts||a.date, kb=b.ts||b.date; return ka<kb?1:ka>kb?-1:0; });
@@ -2620,7 +2665,8 @@ var DOMAIN = (function(){
         "conditions[].severity": "1 mild, 2 moderate, 3 severe"
       },
       conventions: {
-        "injLog[].pos": "centimetres from the navel; +x to the subject's right, +y downwards",
+        "injLog[].area": "\"front\" (also when missing) = abdomen; \"left\" / \"right\" = the flank on that side of the subject",
+        "injLog[].pos": "centimetres. Front: from the navel, +x to the subject's right, +y downwards. Flank: x behind the vertical line dropped from the nipple (0 = the line, + towards the back), y from the navel's level, + downwards",
         "injLog[].days, inj.*.days": "ISO weekdays, 1 = Monday ... 7 = Sunday; null means a fixed gap instead of set days",
         "injLog[].times": "local wall-clock \"HH:MM\"",
         "injLog[].every": "the interval in days as it stood when the shot was logged, frozen",
@@ -2669,8 +2715,8 @@ var DOMAIN = (function(){
     gluTypicalRange:gluTypicalRange, GLU_TAGS:GLU_TAGS,
     describe:describe, stripDescribed:stripDescribed, symptomParts:symptomParts, SITE_CODES:SITE_CODES,
     parseRoute:parseRoute, buildRoute:buildRoute,
-    spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos,
-    SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM
+    spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos, spotArea:spotArea,
+    SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM, SPOT_AREAS:SPOT_AREAS
   };
 })();
 
@@ -5551,7 +5597,7 @@ var UI = (function(){
     if(selectedSubst()===id){ injSeg="peptide"; pepSel=null; }
     else if(id==="trt" || (id==="mounjaro" && mjTabOn(s()))){ injSeg=id; pepSel=null; }
     else { injSeg="peptide"; pepSel=id; }
-    injEdit=null; injSel=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
+    injEdit=null; injSel=null; injArea=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
     syncInjectRoute(); viewInject();
   }
   // Every substance in one list: Mounjaro first while its tab is on (Tirzepatyd
@@ -6732,13 +6778,21 @@ var UI = (function(){
     return parts.length?'<span style="display:inline-flex;gap:4px;flex-wrap:wrap">'+parts.join('')+'</span>':'—';
   }
 
-  // Approximate cm-from-navel positions for the legacy fixed sites, so old
-  // entries still show on the abdomen close-up. Thigh sites have no place on
-  // this map and are skipped (their history rows keep their labels).
+  // Approximate positions for the legacy fixed sites, so old entries still show
+  // on a close-up: belly quadrants on the abdomen, the old flank sites on the
+  // flank they name (they used to be faked at the far edges of the front map).
+  // Thigh sites have no map and are skipped (their history rows keep their labels).
   var LEGACY_SITE_CM={
     belly_ul:{x:-4,y:-4}, belly_ur:{x:4,y:-4}, belly_ll:{x:-4,y:4}, belly_lr:{x:4,y:4},
-    love_l1:{x:-13,y:-2}, love_l2:{x:-13,y:3}, love_r1:{x:13,y:-2}, love_r2:{x:13,y:3}
+    love_l1:{area:"left",x:6,y:-2}, love_l2:{area:"left",x:6,y:3}, love_r1:{area:"right",x:6,y:-2}, love_r2:{area:"right",x:6,y:3}
   };
+  var AREA_KEY={ front:"inj.areaFront", left:"inj.areaLeft", right:"inj.areaRight" };
+  // The fixed-site code a spot maps to: a belly quadrant, or upper/lower flank.
+  function siteFor(p, area){
+    if(!p) return null;
+    if(area==="left" || area==="right") return "love_"+area.charAt(0)+(p.y<0?"1":"2");
+    return bellyQuadrant(p);
+  }
 
   // Abdomen close-up map: 6 svg units = 1 cm, navel at the centre. Stored
   // positions stay in cm-from-navel, so this scale is presentation-only.
@@ -6749,9 +6803,23 @@ var UI = (function(){
   function cmToSvg(p){ return { x:BELLY_CX+p.x*BELLY_CM, y:BELLY_CY+p.y*BELLY_CM }; }
   function svgToCm(x,y){ return { x:(x-BELLY_CX)/BELLY_CM, y:(y-BELLY_CY)/BELLY_CM }; }
   function bellyQuadrant(p){ return "belly_"+(p.y<0?"u":"l")+(p.x<0?"l":"r"); }
+  // Flank: "6 cm za linią sutka · 2 cm nad pępkiem", or the short "6 cm za
+  // sutkiem, 2 w górę" for history rows. Both landmarks are named every time
+  // because, unlike the navel on the front, there are two of them.
+  function sideLabel(p, short){
+    function n(v){ v=Math.abs(v); return (Math.round(v*10)/10).toString().replace(/\.0$/,""); }
+    var parts=[];
+    if(Math.abs(p.x)>=0.3) parts.push(n(p.x)+" cm "+I18N.t(short?"inj.behindNippleShort":"inj.behindNipple"));
+    else parts.push(I18N.t("inj.onNippleLine"));
+    if(Math.abs(p.y)>=0.3) parts.push(short ? n(p.y)+" "+I18N.t(p.y<0?"inj.cmUp":"inj.cmDown")
+                                            : n(p.y)+" cm "+I18N.t(p.y<0?"inj.aboveNavel":"inj.belowNavel"));
+    else parts.push(I18N.t("inj.navelLevel"));
+    return parts.join(short?", ":" \u00b7 ");
+  }
   // "4 cm w lewo · 2 cm w górę od pępka"
-  function posLabel(p){
+  function posLabel(p, area){
     if(!p) return "";
+    if(area==="left" || area==="right") return sideLabel(p, false);
     function n(v){ v=Math.abs(v); return (Math.round(v*10)/10).toString().replace(/\.0$/,""); }
     var parts=[];
     if(Math.abs(p.x)>=0.3) parts.push(n(p.x)+" cm "+I18N.t(p.x<0?"inj.cmLeft":"inj.cmRight"));
@@ -6762,8 +6830,9 @@ var UI = (function(){
   // reference point there is, and it is spelled out under the abdomen map, so
   // repeating "from the navel" on every entry only costs lines. The full form
   // stays on the "selected spot" line, where it is the whole sentence.
-  function posLabelShort(p){
+  function posLabelShort(p, area){
     if(!p) return "";
+    if(area==="left" || area==="right") return sideLabel(p, true);
     function n(v){ v=Math.abs(v); return (Math.round(v*10)/10).toString().replace(/\.0$/,""); }
     var parts=[];
     if(Math.abs(p.x)>=0.3) parts.push(n(p.x)+" cm "+I18N.t(p.x<0?"inj.cmLeft":"inj.cmRight"));
@@ -6771,11 +6840,60 @@ var UI = (function(){
     return parts.length ? parts.join(", ") : I18N.t("inj.navel");
   }
   function recentSpots(st){ return DOMAIN.recentInjPos(st, todayISO(), 14, LEGACY_SITE_CM); }
+  // The marks every map draws the same way: recent shots (dot, 3 cm ring,
+  // per-substance order), the suggested spot, the selected spot. `toSvg` is
+  // the map's own projection, so the marks know nothing about which map.
+  function spotMarksSVG(st, recent, toSvg, sug, selPos, selOk){
+    var minR=DOMAIN.SPOT_MIN_CM*BELLY_CM, svg="";
+    // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge
+    recent.forEach(function(r){
+      var p=toSvg(r.pos), c=substColor(st, r.substance);
+      var op=Math.max(0.35, 1-(r.ageDays/14)*0.65);
+      var tip=(r.ts?fmtDateTime(r.ts):r.date)+" \u00b7 "+substLabel(st, r.substance)
+        +(r.dose!=null?" \u00b7 "+r.dose+" "+(r.unit||""):"")
+        +(r.sandbag?" \u00b7 "+I18N.t("inj.sandbag"):"");
+      svg+='<g opacity="'+op.toFixed(2)+'">'
+        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+minR+'" fill="none" stroke="'+c+'" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>'
+        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="7.4" fill="'+c+'" stroke="'+PAL.halo+'" stroke-width="1.6"'+(r.sandbag?' stroke-dasharray="2.5 2" fill-opacity="0.55"':'')+'/>'
+        +'<text x="'+p.x.toFixed(1)+'" y="'+(p.y+3).toFixed(1)+'" font-size="8.6" font-weight="800" fill="'+THEME.pickInk(c)+'" text-anchor="middle">'+r.order+'</text>'
+        +'<title>'+esc(tip)+'</title></g>';
+    });
+    // suggested spot (dashed, brand) when nothing is selected
+    if(sug){
+      var sp=toSvg(sug);
+      svg+='<g><circle cx="'+sp.x.toFixed(1)+'" cy="'+sp.y.toFixed(1)+'" r="10.2" fill="none" stroke="var(--brand)" stroke-width="2.3" stroke-dasharray="3 3"/>'
+        +'<circle cx="'+sp.x.toFixed(1)+'" cy="'+sp.y.toFixed(1)+'" r="3" fill="var(--brand)"/>'
+        +'<title>'+esc(I18N.t("inj.suggested"))+'</title></g>';
+    }
+    // selected spot: crosshair, red when it breaks the rules
+    if(selPos){
+      var sel=toSvg(selPos), sc=selOk?"var(--brand)":PAL.bad;
+      svg+='<g pointer-events="none"><circle cx="'+sel.x.toFixed(1)+'" cy="'+sel.y.toFixed(1)+'" r="10.2" fill="none" stroke="'+sc+'" stroke-width="3"/>'
+        +'<line x1="'+(sel.x-13).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x-5).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'<line x1="'+(sel.x+5).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x+13).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'<line x1="'+sel.x.toFixed(1)+'" y1="'+(sel.y-13).toFixed(1)+'" x2="'+sel.x.toFixed(1)+'" y2="'+(sel.y-5).toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'<line x1="'+sel.x.toFixed(1)+'" y1="'+(sel.y+5).toFixed(1)+'" x2="'+sel.x.toFixed(1)+'" y2="'+(sel.y+13).toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
+        +'</g>';
+    }
+    return svg;
+  }
+  // one swatch per substance actually on the map, so the row cannot grow
+  // unbounded as peptides are added
+  function mapLegendHTML(st, recent, extra){
+    var legSubs=[], legSeen={};
+    recent.forEach(function(r){ if(!legSeen[r.substance]){ legSeen[r.substance]=true; legSubs.push(r.substance); } });
+    return '<div class="maplegend">'
+      +legSubs.map(function(sub){
+         return '<span><i style="background:'+substColor(st,sub)+'"></i>'+esc(substLabel(st,sub))+'</span>';
+       }).join("")
+      +(extra||"")
+      +'</div>';
+  }
   function bellyMapSVG(st, selPos, withSuggest){
-    var recent=recentSpots(st);
-    var sug = (withSuggest && !selPos) ? DOMAIN.suggestSpot(recent) : null;
-    var minR=DOMAIN.SPOT_MIN_CM*BELLY_CM, navR=DOMAIN.SPOT_NAVEL_CM*BELLY_CM;
-    var svg='<svg class="bellymap" id="bellyMap" viewBox="0 0 '+BELLY_W+' '+BELLY_H+'" role="img" aria-label="abdomen injection map">';
+    var all=recentSpots(st), recent=all.filter(function(r){ return r.area==="front"; });
+    var sug = (withSuggest && !selPos) ? DOMAIN.suggestSpot(all, null, null, "front") : null;
+    var navR=DOMAIN.SPOT_NAVEL_CM*BELLY_CM;
+    var svg='<svg class="bellymap" id="bellyMap" data-area="front" viewBox="0 0 '+BELLY_W+' '+BELLY_H+'" role="img" aria-label="abdomen injection map">';
     // skin area
     svg+='<rect x="6" y="6" width="'+(BELLY_W-12)+'" height="'+(BELLY_H-12)+'" rx="26" fill="var(--soft)" stroke="var(--line)" stroke-width="1.6"/>';
     // faint 5 cm grid to help judge distances
@@ -6790,49 +6908,66 @@ var UI = (function(){
     // navel + 5 cm exclusion zone
     svg+='<g><circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="'+navR+'" fill="'+PAL.bad+'12" stroke="'+PAL.bad+'" stroke-width="1.4" stroke-dasharray="5 4"/>'
       +'<circle cx="'+BELLY_CX+'" cy="'+BELLY_CY+'" r="3.4" fill="var(--muted)"/>'
-      +'<title>'+esc(I18N.t("inj.navel"))+' · 5 cm</title></g>';
-    // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge
-    recent.forEach(function(r){
-      var p=cmToSvg(r.pos), c=substColor(st, r.substance);
-      var op=Math.max(0.35, 1-(r.ageDays/14)*0.65);
-      var tip=(r.ts?fmtDateTime(r.ts):r.date)+" · "+substLabel(st, r.substance)
-        +(r.dose!=null?" · "+r.dose+" "+(r.unit||""):"")
-        +(r.sandbag?" · "+I18N.t("inj.sandbag"):"");
-      svg+='<g opacity="'+op.toFixed(2)+'">'
-        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+minR+'" fill="none" stroke="'+c+'" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>'
-        +'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="7.4" fill="'+c+'" stroke="'+PAL.halo+'" stroke-width="1.6"'+(r.sandbag?' stroke-dasharray="2.5 2" fill-opacity="0.55"':'')+'/>'
-        +'<text x="'+p.x.toFixed(1)+'" y="'+(p.y+3).toFixed(1)+'" font-size="8.6" font-weight="800" fill="'+THEME.pickInk(c)+'" text-anchor="middle">'+r.order+'</text>'
-        +'<title>'+esc(tip)+'</title></g>';
-    });
-    // suggested spot (dashed, brand) when nothing is selected
-    if(sug){
-      var sp=cmToSvg(sug);
-      svg+='<g><circle cx="'+sp.x.toFixed(1)+'" cy="'+sp.y.toFixed(1)+'" r="10.2" fill="none" stroke="var(--brand)" stroke-width="2.3" stroke-dasharray="3 3"/>'
-        +'<circle cx="'+sp.x.toFixed(1)+'" cy="'+sp.y.toFixed(1)+'" r="3" fill="var(--brand)"/>'
-        +'<title>'+esc(I18N.t("inj.suggested"))+'</title></g>';
-    }
-    // selected spot: crosshair, red when it breaks the rules
-    if(selPos){
-      var sel=cmToSvg(selPos), ok=DOMAIN.spotCheck(selPos, recent).ok, sc=ok?"var(--brand)":PAL.bad;
-      svg+='<g pointer-events="none"><circle cx="'+sel.x.toFixed(1)+'" cy="'+sel.y.toFixed(1)+'" r="10.2" fill="none" stroke="'+sc+'" stroke-width="3"/>'
-        +'<line x1="'+(sel.x-13).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x-5).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
-        +'<line x1="'+(sel.x+5).toFixed(1)+'" y1="'+sel.y.toFixed(1)+'" x2="'+(sel.x+13).toFixed(1)+'" y2="'+sel.y.toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
-        +'<line x1="'+sel.x.toFixed(1)+'" y1="'+(sel.y-13).toFixed(1)+'" x2="'+sel.x.toFixed(1)+'" y2="'+(sel.y-5).toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
-        +'<line x1="'+sel.x.toFixed(1)+'" y1="'+(sel.y+5).toFixed(1)+'" x2="'+sel.x.toFixed(1)+'" y2="'+(sel.y+13).toFixed(1)+'" stroke="'+sc+'" stroke-width="2"/>'
-        +'</g>';
-    }
+      +'<title>'+esc(I18N.t("inj.navel"))+' \u00b7 5 cm</title></g>';
+    svg+=spotMarksSVG(st, recent, cmToSvg, sug, selPos, selPos?DOMAIN.spotCheck(selPos, all, null, null, "front").ok:true);
     svg+='</svg>';
-    // one swatch per substance actually on the map, so the row cannot grow
-    // unbounded as peptides are added
-    var legSubs=[], legSeen={};
-    recent.forEach(function(r){ if(!legSeen[r.substance]){ legSeen[r.substance]=true; legSubs.push(r.substance); } });
-    var leg='<div class="maplegend">'
-      +legSubs.map(function(sub){
-         return '<span><i style="background:'+substColor(st,sub)+'"></i>'+esc(substLabel(st,sub))+'</span>';
-       }).join("")
-      +'<span><i style="background:transparent;border:1.5px dashed '+PAL.bad+'"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
-      +(sug?'<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.suggested"))+'</span>':'')
-      +'</div>';
+    var leg=mapLegendHTML(st, recent,
+      '<span><i style="background:transparent;border:1.5px dashed '+PAL.bad+'"></i>'+esc(I18N.t("inj.navel"))+' 5 cm</span>'
+      +(sug?'<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.suggested"))+'</span>':''));
+    return svg+leg;
+  }
+  // Flank close-up, same 6 svg units per cm as the abdomen so a 3 cm ring is
+  // the same ring on both. x runs from the nipple line towards the back, drawn
+  // the way the flank looks in a mirror or looking down at it: on the LEFT
+  // flank the front of the body is to the right, so the nipple line is the
+  // right edge and the back is to the left; the right flank is the mirror image.
+  // SIDE_M is the margin the labels live in.
+  var SIDE_M=13;
+  function sideDims(area){ var A=DOMAIN.SPOT_AREAS[area]; return { A:A, w:(A.xMax-A.xMin)*BELLY_CM+2*SIDE_M, h:(A.yMax-A.yMin)*BELLY_CM+2*SIDE_M }; }
+  function sideToSvg(p, area){
+    var A=DOMAIN.SPOT_AREAS[area];
+    var x = area==="left" ? SIDE_M+(A.xMax-p.x)*BELLY_CM : SIDE_M+(p.x-A.xMin)*BELLY_CM;
+    return { x:x, y:SIDE_M+(p.y-A.yMin)*BELLY_CM };
+  }
+  function sideSvgToCm(x, y, area){
+    var A=DOMAIN.SPOT_AREAS[area];
+    var cx = area==="left" ? A.xMax-(x-SIDE_M)/BELLY_CM : A.xMin+(x-SIDE_M)/BELLY_CM;
+    return { x:cx, y:A.yMin+(y-SIDE_M)/BELLY_CM };
+  }
+  function sideMapSVG(st, area, selPos, withSuggest){
+    var all=recentSpots(st), recent=all.filter(function(r){ return r.area===area; });
+    var sug = (withSuggest && !selPos) ? DOMAIN.suggestSpot(all, null, null, area) : null;
+    var D=sideDims(area), A=D.A, W=D.w, H=D.h, toSvg=function(p){ return sideToSvg(p, area); };
+    var svg='<svg class="bellymap side" id="sideMap" data-area="'+area+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+(area==="left"?"left":"right")+' flank injection map">';
+    // skin area: the mapped patch plus half a centimetre all round
+    var sx=SIDE_M-3, sy=SIDE_M-3, sw=W-2*SIDE_M+6, sh=H-2*SIDE_M+6;
+    svg+='<rect x="'+sx+'" y="'+sy+'" width="'+sw+'" height="'+sh+'" rx="14" fill="var(--soft)" stroke="var(--line)" stroke-width="1.6"/>';
+    // faint 5 cm grid, counted from the two landmarks
+    for(var gx=A.xMin;gx<=A.xMax;gx+=5){
+      var lx=toSvg({x:gx,y:0}).x;
+      svg+='<line x1="'+lx.toFixed(1)+'" y1="'+(sy+2)+'" x2="'+lx.toFixed(1)+'" y2="'+(sy+sh-2)+'" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>';
+    }
+    for(var gy=Math.ceil(A.yMin/5)*5;gy<=A.yMax;gy+=5){
+      var ly=toSvg({x:0,y:gy}).y;
+      svg+='<line x1="'+(sx+2)+'" y1="'+ly.toFixed(1)+'" x2="'+(sx+sw-2)+'" y2="'+ly.toFixed(1)+'" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>';
+    }
+    // the two landmarks: nipple line (front edge) and the navel's level
+    var nx=toSvg({x:0,y:0}).x, ny=toSvg({x:0,y:0}).y, frontRight=(area==="left");
+    svg+='<line x1="'+nx.toFixed(1)+'" y1="'+(sy-4)+'" x2="'+nx.toFixed(1)+'" y2="'+(sy+sh+4)+'" stroke="var(--brand)" stroke-width="1.4" stroke-dasharray="5 4"/>'
+      +'<line x1="'+(sx-4)+'" y1="'+ny.toFixed(1)+'" x2="'+(sx+sw+4)+'" y2="'+ny.toFixed(1)+'" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="5 4"/>';
+    // labels: landmarks along their lines, front/back in the top margin
+    // rotated -90 the text flows UP from its anchor, so it always starts at the
+    // bottom edge and sits on the outer side of the line
+    var tx=frontRight ? nx+5.5 : nx-2.5;
+    svg+='<text x="'+tx.toFixed(1)+'" y="'+(H-3)+'" font-size="6.5" font-weight="700" fill="var(--brand)" text-anchor="start" transform="rotate(-90 '+tx.toFixed(1)+' '+(H-3)+')">'+esc(I18N.t("inj.nippleLine"))+'</text>'
+      +'<text x="'+(frontRight ? sx-5 : sx+sw+5)+'" y="'+(ny-2).toFixed(1)+'" font-size="6.5" font-weight="700" fill="var(--muted)" text-anchor="'+(frontRight?"start":"end")+'" transform="rotate(-90 '+(frontRight ? sx-5 : sx+sw+5)+' '+(ny-2).toFixed(1)+')">'+esc(I18N.t("inj.navelLevel"))+'</text>'
+      +'<text x="'+(frontRight ? W-SIDE_M : SIDE_M)+'" y="8.5" font-size="7" font-weight="800" fill="var(--muted)" text-anchor="'+(frontRight?"end":"start")+'">'+esc(I18N.t("inj.front"))+' '+(frontRight?"\u2192":"\u2190")+'</text>'
+      +'<text x="'+(frontRight ? SIDE_M : W-SIDE_M)+'" y="8.5" font-size="7" font-weight="800" fill="var(--muted)" text-anchor="'+(frontRight?"start":"end")+'">'+(frontRight?"\u2190 ":"")+esc(I18N.t("inj.back"))+(frontRight?"":" \u2192")+'</text>';
+    svg+=spotMarksSVG(st, recent, toSvg, sug, selPos, selPos?DOMAIN.spotCheck(selPos, all, null, null, area).ok:true);
+    svg+='</svg>';
+    var leg=mapLegendHTML(st, recent,
+      '<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.nippleLine"))+'</span>'
+      +(sug?'<span><i style="background:transparent;border:1.5px dashed var(--brand)"></i>'+esc(I18N.t("inj.suggested"))+'</span>':''));
     return svg+leg;
   }
   function lastInjDate(st, substance){
@@ -6911,6 +7046,7 @@ var UI = (function(){
   // "peptide" with no pepSel is the resting state: the bare substance list, the
   // same thing the peptide tab used to open on.
   var injSeg="peptide", injSel=null, injEdit=null;
+  var injArea=null;     // map the form shows: "front" | "left" | "right"; null = not chosen (front, or the edited entry's own)
   var pepSel=null;      // peptide the form/history act on (null = only the card list)
   var pepEditId=null;   // null | peptide id | "new" — the peptide config form
   var injReorder=false; // list is in reorder mode: rows inert, arrows shown
@@ -7246,15 +7382,29 @@ var UI = (function(){
     html+='<div class="grid g2"><div class="field"><label>'+esc(I18N.t("inj.when"))+' <span class="muted tiny">('+esc(I18N.t("inj.whenHint"))+')</span></label>'
       +'<input type="date" id="injDate" value="'+esc(whenVal.slice(0,10))+'"></div>'
       +'<div class="field"><label>'+esc(I18N.t("common.time"))+'</label><input type="time" id="injTime" value="'+esc(whenVal.slice(11,16))+'"></div></div>';
-    var selForMap = injSel || (editing ? (editing.pos || (editing.site&&LEGACY_SITE_CM[editing.site]) || null) : null);
-    html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t("inj.pickSite"))+'</p>';
-    html+=bellyMapSVG(st, selForMap, true);
-    var shownPos = selForMap || DOMAIN.suggestSpot(recentSpots(st));
+    // Which patch of skin the map shows: the one picked, else the edited entry's
+    // own, else the abdomen. An edited spot is only drawn on its own map -- on
+    // any other it would be a point in the wrong coordinates.
+    var editPos = editing ? (editing.pos || (editing.site&&LEGACY_SITE_CM[editing.site]) || null) : null;
+    var editArea = editing ? (editing.area ? DOMAIN.spotArea(editing) : ((editPos&&editPos.area)||"front")) : "front";
+    var area = injArea || editArea;
+    var selForMap = injSel || ((editing && editArea===area) ? editPos : null);
+    var recAll=recentSpots(st), areaCnt={front:0,left:0,right:0};
+    recAll.forEach(function(r){ areaCnt[r.area]=(areaCnt[r.area]||0)+1; });
+    // the count says where the last two weeks' shots went without switching maps
+    html+='<div class="seg areaseg">'+["front","left","right"].map(function(a){
+      return '<button type="button" class="injArea'+(a===area?' on':'')+'" data-area="'+a+'">'+esc(I18N.t(AREA_KEY[a]))
+        +(areaCnt[a]?'<span class="n">'+areaCnt[a]+'</span>':'')+'</button>';
+    }).join('')+'</div>';
+    html+='<p class="sub" style="margin-bottom:0">'+esc(I18N.t(area==="front"?"inj.pickSite":"inj.pickSiteSide"))+'</p>';
+    html+= area==="front" ? bellyMapSVG(st, selForMap, true) : sideMapSVG(st, area, selForMap, true);
+    var shownPos = selForMap || DOMAIN.suggestSpot(recAll, null, null, area);
     if(shownPos){
-      html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'+esc(posLabel(shownPos))+'</b>'
+      html+='<div class="center small muted">'+esc(I18N.t("inj.selected"))+': <b style="color:var(--ink)">'
+        +(area!=="front"?esc(I18N.t(AREA_KEY[area]))+' \u2014 ':'')+esc(posLabel(shownPos, area))+'</b>'
         +(!selForMap?' <span class="muted tiny">('+esc(I18N.t("inj.suggested"))+')</span>':'')+'</div>';
     }
-    html+='<div class="center tiny muted" style="margin-top:4px">'+esc(I18N.t("inj.mapHint"))+'</div>';
+    html+='<div class="center tiny muted" style="margin-top:4px">'+esc(I18N.t(area==="front"?"inj.mapHint":"inj.mapHintSide"))+'</div>';
     // sandbagging flag (TRT only, and only while the setting is on)
     if(injSeg==="trt" && st.settings.sandbagging){
       var sbChecked = injDraft.sandbag!=null ? injDraft.sandbag : (editing ? !!editing.sandbag : false);
@@ -7293,7 +7443,7 @@ var UI = (function(){
       pageSlice(hlist, injPage).forEach(function(e){
         var siteLbl=e.site?I18N.t("site."+e.site):"—"; if(siteLbl==="site."+e.site) siteLbl=e.site;
         var whenLbl=e.ts?fmtDateTime(e.ts):fmtDate(e.date);
-        var where=e.pos ? siteLbl+" · "+posLabelShort(e.pos) : siteLbl;
+        var where=e.pos ? siteLbl+" · "+posLabelShort(e.pos, e.area) : siteLbl;
         var meta=[];
         if(e.name) meta.push(e.name);
         if(e.penDraw) meta.push(penDrawLabel(e.penDraw));
@@ -7328,19 +7478,33 @@ var UI = (function(){
       if($("#injSandbag")) injDraft.sandbag=$("#injSandbag").checked;
     }
     bindPager("injPg", function(){return injPage;}, function(v){injPage=v;}, viewInject);
-    // free-point spot pick: any tap on the abdomen map (preserves typed inputs)
-    var bm=$("#bellyMap");
+    // switching maps drops the picked spot -- it was a point on another patch
+    // of skin -- but keeps everything typed
+    $all(".injArea").forEach(function(b){ b.addEventListener("click",function(){
+      captureDraft(); injArea=b.getAttribute("data-area"); injSel=null; viewInject();
+    });});
+    // free-point spot pick: any tap on the map shown (preserves typed inputs)
+    var bm=$("#bellyMap")||$("#sideMap");
     if(bm) bm.addEventListener("click",function(ev){
       var pt=bm.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY;
       var ctm=bm.getScreenCTM(); if(!ctm) return;
       var loc=pt.matrixTransform(ctm.inverse());
-      var pos=svgToCm(loc.x, loc.y);
-      // clamp to the mapped skin area and keep 0.1 cm precision
-      pos.x=Math.round(Math.max(-19.5,Math.min(19.5,pos.x))*10)/10;
-      pos.y=Math.round(Math.max(-14,Math.min(11.5,pos.y))*10)/10;
+      var mapArea=bm.getAttribute("data-area")||"front";
+      var pos, A=DOMAIN.SPOT_AREAS[mapArea];
+      // clamp to the mapped skin area and keep 0.1 cm precision; the abdomen
+      // keeps its old, wider reach so nothing that could be tapped before cannot be now
+      if(mapArea==="front"){
+        pos=svgToCm(loc.x, loc.y);
+        pos.x=Math.round(Math.max(-19.5,Math.min(19.5,pos.x))*10)/10;
+        pos.y=Math.round(Math.max(-14,Math.min(11.5,pos.y))*10)/10;
+      } else {
+        pos=sideSvgToCm(loc.x, loc.y, mapArea);
+        pos.x=Math.round(Math.max(A.xMin,Math.min(A.xMax,pos.x))*10)/10;
+        pos.y=Math.round(Math.max(A.yMin,Math.min(A.yMax,pos.y))*10)/10;
+      }
       captureDraft();
       injSel=pos;
-      var chk=DOMAIN.spotCheck(pos, recentSpots(st));
+      var chk=DOMAIN.spotCheck(pos, recentSpots(st), null, null, mapArea);
       if(chk.nearNavel) toast(I18N.t("inj.tooCloseNavel"));
       else if(chk.nearShot) toast(I18N.t("inj.tooClose"));
       viewInject();
@@ -7464,10 +7628,12 @@ var UI = (function(){
     if($("#injLog")) $("#injLog").addEventListener("click",function(){
       // spot: a user-picked point wins; otherwise an edited entry keeps its
       // stored spot untouched; a brand-new entry takes the suggested clear spot
-      var pos=null, site=null;
-      if(injSel){ pos=injSel; site=bellyQuadrant(injSel); }
-      else if(editing){ pos=editing.pos||null; site=editing.site||null; }
-      else { pos=DOMAIN.suggestSpot(recentSpots(st)); site=pos?bellyQuadrant(pos):null; }
+      // `area` rides with the spot: the map it was picked on, the edited
+      // entry's own, or the map open when the suggestion was taken
+      var pos=null, site=null, area="front";
+      if(injSel){ pos=injSel; area=injArea||editArea; site=siteFor(pos, area); }
+      else if(editing){ pos=editing.pos||null; site=editing.site||null; area=editing.area||"front"; }
+      else { area=injArea||"front"; pos=DOMAIN.suggestSpot(recentSpots(st), null, null, area); site=siteFor(pos, area); }
       var dv=$("#injDose").value, dose=dv===""?null:parseFloat(dv);
       dose=(dose==null||isNaN(dose))?null:dose;
       var name=$("#injName")?($("#injName").value||"").trim():null;
@@ -7483,11 +7649,14 @@ var UI = (function(){
         // materialise the legacy date into a real injLog entry (keep its original day)
         var mat={ id:uid(), ts:editing.date+"T"+ts.slice(11), date:editing.date, substance:"mounjaro", dose:dose, unit:"mg", site:site };
         if(pos) mat.pos=pos;
+        if(pos && area!=="front") mat.area=area;
         st.injLog.push(mat);
         mjDate=editing.date;
       } else if(editing){
         editing.dose=dose; editing.ts=ts; editing.date=dateStr;
-        if(injSel){ editing.site=site; editing.pos=pos; }  // spot only changes when re-picked
+        // spot only changes when re-picked; the abdomen is the unmarked default,
+        // so a shot moved back there loses the flag rather than carrying "front"
+        if(injSel){ editing.site=site; editing.pos=pos; if(area!=="front") editing.area=area; else delete editing.area; }
         if(sb!==null){ if(sb) editing.sandbag=true; else delete editing.sandbag; }
         // interval backfill: re-saving a pre-stamping TRT entry adopts the
         // current interval; an already-stamped entry keeps its historical one
@@ -7502,6 +7671,7 @@ var UI = (function(){
         var unitCode=pepE?(pepE.unit||"j"):"mg";
         var entry={ id:uid(), ts:ts, date:dateStr, substance:sub, dose:dose, unit:unitCode, site:site };
         if(pos) entry.pos=pos;
+        if(pos && area!=="front") entry.area=area;
         // TRT dosage = mg per shot + interval; snapshot the interval so a
         // schedule change (e.g. every 2 days -> daily) reads as a dose change
         if(injSeg==="trt") entry.every=parseEvery(st.inj.trt.intervalDays,3);
@@ -7537,12 +7707,12 @@ var UI = (function(){
       // Mounjaro: keep the weekly ring's source of truth (jab.history) in sync with the chosen day
       if(mjDate && st.jab.history.indexOf(mjDate)===-1){ st.jab.history.push(mjDate); st.jab.history.sort(); }
       st.injLog.sort(function(a,b){var ka=a.ts||a.date,kb=b.ts||b.date;return ka<kb?1:ka>kb?-1:0;});
-      injSel=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
+      injSel=null; injArea=null; injEdit=null; injPage=0; injDraft={dose:"",name:"",when:"",sandbag:null};
       STORE.save(); toast(I18N.t("common.saved")); viewInject();
     });
-    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject(); });
+    if($("#injCancel")) $("#injCancel").addEventListener("click",function(){ injEdit=null; injSel=null; injArea=null; injDraft={dose:"",name:"",when:"",sandbag:null}; viewInject(); });
     $all(".injEdit").forEach(function(b){ b.addEventListener("click",function(){
-      injEdit=b.getAttribute("data-id"); injSel=null; viewInject(); window.scrollTo(0,0);
+      injEdit=b.getAttribute("data-id"); injSel=null; injArea=null; viewInject(); window.scrollTo(0,0);
     });});
     $all(".injDel").forEach(function(b){ b.addEventListener("click",function(){
       if(!confirm(I18N.t("inj.confirmDel"))) return;
@@ -7703,9 +7873,18 @@ var UI = (function(){
       // the whole card is the link, map included — the hint alone was a small
       // target next to a big obvious one. The map keeps pointer-events off so a
       // tap on it falls through to the anchor instead of hitting the SVG.
+      // the flanks have their own maps in the form; here they get a count each,
+      // so a fortnight of shots is accounted for even when none are on the belly
+      var dashRec=recentSpots(st), sideBits=[];
+      ["left","right"].forEach(function(a){
+        var n=dashRec.filter(function(r){ return r.area===a; }).length;
+        if(n) sideBits.push(esc(I18N.t(AREA_KEY[a]))+' \u00b7 '+n);
+      });
       html+='<a class="card" href="#inject" style="display:block;text-decoration:none;color:inherit">'
         +'<span style="color:var(--brand);font-weight:700;font-size:13px">'+esc(I18N.t("pulpit.mapHint"))+'</span>'
-        +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div></a>';
+        +'<div style="pointer-events:none">'+bellyMapSVG(st, null)+'</div>'
+        +(sideBits.length?'<div class="center tiny muted" style="margin-top:4px">'+sideBits.join('&nbsp;&nbsp;&middot;&nbsp;&nbsp;')+'</div>':'')
+        +'</a>';
     }
 
     app.innerHTML=html;
@@ -8493,7 +8672,7 @@ var UI = (function(){
     else return;
     if(seg===injSeg && pep===pepSel) return;                   // already there
     injSeg=seg; pepSel=pep;
-    injSel=null; injEdit=null; injPage=0; pepEditId=null;
+    injSel=null; injArea=null; injEdit=null; injPage=0; pepEditId=null;
     injDraft={dose:"",name:"",when:"",sandbag:null};
   }
   // Substance picked inside the view -> address, without a new history entry, so

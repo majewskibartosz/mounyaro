@@ -183,6 +183,73 @@ test("spotCheck via recentInjPos: a spot next to a hidden sandbagged shot is fin
   assert.strictEqual(chk.nearShot, true);
 });
 
+// ---- flanks: their own patch of skin, their own landmarks ----
+test("spotArea: missing or unknown reads as the front", function () {
+  assert.strictEqual(DOMAIN.spotArea({}), "front");
+  assert.strictEqual(DOMAIN.spotArea(null), "front");
+  assert.strictEqual(DOMAIN.spotArea({ area: "left" }), "left");
+  assert.strictEqual(DOMAIN.spotArea({ area: "thigh" }), "front");
+  assert.deepStrictEqual(Object.keys(DOMAIN.SPOT_AREAS).sort(), ["front", "left", "right"]);
+});
+
+test("spotCheck: only shots on the same patch of skin count", function () {
+  var recent = [{ pos: { x: 6, y: -2 }, area: "left" }, { pos: { x: 6, y: -2 }, area: "front" }];
+  // the same numbers on the left flank: the left shot is 0 cm away
+  assert.strictEqual(DOMAIN.spotCheck({ x: 6, y: -2 }, recent, null, null, "left").nearShot, true);
+  // on the right flank the same numbers are a different place entirely
+  var r = DOMAIN.spotCheck({ x: 6, y: -2 }, recent, null, null, "right");
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.nearestCm, null);
+  // no area = front, as every caller before flanks existed
+  assert.strictEqual(DOMAIN.spotCheck({ x: 6, y: -2 }, recent).nearShot, true);
+});
+
+test("spotCheck: the navel zone exists only where the navel is", function () {
+  // (1, 1) is 1.4 cm from the origin: inside the 5 cm zone on the front...
+  assert.strictEqual(DOMAIN.spotCheck({ x: 1, y: 1 }, []).nearNavel, true);
+  // ...but on a flank the origin is the nipple line at the navel's level -- skin
+  assert.strictEqual(DOMAIN.spotCheck({ x: 1, y: 1 }, [], null, null, "left").nearNavel, false);
+  assert.strictEqual(DOMAIN.spotCheck({ x: 1, y: 1 }, [], null, null, "left").ok, true);
+});
+
+test("suggestSpot: a flank suggestion stays on the flank and keeps its distance", function () {
+  var A = DOMAIN.SPOT_AREAS.left;
+  var recent = [{ pos: { x: 6, y: -2 }, area: "left" }, { pos: { x: 8, y: 0 }, area: "front" }];
+  var l = DOMAIN.suggestSpot(recent, null, null, "left");
+  assert.ok(l.x >= A.xMin && l.x <= A.xMax && l.y >= A.yMin && l.y <= A.yMax, "inside the flank");
+  assert.ok(Math.hypot(l.x - 6, l.y + 2) >= DOMAIN.SPOT_MIN_CM, "3 cm from the flank shot");
+  // and not driven into a corner: farther than the cap is no better
+  assert.ok(l.x > A.xMin && l.x < A.xMax, "not on the edge: " + JSON.stringify(l));
+  // the front suggestion is the same with or without the flank shot in the list
+  var withFlank = DOMAIN.suggestSpot(recent), frontOnly = DOMAIN.suggestSpot([recent[1]]);
+  assert.deepStrictEqual(withFlank, frontOnly);
+  // empty flank: the middle-ish, never the nipple line itself
+  var empty = DOMAIN.suggestSpot([], null, null, "right");
+  assert.ok(empty.x >= 4 && empty.x <= 8, "middle of the flank: " + JSON.stringify(empty));
+});
+
+test("recentInjPos: carries the area, and puts an old flank site on its flank", function () {
+  var legacy = { love_l1: { area: "left", x: 6, y: -2 }, belly_ll: { x: -4, y: 4 } };
+  var log = [trt("f", "2026-08-06", 25, { x: 6, y: -2 }, { area: "left" }),
+             trt("g", "2026-08-05", 25, { x: -4, y: 4 }),
+             trt("h", "2026-08-04", 25, null, { site: "love_l1" }),
+             trt("i", "2026-08-03", 25, null, { site: "belly_ll" })];
+  var out = Array.from(DOMAIN.recentInjPos(mkState(false, log), TODAY, 14, legacy));
+  assert.deepStrictEqual(pluck(out, "date"), ["2026-08-06", "2026-08-05", "2026-08-04", "2026-08-03"]);
+  assert.deepStrictEqual(pluck(out, "area"), ["left", "front", "left", "front"]);
+  assert.deepStrictEqual([out[2].pos.x, out[2].pos.y], [6, -2]);   // cross-realm object: compare the numbers
+  // a bad area on a record is read as the front rather than dropped
+  var odd = DOMAIN.recentInjPos(mkState(false, [trt("z", "2026-08-06", 25, { x: 1, y: 1 }, { area: "nowhere" })]), TODAY, 14, null);
+  assert.strictEqual(odd[0].area, "front");
+});
+
+test("describe: the legend explains area and both meanings of pos", function () {
+  var out = DOMAIN.describe({ injLog: [] }, function (k) { return k; });
+  assert.ok(out.legend.conventions["injLog[].area"], "area is in the legend");
+  assert.ok(/nipple/.test(out.legend.conventions["injLog[].pos"]), "pos explains the flank frame");
+  assert.ok(/navel/.test(out.legend.conventions["injLog[].pos"]), "pos explains the front frame");
+});
+
 test("dowIndex: ISO numbering, 1=Monday..7=Sunday", function () {
   assert.strictEqual(DOMAIN.dowIndex("2026-08-03"), 1); // Monday
   assert.strictEqual(DOMAIN.dowIndex("2026-08-05"), 3); // Wednesday
