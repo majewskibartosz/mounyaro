@@ -473,9 +473,10 @@
   /* plainly smaller than the count above it -- 12px against 13px read as one size */
   .drawbox .dbtill{font-size:11px;color:var(--muted);text-align:right}
   .bellymap{max-width:360px;width:100%;margin:6px auto 2px;display:block;cursor:crosshair;touch-action:manipulation}
-  /* a flank is 12 x 18 cm to the belly's 43 x 29: drawn to the belly's width it
-     would tower over the form, so it is capped narrower and stands taller */
-  .bellymap.side{max-width:230px}
+  /* the flank's width is not a taste decision but arithmetic: it is set inline
+     from its own viewBox so that a centimetre is the same number of pixels as
+     on the abdomen. Drawn to its own cap it came out 1.88x larger, and a 3 cm
+     ring meant two different things depending on which map you were looking at. */
   .areaseg{margin:10px 0 4px}
   .areaseg button{font-size:13px;padding:8px 4px}
   .areaseg button .n{font-weight:600;opacity:.6;margin-left:3px}
@@ -615,7 +616,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v200";
+var BUILD = "mj-v201";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -2294,9 +2295,12 @@ var DOMAIN = (function(){
   // the middle have a say. No `area` on a record means front, which is what
   // every older record is.
   var SPOT_AREAS={
-    front:{ xMin:-16, xMax:16, yMin:-11, yMax:9, cx:0, cy:0,  cap:12, navel:true  },
-    left: { xMin:0,   xMax:12, yMin:-10, yMax:8, cx:6, cy:-1, cap:6,  navel:false },
-    right:{ xMin:0,   xMax:12, yMin:-10, yMax:8, cx:6, cy:-1, cap:6,  navel:false }
+    front:{ xMin:-16, xMax:16, yMin:-11,  yMax:9,    cx:0, cy:0, cap:12, navel:true  },
+    // the flank runs from the nipple line to the back, and vertically the same
+    // stretch the abdomen covers -- one navel line round the whole body, so a
+    // spot 3 cm above the navel means the same thing on either map
+    left: { xMin:0,   xMax:20, yMin:-14,  yMax:11.5, cx:8, cy:0, cap:6,  navel:false },
+    right:{ xMin:0,   xMax:20, yMin:-14,  yMax:11.5, cx:8, cy:0, cap:6,  navel:false }
   };
   function spotArea(e){ return (e && e.area && SPOT_AREAS[e.area]) ? e.area : "front"; }
   function spotDist(a,b){ var dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
@@ -7157,7 +7161,12 @@ var UI = (function(){
   // flank the front of the body is to the right, so the nipple line is the
   // right edge and the back is to the left; the right flank is the mirror image.
   // SIDE_M is the margin the labels live in.
-  var SIDE_M=13;
+  var SIDE_M=15;
+  // Type on the map is sized in svg units, so it shrinks with the drawing: when
+  // the flank came down to the abdomen's scale these labels fell to 8px and
+  // stopped being readable. 9 units lands near 11px at every width the map is
+  // drawn at, which is where the rest of the tiny print sits.
+  var SIDE_FS=9;
   function sideDims(area){ var A=DOMAIN.SPOT_AREAS[area]; return { A:A, w:(A.xMax-A.xMin)*BELLY_CM+2*SIDE_M, h:(A.yMax-A.yMin)*BELLY_CM+2*SIDE_M }; }
   function sideToSvg(p, area){
     var A=DOMAIN.SPOT_AREAS[area];
@@ -7173,7 +7182,12 @@ var UI = (function(){
     var all=recentSpots(st), recent=all.filter(function(r){ return r.area===area; });
     var sug = (withSuggest && !selPos) ? DOMAIN.suggestSpot(all, null, null, area) : null;
     var D=sideDims(area), A=D.A, W=D.w, H=D.h, toSvg=function(p){ return sideToSvg(p, area); };
-    var svg='<svg class="bellymap side" id="sideMap" data-area="'+area+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+(area==="left"?"left":"right")+' flank injection map">';
+    // BELLY_W units of abdomen fill the map's full width, so W units of flank
+    // must fill exactly W/BELLY_W of it -- at every container width, and at the
+    // 360px cap alike.
+    var wPct=(W/BELLY_W*100).toFixed(2), wCap=(W/BELLY_W*360).toFixed(1);
+    var svg='<svg class="bellymap side" id="sideMap" data-area="'+area+'"'
+      +' style="width:'+wPct+'%;max-width:'+wCap+'px" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+(area==="left"?"left":"right")+' flank injection map">';
     // skin area: the mapped patch plus half a centimetre all round
     var sx=SIDE_M-3, sy=SIDE_M-3, sw=W-2*SIDE_M+6, sh=H-2*SIDE_M+6;
     svg+='<rect x="'+sx+'" y="'+sy+'" width="'+sw+'" height="'+sh+'" rx="14" fill="var(--soft)" stroke="var(--line)" stroke-width="1.6"/>';
@@ -7194,10 +7208,10 @@ var UI = (function(){
     // rotated -90 the text flows UP from its anchor, so it always starts at the
     // bottom edge and sits on the outer side of the line
     var tx=frontRight ? nx+5.5 : nx-2.5;
-    svg+='<text x="'+tx.toFixed(1)+'" y="'+(H-3)+'" font-size="6.5" font-weight="700" fill="var(--brand)" text-anchor="start" transform="rotate(-90 '+tx.toFixed(1)+' '+(H-3)+')">'+esc(I18N.t("inj.nippleLine"))+'</text>'
-      +'<text x="'+(frontRight ? sx-5 : sx+sw+5)+'" y="'+(ny-2).toFixed(1)+'" font-size="6.5" font-weight="700" fill="var(--muted)" text-anchor="'+(frontRight?"start":"end")+'" transform="rotate(-90 '+(frontRight ? sx-5 : sx+sw+5)+' '+(ny-2).toFixed(1)+')">'+esc(I18N.t("inj.navelLevel"))+'</text>'
-      +'<text x="'+(frontRight ? W-SIDE_M : SIDE_M)+'" y="8.5" font-size="7" font-weight="800" fill="var(--muted)" text-anchor="'+(frontRight?"end":"start")+'">'+esc(I18N.t("inj.front"))+' '+(frontRight?"\u2192":"\u2190")+'</text>'
-      +'<text x="'+(frontRight ? SIDE_M : W-SIDE_M)+'" y="8.5" font-size="7" font-weight="800" fill="var(--muted)" text-anchor="'+(frontRight?"start":"end")+'">'+(frontRight?"\u2190 ":"")+esc(I18N.t("inj.back"))+(frontRight?"":" \u2192")+'</text>';
+    svg+='<text x="'+tx.toFixed(1)+'" y="'+(H-3)+'" font-size="'+SIDE_FS+'" font-weight="700" fill="var(--brand)" text-anchor="start" transform="rotate(-90 '+tx.toFixed(1)+' '+(H-3)+')">'+esc(I18N.t("inj.nippleLine"))+'</text>'
+      +'<text x="'+(frontRight ? sx-5 : sx+sw+5)+'" y="'+(ny-2).toFixed(1)+'" font-size="'+SIDE_FS+'" font-weight="700" fill="var(--muted)" text-anchor="'+(frontRight?"start":"end")+'" transform="rotate(-90 '+(frontRight ? sx-5 : sx+sw+5)+' '+(ny-2).toFixed(1)+')">'+esc(I18N.t("inj.navelLevel"))+'</text>'
+      +'<text x="'+(frontRight ? W-SIDE_M : SIDE_M)+'" y="10.5" font-size="'+SIDE_FS+'" font-weight="800" fill="var(--muted)" text-anchor="'+(frontRight?"end":"start")+'">'+esc(I18N.t("inj.front"))+' '+(frontRight?"\u2192":"\u2190")+'</text>'
+      +'<text x="'+(frontRight ? SIDE_M : W-SIDE_M)+'" y="10.5" font-size="'+SIDE_FS+'" font-weight="800" fill="var(--muted)" text-anchor="'+(frontRight?"start":"end")+'">'+(frontRight?"\u2190 ":"")+esc(I18N.t("inj.back"))+(frontRight?"":" \u2192")+'</text>';
     svg+=spotMarksSVG(st, recent, toSvg, sug, selPos, selPos?DOMAIN.spotCheck(selPos, all, null, null, area).ok:true);
     svg+='</svg>';
     var leg=mapLegendHTML(st, recent,

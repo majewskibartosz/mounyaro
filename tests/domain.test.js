@@ -192,6 +192,18 @@ test("spotArea: missing or unknown reads as the front", function () {
   assert.deepStrictEqual(Object.keys(DOMAIN.SPOT_AREAS).sort(), ["front", "left", "right"]);
 });
 
+test("SPOT_AREAS: the flanks share the abdomen's belt", function () {
+  var f = DOMAIN.SPOT_AREAS.front, l = DOMAIN.SPOT_AREAS.left, r = DOMAIN.SPOT_AREAS.right;
+  // one navel line round the body: 3 cm above the navel is 3 cm above it on
+  // either map, so the two are drawn over the same vertical stretch
+  assert.ok(l.yMin <= f.yMin && l.yMax >= f.yMax, "the flank covers at least the front's belt");
+  assert.deepStrictEqual([l.yMin, l.yMax], [r.yMin, r.yMax], "and both flanks the same");
+  // a flank starts at the nipple line and runs backwards -- never negative
+  assert.strictEqual(l.xMin, 0);
+  assert.ok(l.xMax >= 16, "far enough back to reach the love handle");
+  assert.strictEqual(l.navel, false, "no navel zone where there is no navel");
+});
+
 test("spotCheck: only shots on the same patch of skin count", function () {
   var recent = [{ pos: { x: 6, y: -2 }, area: "left" }, { pos: { x: 6, y: -2 }, area: "front" }];
   // the same numbers on the left flank: the left shot is 0 cm away
@@ -225,7 +237,7 @@ test("suggestSpot: a flank suggestion stays on the flank and keeps its distance"
   assert.deepStrictEqual(withFlank, frontOnly);
   // empty flank: the middle-ish, never the nipple line itself
   var empty = DOMAIN.suggestSpot([], null, null, "right");
-  assert.ok(empty.x >= 4 && empty.x <= 8, "middle of the flank: " + JSON.stringify(empty));
+  assert.ok(empty.x >= 6 && empty.x <= 12, "middle of the flank: " + JSON.stringify(empty));
 });
 
 test("recentInjPos: carries the area, and puts an old flank site on its flank", function () {
