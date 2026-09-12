@@ -401,8 +401,13 @@
     padding:3px 6px;border-radius:999px;line-height:1;white-space:nowrap}
   .duebadge{background:var(--c);color:var(--on-brand)}
   /* the vial is running out: the alarm colour rather than the substance's own,
-     because this one is not about which shot is next but about what is left */
-  .vialbadge{background:var(--bad);color:#fff}
+     because this one is not about which shot is next but about what is left.
+     A bare digit in a circle, because words did not fit -- "BPC-157 + TB-500"
+     with NOW beside it left no room for "PUSTA" too, and the badge that gets
+     pushed off the row is the one that had something to say. 18px against an
+     18.1px line, so the row still does not grow. */
+  .vialbadge{background:var(--bad);color:#fff;width:18px;height:18px;padding:0;
+    display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:0}
   a.rrow.due,.rrow.due{background:var(--ct);border-left:3px solid var(--c);
     border-radius:10px;margin-left:-9px;padding:6px 7px 4px 7px}
   /* reorder mode owns the row's look (dashed, soft, no bar); the due tint must
@@ -616,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v201";
+var BUILD = "mj-v202";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -792,9 +797,6 @@ var I18N = (function(){
     "pep.dosesLeft":{pl:"{n} dawka|{n} dawki|{n} dawek",en:"{n} dose|{n} doses|{n} doses"},
     "pep.vialTill":{pl:"starczy do {d}",en:"lasts until {d}"},
     "pep.vialSpent":{pl:"nie starczy na dawkę",en:"not enough for a dose"},
-    "pep.vialWarnLeft":{pl:"\u2248{n} DAWKA|\u2248{n} DAWKI|\u2248{n} DAWEK",en:"\u2248{n} DOSE|\u2248{n} DOSES|\u2248{n} DOSES"},
-    "pep.vialWarnLast":{pl:"OSTATNIA",en:"LAST ONE"},
-    "pep.vialWarnEmpty":{pl:"PUSTA",en:"EMPTY"},
     "pep.vialWarnTip":{pl:"Fiolka się kończy — rozrób nową w „Edytuj peptyd\".",en:"The vial is running out — mix a new one under \"Edit peptide\"."},
     "pep.vialOf":{pl:"{left} z {cap} {u}",en:"{left} of {cap} {u}"},
     "pep.vialNoDose":{pl:"{n} zastrzyk bez wpisanej dawki nie został odjęty|{n} zastrzyki bez wpisanej dawki nie zostały odjęte|{n} zastrzyków bez wpisanej dawki nie zostało odjętych",
@@ -6000,10 +6002,10 @@ var UI = (function(){
                                                 substTimes(st,p.id), substPerDay(st,p.id)),
                              nextDoseISO(st, p.id));
     if(!vs || vs.doses==null || vs.doses>VIAL_WARN_DOSES) return "";
-    var txt = vs.doses===0 ? I18N.t("pep.vialWarnEmpty")
-            : vs.doses===1 ? I18N.t("pep.vialWarnLast")
-            : I18N.plural("pep.vialWarnLeft", vs.doses);
-    return '<span class="vialbadge" title="'+esc(I18N.t("pep.vialWarnTip"))+'">'+esc(txt)+'</span>';
+    // Just the count: 3, 2, 1, 0. The words live in the tooltip and, in full,
+    // in the draw box -- on the row there is only room for the number.
+    var tip=I18N.plural("pep.dosesLeft", vs.doses, "\u2248"+vs.doses)+" \u00b7 "+I18N.t("pep.vialWarnTip");
+    return '<span class="vialbadge" title="'+esc(tip)+'">'+esc(String(vs.doses))+'</span>';
   }
   // Four marks with a stroke through them: a closed group, four weeks, near
   // enough a month. Fewer than four is a group still being filled, so no stroke.
