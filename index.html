@@ -1462,6 +1462,56 @@ var DOMAIN = (function(){
     });
     return out;
   }
+  // How often a dose actually goes in, averaged over a week: a weekday plan
+  // spreads 7 days over however many days it names, a fixed gap is simply the
+  // gap, and either one is divided by how many doses go in on each of those
+  // days. Named hours beat the count -- the same precedence doseCountdown uses,
+  // so there are never two truths about one rhythm.
+  function daysPerDose(every, days, times, perDay){
+    var n=normDays(days), t=normTimes(times);
+    var perDayN = t ? t.length : normPerDay(perDay);
+    var gap = n ? 7/n.length : Number(every);
+    if(!isFinite(gap) || gap<=0) return null;
+    return gap/perDayN;
+  }
+  // What is left in the vial in use, and how far it reaches.
+  // Usage is what was actually logged: every shot the vial was open for, each
+  // converted from its OWN unit, so switching the compound between mcg and mg
+  // never moves the total. A shot with no dose on it subtracts nothing -- there
+  // is nothing to subtract -- so `unknown` counts those and says out loud that
+  // what is left is an over-estimate.
+  // `log` arrives already filtered to this substance (and past visibleInjLog),
+  // which is what keeps a sandbagged shot from eating into the vial.
+  function vialStatus(vials, log, dateISO, dose, unit, perDoseDays, fromISO){
+    var v=vialAsOf(vials, dateISO);
+    if(!v) return null;
+    var cap=Number(v.mg), ml=Number(v.ml);
+    if(!isFinite(cap) || cap<=0) return null;
+    var used=0, shots=0, unknown=0;
+    (log||[]).forEach(function(e){
+      if(!e || !e.date) return;
+      var ev=vialAsOf(vials, e.date);
+      if(!ev || ev.id!==v.id) return;
+      shots++;
+      var d=doseInVialUnit(e.dose, e.unit||unit);
+      if(d==null) unknown++; else used+=d;
+    });
+    used=Math.min(r3(used), cap);
+    var left=r3(cap-used);
+    var per=doseInVialUnit(dose, unit);
+    // A dose you cannot fill is no dose: what is left over past the last whole
+    // one stays in the vial, and the count never rounds it up into a shot.
+    var doses=(per && per>0) ? Math.floor(left/per + 1e-9) : null;
+    // The day the last dose it can still give comes out, counted from the day
+    // the next one is due -- so the estimate lines up with the countdown rather
+    // than starting from an arbitrary today. A vial with a recorded end needs
+    // no estimate: it already has a date.
+    var runOut=(doses!=null && doses>0 && !v.end && fromISO && perDoseDays>0)
+      ? addDaysISO(fromISO, Math.round((doses-1)*perDoseDays)) : null;
+    return { id:v.id, cap:cap, used:used, left:left,
+             mlLeft:(isFinite(ml)&&ml>0&&cap>0) ? r3(ml*left/cap) : null,
+             shots:shots, unknown:unknown, doses:doses, runOutISO:runOut };
+  }
   function totalMgPerPen(S){ return DOSES_PER_PEN*S; }
   function budgetClicks(golden){ return CLICKS_PER_PEN + (golden && golden.enabled ? GOLDEN_UNITS : 0); }
 
@@ -2719,6 +2769,7 @@ var DOMAIN = (function(){
     gluTypicalRange:gluTypicalRange, GLU_TAGS:GLU_TAGS,
     describe:describe, stripDescribed:stripDescribed, symptomParts:symptomParts, SITE_CODES:SITE_CODES,
     parseRoute:parseRoute, buildRoute:buildRoute,
+    daysPerDose:daysPerDose, vialStatus:vialStatus,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos, spotArea:spotArea,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM, SPOT_AREAS:SPOT_AREAS
   };

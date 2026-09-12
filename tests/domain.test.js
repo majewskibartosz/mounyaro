@@ -1443,6 +1443,102 @@ test("vialSpans: finishing one and mixing another the same day is two vials, not
   assert.deepStrictEqual(pluck(corr, "id"), ["v2"]);
 });
 
+// ---- what is left in the vial, and how far it reaches ----
+function shot(date, dose, unit, extra) {
+  return Object.assign({ id: "s" + date, date: date, substance: "kpv", dose: dose, unit: unit || "mg" }, extra || {});
+}
+
+test("daysPerDose: the rhythm as one number, whatever shape it was written in", function () {
+  assert.strictEqual(DOMAIN.daysPerDose(2, null, null, 1), 2);
+  assert.strictEqual(DOMAIN.daysPerDose(1, null, null, 1), 1);
+  assert.strictEqual(DOMAIN.daysPerDose(1, null, null, 2), 0.5);      // twice a day
+  assert.strictEqual(DOMAIN.daysPerDose(3.5, null, null, 1), 3.5);    // Tirzepatyd
+  assert.strictEqual(DOMAIN.daysPerDose(1, [1, 3, 5], null, 1), 7 / 3);  // Mon/Wed/Fri
+  assert.strictEqual(DOMAIN.daysPerDose(2, [1, 3, 5], null, 1), 7 / 3);  // the plan wins over the gap
+  // named hours say how many a day better than the count does -- same
+  // precedence as doseCountdown, so one rhythm never reads two ways
+  assert.strictEqual(DOMAIN.daysPerDose(1, null, ["08:00", "20:00"], 1), 0.5);
+  assert.strictEqual(DOMAIN.daysPerDose(1, null, ["08:00", "20:00"], 5), 0.5);
+  assert.strictEqual(DOMAIN.daysPerDose(null, null, null, 1), null);
+  assert.strictEqual(DOMAIN.daysPerDose(0, null, null, 1), null);
+});
+
+test("vialStatus: what the log says has been drawn, subtracted from the vial", function () {
+  var vials = [{ id: "v1", date: "2026-09-01", mg: 10, ml: 4 }];
+  var log = [shot("2026-09-03", 0.9), shot("2026-09-05", 0.9), shot("2026-09-07", 0.9)];
+  var vs = DOMAIN.vialStatus(vials, log, "2026-09-12", 0.9, "mg", 2, "2026-09-13");
+  assert.strictEqual(vs.id, "v1");
+  assert.strictEqual(vs.cap, 10);
+  assert.strictEqual(vs.used, 2.7);
+  assert.strictEqual(vs.left, 7.3);
+  assert.strictEqual(vs.shots, 3);
+  assert.strictEqual(vs.unknown, 0);
+  assert.strictEqual(vs.doses, 8);            // 7.3 / 0.9 = 8.11 -- the part dose stays in the vial
+  assert.strictEqual(vs.mlLeft, 2.92);        // the same fraction of the water
+  // eight more doses every two days, counted from the day the next one is due
+  assert.strictEqual(vs.runOutISO, "2026-09-27");
+});
+
+test("vialStatus: only the shots this vial was open for", function () {
+  var vials = [{ id: "v1", date: "2026-08-01", end: "2026-09-01", mg: 10, ml: 2 },
+               { id: "v2", date: "2026-09-01", mg: 10, ml: 2 }];
+  var log = [shot("2026-08-20", 5), shot("2026-09-05", 1)];
+  // the shot from the old vial does not touch the new one
+  var now = DOMAIN.vialStatus(vials, log, "2026-09-12", 1, "mg", 1, "2026-09-13");
+  assert.strictEqual(now.id, "v2");
+  assert.strictEqual(now.used, 1);
+  assert.strictEqual(now.shots, 1);
+  // and asked about a day the old one was open, it answers for the old one
+  var then = DOMAIN.vialStatus(vials, log, "2026-08-25", 5, "mg", 1, "2026-08-26");
+  assert.strictEqual(then.id, "v1");
+  assert.strictEqual(then.used, 5);
+  assert.strictEqual(then.left, 5);
+  assert.strictEqual(then.runOutISO, null, "a vial with a recorded end needs no estimate");
+});
+
+test("vialStatus: a shot with no dose subtracts nothing and says so", function () {
+  var vials = [{ id: "v1", date: "2026-09-01", mg: 10, ml: 2 }];
+  var log = [shot("2026-09-03", 1), shot("2026-09-05", null), shot("2026-09-07", 1)];
+  var vs = DOMAIN.vialStatus(vials, log, "2026-09-12", 1, "mg", 1, "2026-09-13");
+  assert.strictEqual(vs.used, 2);
+  assert.strictEqual(vs.shots, 3);
+  assert.strictEqual(vs.unknown, 1);   // so 8 left is the most it can be, not the least
+  assert.strictEqual(vs.doses, 8);
+});
+
+test("vialStatus: micrograms come off a vial labelled in milligrams", function () {
+  var vials = [{ id: "v1", date: "2026-09-01", mg: 10, ml: 2 }];
+  var log = [shot("2026-09-03", 500, "mcg"), shot("2026-09-04", 500, "mcg")];
+  var vs = DOMAIN.vialStatus(vials, log, "2026-09-12", 500, "mcg", 1, "2026-09-13");
+  assert.strictEqual(vs.used, 1);      // 2 x 500 mcg = 1 mg
+  assert.strictEqual(vs.left, 9);
+  assert.strictEqual(vs.doses, 18);
+  // an old shot logged in mcg keeps meaning mcg after the compound moves to mg
+  var moved = DOMAIN.vialStatus(vials, log, "2026-09-12", 0.5, "mg", 1, "2026-09-13");
+  assert.strictEqual(moved.used, 1, "the total does not move when the compound's unit does");
+  assert.strictEqual(moved.doses, 18);
+});
+
+test("vialStatus: drawn dry, and nothing to be asked of it", function () {
+  var vials = [{ id: "v1", date: "2026-09-01", mg: 2, ml: 1 }];
+  var over = DOMAIN.vialStatus(vials, [shot("2026-09-03", 1.5), shot("2026-09-05", 1.5)],
+                               "2026-09-12", 1, "mg", 1, "2026-09-13");
+  assert.strictEqual(over.used, 2, "never more than the vial held");
+  assert.strictEqual(over.left, 0);
+  assert.strictEqual(over.doses, 0);
+  assert.strictEqual(over.runOutISO, null);
+
+  // not enough left for one more whole dose
+  var short = DOMAIN.vialStatus(vials, [shot("2026-09-03", 1.5)], "2026-09-12", 1, "mg", 1, "2026-09-13");
+  assert.strictEqual(short.doses, 0);
+
+  // no vial, no capacity, no dose: nothing to report rather than a wrong number
+  assert.strictEqual(DOMAIN.vialStatus([], [], "2026-09-12", 1, "mg", 1, "2026-09-13"), null);
+  assert.strictEqual(DOMAIN.vialStatus([{ id: "x", date: "2026-09-01", mg: 0, ml: 2 }], [],
+                                       "2026-09-12", 1, "mg", 1, "2026-09-13"), null);
+  assert.strictEqual(DOMAIN.vialStatus(vials, [], "2026-09-12", null, "mg", 1, "2026-09-13").doses, null);
+});
+
 test("reconstitution end to end: 10 mg vial, 2 ml water, 2.5 mg dose", function () {
   var v = DOMAIN.vialAsOf([{ id: "v1", date: "2026-08-01", mg: 10, ml: 2 }], "2026-08-05");
   var conc = DOMAIN.vialConc(v.mg, v.ml);
