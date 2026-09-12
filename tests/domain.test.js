@@ -1063,12 +1063,12 @@ test("cadenceKey: how many a day is part of the regimen", function () {
   assert.strictEqual(DOMAIN.cadenceKey({ days: [1, 3], perDay: 2 }), "d:1,3x2");
 });
 
-test("dueNow: an hour before the moment, and everything past it", function () {
+test("dueNow: two hours before the moment, and everything past it", function () {
   var cd = function (remainingMs) { return { remainingMs: remainingMs }; };
-  assert.strictEqual(DOMAIN.DUE_SOON_MS, 3600000);
-  assert.strictEqual(DOMAIN.dueNow(cd(59 * 60000)), true);
-  assert.strictEqual(DOMAIN.dueNow(cd(3600000)), true);      // exactly on the edge
-  assert.strictEqual(DOMAIN.dueNow(cd(61 * 60000)), false);
+  assert.strictEqual(DOMAIN.DUE_SOON_MS, 7200000);
+  assert.strictEqual(DOMAIN.dueNow(cd(119 * 60000)), true);
+  assert.strictEqual(DOMAIN.dueNow(cd(7200000)), true);      // exactly on the edge
+  assert.strictEqual(DOMAIN.dueNow(cd(121 * 60000)), false);
   assert.strictEqual(DOMAIN.dueNow(cd(5 * 3600000)), false);
   // past due stays "take it now" however long it has been — not an abs() window
   assert.strictEqual(DOMAIN.dueNow(cd(-60000)), true);
@@ -1084,6 +1084,9 @@ test("dueNow: reads a real countdown, weekday plans included", function () {
   // 19:30 the same day: half an hour to go
   var near = DOMAIN.doseCountdown(shot, 1, new Date(2026, 8, 7, 19, 30, 0).getTime(), EVERY_DAY, T);
   assert.strictEqual(DOMAIN.dueNow(near), true);
+  // 18:30: an hour and a half to go -- inside the two-hour window
+  var soon = DOMAIN.doseCountdown(shot, 1, new Date(2026, 8, 7, 18, 30, 0).getTime(), EVERY_DAY, T);
+  assert.strictEqual(DOMAIN.dueNow(soon), true);
   // 17:00: three hours to go
   var far = DOMAIN.doseCountdown(shot, 1, new Date(2026, 8, 7, 17, 0, 0).getTime(), EVERY_DAY, T);
   assert.strictEqual(DOMAIN.dueNow(far), false);

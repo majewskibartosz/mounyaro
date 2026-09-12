@@ -2436,10 +2436,10 @@ var DOMAIN = (function(){
   }
 
   // "Time to take it" as one rule, so the dashboard and the substance list can
-  // never disagree about which shots are calling for attention. An hour before
+  // never disagree about which shots are calling for attention. Two hours before
   // the moment, and everything past it: deliberately not Math.abs — a shot three
   // days overdue is still one to take now, and its remainingMs is negative.
-  var DUE_SOON_MS = 3600000;
+  var DUE_SOON_MS = 7200000;
   function dueNow(cd){ return !!cd && cd.remainingMs <= DUE_SOON_MS; }
 
   // Hash route -> {tab, sub}. The sub-state segment is what lets a dashboard
@@ -6903,7 +6903,7 @@ var UI = (function(){
   }
   // Full caption: "następny za 1 dzień 8 godz." / "1 dzień 8 godz. po terminie"
   function countdownText(cd){
-    if(Math.abs(cd.remainingMs)<3600000) return I18N.t("inj.dueNow");
+    if(Math.abs(cd.remainingMs)<DOMAIN.DUE_SOON_MS) return I18N.t("inj.dueNow");
     if(cd.overdue) return fmtCountdown(cd)+" "+I18N.t("inj.overdue");
     return I18N.t("inj.nextIn")+" "+fmtCountdown(cd);
   }
