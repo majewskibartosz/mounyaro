@@ -380,7 +380,9 @@
   }
   .wbar.slim>span{animation-name:wbarflowslim}
   .rrhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px;font-weight:700}
-  .rrname{min-width:0;display:flex;align-items:baseline;gap:7px;overflow:hidden}
+  /* no overflow:hidden here: .rrlbl inside does its own ellipsis, and a clipping
+     box around the badge is what shaved its bottom edge off */
+  .rrname{min-width:0;display:flex;align-items:baseline;gap:7px}
   .rrdot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;align-self:center}
   .rrlbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .rrwhen{flex:0 0 auto;display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-weight:600}
@@ -390,14 +392,17 @@
   /* due now: an hour out, or already past. Tinted in the substance's own colour
      so it reads as "this one, now" at a glance, and in the alarm colour once the
      moment has passed — late still looks different from nearly-there. */
-  /* inline-block, centred on the line: an inline span hangs from the text's
-     baseline and its padding paints outside the line box, so on a font with a
-     deeper descent the bottom edge lands below .pepname and overflow:hidden
-     shaves it off. Centred and 15.5px tall it sits inside the 18px line on any
-     font, and the line does not grow -- every card stays the same height. */
-  .duebadge{flex:0 0 auto;display:inline-block;vertical-align:middle;font-size:9.5px;font-weight:800;letter-spacing:.06em;
-    padding:3px 6px;border-radius:999px;background:var(--c);color:var(--on-brand);
-    line-height:1;align-self:center;position:relative;top:-1px}
+  /* A badge is a sibling of the name, never a child of it: .pepname must clip
+     to put an ellipsis in a long name, and anything sitting inside that box gets
+     clipped with it. Tuning the padding only moved the problem between fonts --
+     out here there is nothing to clip against. 15.5px tall against an 18px line,
+     so the row does not grow and every card stays the same height. */
+  .duebadge,.vialbadge{flex:0 0 auto;align-self:center;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+    padding:3px 6px;border-radius:999px;line-height:1;white-space:nowrap}
+  .duebadge{background:var(--c);color:var(--on-brand)}
+  /* the vial is running out: the alarm colour rather than the substance's own,
+     because this one is not about which shot is next but about what is left */
+  .vialbadge{background:var(--bad);color:#fff}
   a.rrow.due,.rrow.due{background:var(--ct);border-left:3px solid var(--c);
     border-radius:10px;margin-left:-9px;padding:6px 7px 4px 7px}
   /* reorder mode owns the row's look (dashed, soft, no bar); the due tint must
@@ -786,6 +791,10 @@ var I18N = (function(){
     "pep.dosesLeft":{pl:"{n} dawka|{n} dawki|{n} dawek",en:"{n} dose|{n} doses|{n} doses"},
     "pep.vialTill":{pl:"starczy do {d}",en:"lasts until {d}"},
     "pep.vialSpent":{pl:"nie starczy na dawkę",en:"not enough for a dose"},
+    "pep.vialWarnLeft":{pl:"\u2248{n} DAWKA|\u2248{n} DAWKI|\u2248{n} DAWEK",en:"\u2248{n} DOSE|\u2248{n} DOSES|\u2248{n} DOSES"},
+    "pep.vialWarnLast":{pl:"OSTATNIA",en:"LAST ONE"},
+    "pep.vialWarnEmpty":{pl:"PUSTA",en:"EMPTY"},
+    "pep.vialWarnTip":{pl:"Fiolka się kończy — rozrób nową w „Edytuj peptyd\".",en:"The vial is running out — mix a new one under \"Edit peptide\"."},
     "pep.vialOf":{pl:"{left} z {cap} {u}",en:"{left} of {cap} {u}"},
     "pep.vialNoDose":{pl:"{n} zastrzyk bez wpisanej dawki nie został odjęty|{n} zastrzyki bez wpisanej dawki nie zostały odjęte|{n} zastrzyków bez wpisanej dawki nie zostało odjętych",
                       en:"{n} shot with no dose recorded was not subtracted|{n} shots with no dose recorded were not subtracted|{n} shots with no dose recorded were not subtracted"},
@@ -5950,8 +5959,9 @@ var UI = (function(){
     // the name, the countdown beside the subtitle. Splitting the pair this way
     // also keeps the subtitle wide — the figure ("9h") is far narrower than the
     // moment ("czw. 08:11") that used to reserve the space on both lines.
-    var inner='<span class="peptop"><span class="pepname">'+esc(substLabel(st,sub))
-        +(dueSoon&&!injReorder?' <span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>':'')+'</span>'
+    var inner='<span class="peptop"><span class="pepname">'+esc(substLabel(st,sub))+'</span>'
+        +(dueSoon&&!injReorder?'<span class="duebadge">'+esc(I18N.t("inj.dueBadge"))+'</span>':'')
+        +(injReorder?"":vialBadgeHTML(st, p, last))
         +'<span class="pepwhen">'+(cd?esc(fmtNextShot(cd.nextMs)):esc(I18N.t("inj.pepNoShots")))+'</span></span>'
         +'<span class="pepbot"><span class="pepsub">'+bits.join(" &middot; ")+'</span>'
         +'<span class="pepbig">'+(cd?esc(countdownBig(cd)):"&mdash;")+'</span></span>';
@@ -5970,6 +5980,26 @@ var UI = (function(){
       +(cyc?tallyHTML(cyc.weeksDone):"")
       +'<div class="wbar flush"><span style="width:'+Math.round((cd?(cd.overdue?1:cd.frac):0)*100)+'%"></span></div>'
       +'</div>';
+  }
+  // The one thing about a vial worth shouting from the list: it is about to run
+  // out. Under four doses it says how many are left, at one that the next shot
+  // empties it, at none that there is nothing to draw. Above that -- nothing:
+  // a badge that is always up is a badge nobody reads. The count comes from the
+  // same DOMAIN.vialStatus the draw box uses, so the list and the form cannot
+  // disagree about what is in the vial.
+  var VIAL_WARN_DOSES=3;
+  function vialBadgeHTML(st, p, last){
+    if(!p || !last || last.dose==null) return "";
+    var log=DOMAIN.visibleInjLog(st).filter(function(e){ return e && e.substance===p.id; });
+    var vs=DOMAIN.vialStatus(pepVials(st,p), log, todayISO(), last.dose, last.unit||p.unit,
+                             DOMAIN.daysPerDose(substInterval(st,p.id), substDays(st,p.id),
+                                                substTimes(st,p.id), substPerDay(st,p.id)),
+                             nextDoseISO(st, p.id));
+    if(!vs || vs.doses==null || vs.doses>VIAL_WARN_DOSES) return "";
+    var txt = vs.doses===0 ? I18N.t("pep.vialWarnEmpty")
+            : vs.doses===1 ? I18N.t("pep.vialWarnLast")
+            : I18N.plural("pep.vialWarnLeft", vs.doses);
+    return '<span class="vialbadge" title="'+esc(I18N.t("pep.vialWarnTip"))+'">'+esc(txt)+'</span>';
   }
   // Four marks with a stroke through them: a closed group, four weeks, near
   // enough a month. Fewer than four is a group still being filled, so no stroke.
