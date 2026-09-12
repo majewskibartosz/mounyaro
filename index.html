@@ -450,6 +450,15 @@
   .bodymap{max-width:280px;margin:6px auto 2px;display:block}
   .bodymap .site{cursor:pointer}
   /* abdomen close-up spot picker */
+  /* the draw box: units to pull on the left, what is left in the vial on the
+     right. They sit on one line and wrap to two only when the words are too
+     long for the width -- the right column keeps its edge either way. */
+  .drawbox{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;
+    border:2px solid var(--c);border-radius:14px;padding:10px 12px;margin:-2px 0 12px}
+  .drawbox>div{min-width:0}
+  .drawbox .dbunits{font-size:20px;font-weight:800;color:var(--c)}
+  .drawbox .dbleft{text-align:right;margin-left:auto}
+  .drawbox .dbleft b{font-size:15px;font-weight:800;color:var(--c);display:block}
   .bellymap{max-width:360px;width:100%;margin:6px auto 2px;display:block;cursor:crosshair;touch-action:manipulation}
   /* a flank is 12 x 18 cm to the belly's 43 x 29: drawn to the belly's width it
      would tower over the form, so it is capped narrower and stands taller */
@@ -593,7 +602,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v197";
+var BUILD = "mj-v198";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -766,6 +775,13 @@ var I18N = (function(){
     "pep.vialEndDate":{pl:"Skończyła się",en:"Ran out on"},
     "pep.vialDone":{pl:"Skończona",en:"Finished"},
     "pep.vialSave":{pl:"Zapisz fiolkę",en:"Save the vial"},
+    "pep.dosesLeft":{pl:"Została {n} dawka|Zostały {n} dawki|Zostało {n} dawek",
+                     en:"{n} dose left|{n} doses left|{n} doses left"},
+    "pep.vialTill":{pl:"starczy do {d}",en:"lasts until {d}"},
+    "pep.vialSpent":{pl:"nie starczy na dawkę",en:"not enough for a dose"},
+    "pep.vialOf":{pl:"{left} z {cap} {u}",en:"{left} of {cap} {u}"},
+    "pep.vialNoDose":{pl:"{n} zastrzyk bez wpisanej dawki nie został odjęty|{n} zastrzyki bez wpisanej dawki nie zostały odjęte|{n} zastrzyków bez wpisanej dawki nie zostało odjętych",
+                      en:"{n} shot with no dose recorded was not subtracted|{n} shots with no dose recorded were not subtracted|{n} shots with no dose recorded were not subtracted"},
     "pep.colorTaken":{pl:"Kolor zajęty przez inny środek",en:"Colour already used by another substance"},
     "pep.colorBrand":{pl:"Tirzepatyd nosi kolor wiodący motywu — zmienia się razem z nim.",en:"Tirzepatyd wears the theme's brand colour and changes with it."},
     "pep.setVial":{pl:"Ustaw fiolkę w „Edytuj peptyd\", aby zobaczyć ile nabrać na insulinówkę.",en:"Set the vial under \"Edit peptide\" to see how much to draw."},
@@ -1360,7 +1376,19 @@ var I18N = (function(){
     if(!e) return key;
     return e[lang] || e.pl || key;
   }
-  return { setLang:setLang, t:t, get lang(){return lang;} };
+  // Polish counts in three: 1 dawka, 2-4 dawki, 5+ dawek -- and the teens go
+  // with the last form, which is why 22 takes "dawki" but 12 takes "dawek".
+  // English needs two, so its entry simply repeats the second. The dictionary
+  // holds all three separated by "|", in that order. `shown` lets the figure be
+  // written differently from the number the form is chosen by ("~8").
+  function plural(key, n, shown){
+    var forms=t(key).split("|"), i;
+    if(n===1) i=0;
+    else if(lang==="pl" && n%10>=2 && n%10<=4 && !(n%100>=12 && n%100<=14)) i=1;
+    else i=2;
+    return (forms[i]||forms[forms.length-1]).replace("{n}", shown!=null?shown:String(n));
+  }
+  return { setLang:setLang, t:t, plural:plural, get lang(){return lang;} };
 })();
 
 /* =========================================================================
@@ -6087,12 +6115,55 @@ var UI = (function(){
       return "";
     }
     var pc=substColor(st, p.id);
-    return '<div style="border:2px solid '+pc+';border-radius:14px;padding:10px 12px;margin:-2px 0 12px">'
-      +'<div style="font-size:20px;font-weight:800;color:'+pc+'">'
-        +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
-      +'<div class="tiny muted" style="margin-top:2px">'
-        +esc(fmtDose(Number(dose))+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
+    return '<div class="drawbox" style="--c:'+pc+'">'
+      +'<div>'
+        +'<div class="dbunits">'
+          +esc(I18N.t("pep.draw"))+' '+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</div>'
+        +'<div class="tiny muted" style="margin-top:2px">'
+          +esc(fmtDose(Number(dose))+" "+p.unit+" "+I18N.t("pep.drawAt")+" "+fmtConc(conc)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml")+'</div>'
+      +'</div>'
+      +vialLeftHTML(st, p, dose, dISO)
       +'</div>';
+  }
+  // The other half of the same question: the vial holds so much, this draw takes
+  // so much, so how many more are in there and how far do they reach. Everything
+  // is read, nothing is stored -- it recomputes on every keystroke in the dose
+  // field, which is what makes it follow a changed dose or unit by itself.
+  function vialLeftHTML(st, p, dose, dISO){
+    var log=DOMAIN.visibleInjLog(st).filter(function(e){ return e && e.substance===p.id; });
+    var vs=DOMAIN.vialStatus(pepVials(st,p), log, dISO||todayISO(), dose, p.unit,
+                             DOMAIN.daysPerDose(substInterval(st,p.id), substDays(st,p.id),
+                                                substTimes(st,p.id), substPerDay(st,p.id)),
+                             nextDoseISO(st, p.id));
+    if(!vs || vs.doses==null) return "";
+    var vu=DOMAIN.vialUnitFor(p.unit);
+    // Always "~": this is what the log says was drawn, not what a scale says is
+    // in the vial. The title spells the arithmetic out, and admits it when a
+    // shot with no dose on it could not be subtracted.
+    var tip=I18N.t("pep.vialOf").replace("{left}", fmtDose(vs.left)).replace("{cap}", fmtDose(vs.cap)).replace("{u}", vu)
+      + (vs.mlLeft!=null ? " \u00b7 "+fmtDose(vs.mlLeft)+" ml" : "")
+      + (vs.unknown ? " \u00b7 "+I18N.plural("pep.vialNoDose", vs.unknown) : "");
+    var head = vs.doses>0
+      ? I18N.plural("pep.dosesLeft", vs.doses, "\u2248"+vs.doses)
+      : I18N.t("pep.vialSpent");
+    return '<div class="dbleft" title="'+esc(tip)+'"><b>'+esc(head)+'</b>'
+      +(vs.runOutISO?'<span class="tiny muted">'+esc(I18N.t("pep.vialTill").replace("{d}", fmtDate(vs.runOutISO,true)))+'</span>':'')
+      +'</div>';
+  }
+  // The day the next dose is due, as a plain date -- the anchor a "lasts until"
+  // estimate counts forward from, so it agrees with the countdown on the card
+  // instead of starting from an arbitrary today. Local, never UTC: toISOString
+  // on a raw timestamp moves the day for anyone east or west of Greenwich.
+  function nextDoseISO(st, sub){
+    var lastTs=lastInjTs(st, sub);
+    var cd=DOMAIN.doseCountdown(lastTs, substInterval(st, sub), Date.now(),
+                                substDays(st, sub), substTimes(st, sub), substDayCtx(st, sub, lastTs));
+    if(!cd || cd.nextMs==null) return todayISO();
+    var d=new Date(cd.nextMs); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+    var iso=d.toISOString().slice(0,10), today=todayISO();
+    // Never behind today: an overdue shot is still ahead of you, and counting
+    // the vial forward from a day that has passed would end it too early.
+    return iso<today ? today : iso;
   }
   function pepFormHTML(st){
     var isNew=(pepEditId==="new"), p=isNew?null:peptideById(st, pepEditId);
