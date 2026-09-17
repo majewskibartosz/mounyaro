@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v203";
+var BUILD = "mj-v204";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -4120,6 +4120,62 @@ var UI = (function(){
     });});
   }
 
+  /* ---- drafts: a half-typed measurement survives a change of card ----
+     Every view rebuilds its section's innerHTML, so leaving a card and coming
+     back used to wipe whatever was typed but not yet saved -- three readings of
+     a blood-pressure series among them. It lives under its OWN localStorage key,
+     never inside the health record: a draft is not data, and must not reach the
+     export, the linked file or a chart. It expires, so a number typed a week ago
+     never surfaces as if it were fresh, and every touch of storage is wrapped --
+     a private window can refuse it, and a form that cannot remember must still
+     work. Only what was actually touched is kept: a date nobody edited stays
+     "now" instead of freezing the moment the card was left. */
+  var DRAFT_KEY="mounjaro.draft", DRAFT_TTL=24*3600*1000;
+  function draftBag(){
+    try{
+      var raw=localStorage.getItem(DRAFT_KEY);
+      if(!raw) return {};
+      var bag=JSON.parse(raw);
+      if(!bag || typeof bag!=="object") return {};
+      if(!bag.ts || Date.now()-bag.ts > DRAFT_TTL){ localStorage.removeItem(DRAFT_KEY); return {}; }
+      return bag;
+    }catch(e){ return {}; }
+  }
+  function draftGet(form){ var f=draftBag()[form]; return (f && typeof f==="object") ? f : {}; }
+  function draftWrite(form, fields){
+    try{
+      var bag=draftBag();
+      if(fields===null) delete bag[form]; else bag[form]=fields;
+      var live=false, k;
+      for(k in bag) if(k!=="ts" && bag[k]) live=true;
+      if(!live) localStorage.removeItem(DRAFT_KEY);
+      else { bag.ts=Date.now(); localStorage.setItem(DRAFT_KEY, JSON.stringify(bag)); }
+    }catch(e){}
+  }
+  function draftClear(form){ draftWrite(form, null); }
+  // Puts the draft back into the fields and keeps it current as they are typed.
+  // `ids` are plain inputs (value, or checked for a checkbox); `segs` are the
+  // segmented pickers whose choice lives only in an `on` class on a button.
+  function bindDraft(form, ids, segs){
+    var d=draftGet(form), touched={}, k;
+    for(k in d) touched[k]=d[k];
+    function store(){ draftWrite(form, touched); }
+    ids.forEach(function(id){
+      var el=$("#"+id); if(!el) return;
+      var box=(el.type==="checkbox");
+      if(d[id]!==undefined){ if(box) el.checked=!!d[id]; else el.value=d[id]; }
+      el.addEventListener("input",function(){ touched[id]=box?el.checked:el.value; store(); });
+      el.addEventListener("change",function(){ touched[id]=box?el.checked:el.value; store(); });
+    });
+    (segs||[]).forEach(function(id){
+      var box=$("#"+id); if(!box) return;
+      var btns=$all("#"+id+" button");
+      if(d[id]!==undefined) btns.forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-t")===d[id]); });
+      btns.forEach(function(b){ b.addEventListener("click",function(){ touched[id]=b.getAttribute("data-t"); store(); }); });
+    });
+    return d;
+  }
+
   /* ---- chart range: day-window presets (7/14/30/90/all) + ‹ › history paging ---- */
   var RANGE_PRESETS=[7,14,30,90,null];   // null = full history
   function rangeHeader(titleKey, cls, state, win){
@@ -4409,8 +4465,10 @@ var UI = (function(){
       }
       st.weightLog.sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:0; });
       weightPage=0;
+      draftClear("weight");
       STORE.save(); toast(I18N.t("common.saved")); viewWeight();
     });
+    if(!editing) bindDraft("weight", ["wKg","wWaist","wDose","wNote","wDate","wTime"]);
     if($("#wCancel")) $("#wCancel").addEventListener("click",function(){ weightEdit=null; viewWeight(); });
     bindPager("wPg", function(){return weightPage;}, function(v){weightPage=v;}, viewWeight);
     bindRange("wRg", weightRange, viewWeight);
@@ -4640,12 +4698,14 @@ var UI = (function(){
       }
       st.glu.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       gluPage=0;
+      draftClear("glu");
       STORE.save(); toast(I18N.t("common.saved")); viewGlucose();
     });
     // The tag is a plain segment: pick one, nothing else moves.
     $all("#gluTags button").forEach(function(b){ b.addEventListener("click",function(){
       $all("#gluTags button").forEach(function(x){ x.classList.toggle("on", x===b); });
     });});
+    if(!editing) bindDraft("glu", ["gluVal","gluNote","gluDate","gluTime"], ["gluTags"]);
     if($("#gluCancel")) $("#gluCancel").addEventListener("click",function(){ gluEdit=null; viewGlucose(); });
     bindPager("gluPg", function(){return gluPage;}, function(v){gluPage=v;}, viewGlucose);
     bindRange("gluRg", gluRange, viewGlucose);
@@ -4806,6 +4866,7 @@ var UI = (function(){
       }
       st.bp.log.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
       bpPage=0;
+      draftClear("bp");           // it is a reading now, not a draft
       STORE.save(); toast(I18N.t("common.saved")); viewBP();
     });
     // Swaps the two blocks by visibility rather than re-rendering, so switching
@@ -4827,7 +4888,12 @@ var UI = (function(){
         : '<span class="muted tiny">'+esc(I18N.t("bp.needTwo"))+'</span>';
     }
     $all(".bpS").forEach(function(i){ i.addEventListener("input", bpRefreshAvg); });
-    if(series) bpRefreshAvg();
+    // Editing an entry shows what was saved; the draft belongs to the new one
+    // and must neither overwrite that form nor be overwritten by it.
+    if(!editing) bindDraft("bp", ["bpSys","bpDia","bpPulse","bpSys1","bpDia1","bpPulse1",
+                                  "bpSys2","bpDia2","bpPulse2","bpSys3","bpDia3","bpPulse3",
+                                  "bpFast","bpNote","bpDate","bpTime"]);
+    if(series) bpRefreshAvg();   // after the draft is back, so the average counts it
     $all(".bpAvgToggle").forEach(function(b){ b.addEventListener("click",function(){
       var id=b.getAttribute("data-id"); bpOpenId=(bpOpenId===id)?null:id; viewBP();
     });});
