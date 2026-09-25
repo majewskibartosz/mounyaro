@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v204";
+var BUILD = "mj-v205";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -3037,6 +3037,22 @@ var STORE = (function(){
   }
   // A legacy backup's "illness" array survives merge() untouched (unknown keys
   // are never pruned), so it is still there to read the one time this runs.
+  // Every injection's `date` is, by definition, the day its own `ts` fell on
+  // where it was taken -- but it used to be sliced off the UTC string, so a shot
+  // logged between midnight and 2am was filed on the day before: the wrong
+  // weekday on its row, the wrong point on the chart, the wrong vial, and a day
+  // missing from the dose counter. Recomputing it from `ts` is a repair, not a
+  // guess. A row with no `ts` (a legacy jab.history date materialised into the
+  // log) has nothing to recompute from and is left exactly as it is.
+  // Idempotent, so it can run on every load and heal an old export on import.
+  function repairLocalDates(st){
+    ((st&&st.injLog)||[]).forEach(function(e){
+      if(!e || !e.ts) return;
+      var fixed=DOMAIN.localDayISO(e.ts);
+      if(fixed && e.date!==fixed) e.date=fixed;
+    });
+    return st;
+  }
   // Idempotent like the other migrations: returns immediately once conditions
   // already has entries.
   function migrateConditions(st){
@@ -3074,7 +3090,7 @@ var STORE = (function(){
   // stripDescribed first: an enriched file carries names next to its ids, and
   // those must not settle into the state -- they would go stale the first time
   // something is renamed. A file without them passes through untouched.
-  function hydrate(parsed){ return ensureCondLooks(ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), DOMAIN.stripDescribed(parsed))))))); }
+  function hydrate(parsed){ return repairLocalDates(ensureCondLooks(ensurePepTones(ensureTirzepatide(migratePeptides(migrateConditions(merge(defaults(), DOMAIN.stripDescribed(parsed)))))))); }
   function merge(base, over){
     if(typeof over!=="object"||over===null) return base;
     var out = Array.isArray(base)? base.slice():Object.assign({},base);

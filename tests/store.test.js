@@ -213,6 +213,31 @@ test("migration: named and unnamed rows coexist — unnamed stay on the legacy i
   assert.notStrictEqual(log[0].substance, "peptide");
 });
 
+test("dates filed a day early are repaired from the shot's own timestamp", function () {
+  // What the old save wrote for a shot taken at 00:29: the ts is right, the
+  // date is the UTC slice of it, which east of Greenwich is the day before.
+  var when = new Date(2026, 8, 24, 0, 29, 0);
+  var saved = {
+    schemaVersion: 1,
+    inj: { peptides: [] },
+    injLog: [
+      { id: "a", ts: when.toISOString(), date: when.toISOString().slice(0, 10), substance: "x", dose: 1.5 },
+      { id: "b", ts: new Date(2026, 8, 22, 23, 56, 0).toISOString(), date: "2026-09-22", substance: "x", dose: 1.5 },
+      { id: "c", date: "2026-09-20", substance: "x", dose: 1.5 }]   // legacy row, no ts
+  };
+  var STORE = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(saved) }));
+  STORE.load();
+  var log = Array.from(STORE.state.injLog);
+  assert.strictEqual(log[0].date, "2026-09-24", "recomputed from its own ts");
+  assert.strictEqual(log[1].date, "2026-09-22", "one that was already right is left alone");
+  assert.strictEqual(log[2].date, "2026-09-20", "and one with no ts has nothing to recompute from");
+  // idempotent: loading what was just saved changes nothing further
+  var again = harness.loadStore(harness.fakeLocalStorage({ "mounjaro.v1": JSON.stringify(STORE.state) }));
+  again.load();
+  assert.deepStrictEqual(Array.from(again.state.injLog).map(function (e) { return e.date; }),
+                         ["2026-09-24", "2026-09-22", "2026-09-20"]);
+});
+
 test("vialTrack: switched off it survives, left alone it never appears", function () {
   var saved = {
     schemaVersion: 1,
