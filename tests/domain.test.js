@@ -1196,6 +1196,57 @@ test("cadenceKey: the hours are part of the regimen", function () {
   assert.strictEqual(DOMAIN.cadenceKey({ every: 2 }), "e:2");
 });
 
+test("localDayISO: the day the clock on the wall says, not the one UTC says", function () {
+  // 00:29 local is the 24th wherever the process is standing; the UTC string
+  // would have said the 23rd anywhere east of Greenwich
+  var justAfterMidnight = new Date(2026, 8, 24, 0, 29, 0);
+  assert.strictEqual(DOMAIN.localDayISO(justAfterMidnight), "2026-09-24");
+  assert.strictEqual(DOMAIN.localDayISO(justAfterMidnight.getTime()), "2026-09-24");
+  // and the last minute of a day is still that day
+  assert.strictEqual(DOMAIN.localDayISO(new Date(2026, 8, 24, 23, 59, 0)), "2026-09-24");
+  assert.strictEqual(DOMAIN.localDayISO(new Date(2026, 0, 1, 0, 0, 0)), "2026-01-01");
+  // months and days are padded, so the string sorts and compares as a date
+  assert.strictEqual(DOMAIN.localDayISO(new Date(2026, 0, 5, 12, 0, 0)), "2026-01-05");
+  // a DST changeover day names itself correctly on both sides of the jump
+  assert.strictEqual(DOMAIN.localDayISO(new Date(2026, 2, 29, 1, 30, 0)), "2026-03-29");
+  assert.strictEqual(DOMAIN.localDayISO(new Date(2026, 2, 29, 3, 30, 0)), "2026-03-29");
+  assert.strictEqual(DOMAIN.localDayISO("nonsense"), null);
+});
+
+test("nextSlotMs: a shot taken after midnight belongs to the day it was taken", function () {
+  // The reported case: 23:00 on Tue-Sat, shot logged Thursday 00:29. By plain
+  // distance that is 1.5 h past WEDNESDAY's slot and 22.5 h before Thursday's,
+  // so it used to settle Wednesday -- leaving Thursday 23:00 unserved and the
+  // row ten hours overdue by Friday morning, shouting for a dose already taken.
+  var TUE_TO_SAT = [2, 3, 4, 5, 6], T = ["23:00"];
+  var pastMidnight = new Date(2026, 8, 24, 0, 29, 0).getTime();   // Thursday
+  assert.strictEqual(DOMAIN.nextSlotMs(pastMidnight, TUE_TO_SAT, T),
+                     new Date(2026, 8, 25, 23, 0, 0).getTime(), "Friday, not Thursday");
+  // and nothing about an ordinary evening shot moves
+  var sameEvening = new Date(2026, 8, 24, 23, 4, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(sameEvening, TUE_TO_SAT, T),
+                     new Date(2026, 8, 25, 23, 0, 0).getTime());
+  // taken early is still THAT dose -- the rule this one has to leave standing
+  var early = new Date(2026, 8, 24, 22, 45, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(early, TUE_TO_SAT, T),
+                     new Date(2026, 8, 25, 23, 0, 0).getTime());
+  // a day that names no slot of its own still looks further afield: Sunday is
+  // not on the plan, so the nearest slot anywhere decides, as it always did
+  var sunday = new Date(2026, 8, 27, 12, 0, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(sunday, TUE_TO_SAT, T),
+                     new Date(2026, 8, 29, 23, 0, 0).getTime(), "Saturday settled, so Tuesday next");
+});
+
+test("nextSlotMs: past midnight with two hours a day still owes the second one", function () {
+  var T = ["08:00", "20:00"], EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+  // 00:29 is nearest to this day's 08:00, so the morning counts as served and
+  // the evening is what is still owed -- the day is never asked for more doses
+  // than it names
+  var pastMidnight = new Date(2026, 8, 24, 0, 29, 0).getTime();
+  assert.strictEqual(DOMAIN.nextSlotMs(pastMidnight, EVERY_DAY, T),
+                     new Date(2026, 8, 24, 20, 0, 0).getTime());
+});
+
 test("nextSlotMs: twice a day lands on the evening, then on tomorrow morning", function () {
   var T = ["08:00", "20:00"], EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
   // Monday 08:05 -> the same evening

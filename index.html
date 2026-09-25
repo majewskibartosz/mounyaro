@@ -2213,13 +2213,27 @@ var DOMAIN = (function(){
         slotsOnDay(slots, new Date(base.getFullYear(), base.getMonth(), base.getDate()+q*step), ts);
     }
     if(slots.length<2) return null;
+    // A shot belongs to the day it was taken. Past midnight a 23:00 dose is
+    // nearer YESTERDAY's slot than today's, so filing it by distance alone left
+    // today's slot looking untaken -- and by morning the row was ten hours
+    // overdue, shouting for a dose that had already gone in. So when the day a
+    // shot landed on names slots of its own, it settles one of THOSE: the
+    // nearest among them, which keeps the hour it was actually taken at doing
+    // the deciding.
     // Ties go to the earlier slot, so a genuinely ambiguous shot never swallows
-    // a dose that is still ahead.
-    var best=0;
-    for(var j=1;j<slots.length;j++){
-      if(Math.abs(slots[j]-lastMs) < Math.abs(slots[best]-lastMs)) best=j;
+    // a dose that is still ahead. The search is limited to the shot's own day
+    // whenever that day names slots at all; only a day with none of its own --
+    // a Tuesday shot on a Mon/Wed plan -- looks further afield.
+    var d0=new Date(lastMs);
+    var dayFrom=new Date(d0.getFullYear(), d0.getMonth(), d0.getDate()).getTime();
+    var dayTo=dayFrom+86400000, j, own=false;
+    for(j=0;j<slots.length;j++) if(slots[j]>=dayFrom && slots[j]<dayTo){ own=true; break; }
+    var best=-1;
+    for(j=0;j<slots.length;j++){
+      if(own && (slots[j]<dayFrom || slots[j]>=dayTo)) continue;
+      if(best<0 || Math.abs(slots[j]-lastMs) < Math.abs(slots[best]-lastMs)) best=j;
     }
-    return (best+1<slots.length) ? slots[best+1] : null;
+    return (best>=0 && best+1<slots.length) ? slots[best+1] : null;
   }
   // How many doses a day, as a plain count. 1 (or nothing) is the ordinary case.
   function normPerDay(n){
