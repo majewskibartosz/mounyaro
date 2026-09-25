@@ -1423,6 +1423,17 @@ var DOMAIN = (function(){
   var GOLDEN_UNITS = 60;
   function round(n){ return Math.round(n); }
   function r3(n){ return Math.round(n*1000)/1000; }
+  // The calendar day a moment falls on, read off the clock the user reads --
+  // never toISOString(), which is UTC. In Warsaw everything between midnight
+  // and 2am is still "yesterday" by UTC, so a shot logged at 00:29 was being
+  // filed a day early: the wrong weekday on the row, the wrong day on the
+  // chart, the wrong vial, and a cycle counter one short.
+  function localDayISO(t){
+    var d=(t instanceof Date) ? t : new Date(t);
+    if(isNaN(d.getTime())) return null;
+    function pad(n){ return (n<10?"0":"")+n; }
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  }
 
   function mgPerClick(S){ return S/CLICKS_PER_DOSE; }
   function clicksForDose(D,S){ return Math.max(0, Math.round(D*CLICKS_PER_DOSE/S)); }
@@ -1967,7 +1978,7 @@ var DOMAIN = (function(){
     } else if(kind==="vital"){
       (state.bp && state.bp.log ? state.bp.log : []).forEach(function(e){
         if(e && e[key]!=null && e[key]!=="" && e.ts)
-          out.push({date:String(e.ts).slice(0,10), value:Number(e[key])});
+          out.push({date:localDayISO(e.ts), value:Number(e[key])});
       });
     } else if(sourceId==="weight"){
       (state.weightLog||[]).forEach(function(e){
@@ -1978,7 +1989,7 @@ var DOMAIN = (function(){
       var byDay={};
       (state.stateLog||[]).concat(state.journal||[]).forEach(function(e){
         if(e && e[key]!=null && e.ts){
-          var sd=String(e.ts).slice(0,10);
+          var sd=localDayISO(e.ts);
           (byDay[sd]=byDay[sd]||[]).push(Number(e[key]));
         }
       });
@@ -1995,7 +2006,7 @@ var DOMAIN = (function(){
       var symCompound=parts[1]+":"+parts[2], byDaySym={};
       (state.journal||[]).forEach(function(e){
         if(e && e.symptoms && e.symptoms[symCompound]!=null && e.ts){
-          var sd2=String(e.ts).slice(0,10);
+          var sd2=localDayISO(e.ts);
           (byDaySym[sd2]=byDaySym[sd2]||[]).push(Number(e.symptoms[symCompound]));
         }
       });
@@ -2006,7 +2017,7 @@ var DOMAIN = (function(){
       }}
     } else if(sourceId==="glucose"){
       (state.glu && state.glu.log ? state.glu.log : []).forEach(function(e){
-        if(e && e.mgdl!=null && e.ts) out.push({date:String(e.ts).slice(0,10), value:Number(e.mgdl)});
+        if(e && e.mgdl!=null && e.ts) out.push({date:localDayISO(e.ts), value:Number(e.mgdl)});
       });
     } else if(sourceId==="waist"){
       (state.weightLog||[]).forEach(function(e){
@@ -2855,7 +2866,7 @@ var DOMAIN = (function(){
     gluTypicalRange:gluTypicalRange, GLU_TAGS:GLU_TAGS,
     describe:describe, stripDescribed:stripDescribed, symptomParts:symptomParts, SITE_CODES:SITE_CODES,
     parseRoute:parseRoute, buildRoute:buildRoute,
-    daysPerDose:daysPerDose, vialStatus:vialStatus,
+    daysPerDose:daysPerDose, vialStatus:vialStatus, localDayISO:localDayISO,
     spotCheck:spotCheck, suggestSpot:suggestSpot, recentInjPos:recentInjPos, spotArea:spotArea,
     SPOT_MIN_CM:SPOT_MIN_CM, SPOT_NAVEL_CM:SPOT_NAVEL_CM, SPOT_AREAS:SPOT_AREAS
   };
@@ -3315,7 +3326,9 @@ function fmtMoneyTxt(n, currency){
   catch(e){ num = Number(n).toFixed(2); }
   return num+" "+cur;
 }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+// Today as the phone shows it. DOMAIN owns the rule; this is the shorthand the
+// views use, and it must never drift back to a UTC slice.
+function todayISO(){ return DOMAIN.localDayISO(new Date()); }
 // Localized day-first date for display (ISO stays the storage format).
 // shortYear renders "12.07.26" for tight table columns.
 function fmtDate(iso, shortYear){
@@ -4663,8 +4676,8 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("glu.history"))+'</h2><div class="scroll"><table><tbody>';
       gluPage=pageClamp(gluPage, log.length);
       pageSlice(log, gluPage).forEach(function(e){
-        html+='<tr><td style="width:45%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(String(e.ts).slice(0,10))
-            + injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
+        html+='<tr><td style="width:45%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(DOMAIN.localDayISO(e.ts))
+            + injDayMarkersBlock(st, DOMAIN.localDayISO(e.ts), e.ts)
             + '<span class="pill" style="display:inline-block;margin-top:2px;background:var(--brand-t14);color:var(--brand-dk)">'+esc(gluTagLabel(e.tag))+'</span>'
             + (e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:25%"><b class="nowrap">'+esc(gluShow(e.mgdl, unit))+'</b>'
@@ -4733,7 +4746,7 @@ var UI = (function(){
     // current Mounjaro/TRT dose pills (same context as the journal composer)
     function bpCtxHtml(dISO){ var tags=weekTags(st, dISO); return tags.length?weekPills(tags):''; }
     // doses in effect on a reading's date (shared pill renderer)
-    function doseCell(e){ return dosePillsAsOf(st, String(e.ts).slice(0,10), e.doseMg); }
+    function doseCell(e){ return dosePillsAsOf(st, DOMAIN.localDayISO(e.ts), e.doseMg); }
     var html=''
     + pageHead("bp.title") + vitalsSwitch("bp");
 
@@ -4807,7 +4820,7 @@ var UI = (function(){
       html+='<div class="card"><h2>'+esc(I18N.t("bp.history"))+'</h2><div class="scroll"><table><tbody>';
       bpPage=pageClamp(bpPage, log.length);
       pageSlice(log, bpPage).forEach(function(e){
-        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(String(e.ts).slice(0,10))+injDayMarkersBlock(st, String(e.ts).slice(0,10), e.ts)
+        html+='<tr><td style="width:33%">'+esc(fmtDateTime(e.ts))+' '+dowBadge(DOMAIN.localDayISO(e.ts))+injDayMarkersBlock(st, DOMAIN.localDayISO(e.ts), e.ts)
             +(e.fasting?'<span class="pill" style="display:inline-block;margin-top:2px;background:var(--brand-t14);color:var(--brand-dk)">'+esc(I18N.t("bp.fastingTag"))+'</span>':'')
             +(e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
             + '<td style="width:20%"><b class="nowrap">'+e.sys+'/'+e.dia+'</b>'
@@ -5472,7 +5485,7 @@ var UI = (function(){
       journalPage=pageClamp(journalPage, items.length, JOURNAL_PAGE);
       var lastDay=null;
       pageSlice(items, journalPage, JOURNAL_PAGE).forEach(function(it){
-        var dISO=it.legacy?it.date:String(it.ts).slice(0,10);
+        var dISO=it.legacy?it.date:DOMAIN.localDayISO(it.ts);
         // the illness flag is day-derived, so it lands on every item type
         var ill=DOMAIN.illnessAsOf(st, dISO), ic=ill?illColor(ill.severity):null;
         if(dISO!==lastDay){
@@ -5523,7 +5536,7 @@ var UI = (function(){
       // only symptoms of conditions actually open on the note's own date count —
       // otherwise a dot tapped before backdating the note could attach to a day
       // it was never shown on
-      var dISO=when.toISOString().slice(0,10);
+      var dISO=DOMAIN.localDayISO(when);
       var validKeys={};
       DOMAIN.openConditions(st, dISO).forEach(function(o){
         var e=null; (st.conditions||[]).forEach(function(c){ if(c.id===o.id) e=c; });
@@ -7988,7 +8001,9 @@ var UI = (function(){
       // when given: chosen datetime (defaults to now); ts is full datetime, date is the day part
       var wv=$("#injDate")&&$("#injDate").value ? $("#injDate").value+"T"+($("#injTime").value||"12:00") : "";
       var when=wv?new Date(wv):new Date(); if(isNaN(when.getTime())) when=new Date();
-      var ts=when.toISOString(), dateStr=ts.slice(0,10);
+      // `ts` is the moment, `date` the day it fell on where you are standing --
+      // slicing the UTC string put a 00:29 shot on yesterday.
+      var ts=when.toISOString(), dateStr=DOMAIN.localDayISO(when);
       // sandbag flag: only when the checkbox is rendered (TRT + setting on);
       // null leaves an edited entry's stored flag untouched
       var sb=$("#injSandbag")?$("#injSandbag").checked:null;
@@ -8179,12 +8194,12 @@ var UI = (function(){
     function statDate(iso, ts){ return iso?'<span class="muted tiny" style="font-weight:600">'+esc(fmtDate(iso,true))+injDayMarkers(st,iso,ts)+'</span>':''; }
     html+='<div class="card"><h2>'+esc(I18N.t("pulpit.latest"))+'</h2><div class="stats">';
     var bpL=(st.bp&&st.bp.log&&st.bp.log.length)?st.bp.log[0]:null;
-    html+='<a class="stat" href="#bp"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(String(bpL.ts).slice(0,10), bpL.ts):'')+'</a>';
+    html+='<a class="stat" href="#bp"><span class="k">'+esc(I18N.t("pulpit.bp"))+'</span><span class="v">'+(bpL?esc(bpL.sys+"/"+bpL.dia+(bpL.pulse!=null?" · "+bpL.pulse:"")):I18N.t("pulpit.noData"))+'</span>'+(bpL?statDate(DOMAIN.localDayISO(bpL.ts), bpL.ts):'')+'</a>';
     var gL=(st.glu&&st.glu.log&&st.glu.log.length)?st.glu.log[0]:null;
     var gU=gluUnit(st);
     html+='<a class="stat" href="#glucose"><span class="k">'+esc(I18N.t("pulpit.glu"))+'</span><span class="v">'
       +(gL?esc(gluShow(gL.mgdl,gU)+" "+gluUnitLabel(gU)):I18N.t("pulpit.noData"))+'</span>'
-      +(gL?statDate(String(gL.ts).slice(0,10), gL.ts):'')+'</a>';
+      +(gL?statDate(DOMAIN.localDayISO(gL.ts), gL.ts):'')+'</a>';
     var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData");
     // month-to-date + total deltas on their own line, each coloured by its own sign
@@ -8206,10 +8221,10 @@ var UI = (function(){
     var ckAll=(st.stateLog||[]).slice();
     (st.journal||[]).forEach(function(e){ if(hasStateVals(e)) ckAll.push(e); });
     ckAll.sort(function(a,b){ return a.ts<b.ts?1:a.ts>b.ts?-1:0; });
-    var todayCk=ckAll.filter(function(e){ return String(e.ts).slice(0,10)===today; })[0];
+    var todayCk=ckAll.filter(function(e){ return DOMAIN.localDayISO(e.ts)===today; })[0];
     html+='<a class="stat" href="#diary"><span class="k">'+esc(I18N.t("state.title"))+'</span><span class="v" style="font-size:15px">'
       +(todayCk?statePillsHTML(todayCk):esc(I18N.t("pulpit.noData")))+'</span>'
-      +(todayCk?statDate(String(todayCk.ts).slice(0,10), todayCk.ts):'')+'</a>';
+      +(todayCk?statDate(DOMAIN.localDayISO(todayCk.ts), todayCk.ts):'')+'</a>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
       html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+PAL.bmi[cat.band]+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>'; }
