@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v205";
+var BUILD = "mj-v206";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -7226,8 +7226,14 @@ var UI = (function(){
   // the map's own projection, so the marks know nothing about which map.
   function spotMarksSVG(st, recent, toSvg, sug, selPos, selOk){
     var minR=DOMAIN.SPOT_MIN_CM*BELLY_CM, svg="";
-    // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge
-    recent.forEach(function(r){
+    // recent shots (last 14 days): dot + 3 cm ring + per-substance order badge.
+    // Later strokes cover earlier ones in SVG, and the list arrives newest
+    // first -- so painting it as it comes buried today's shot under every older
+    // one that overlaps it, faded rings and all. Walked oldest first instead,
+    // the freshest lands on top, which is the one a crowded map has to be able
+    // to answer for. A copy: the order the list arrives in is what numbers the
+    // dots and what orders the legend.
+    recent.slice().reverse().forEach(function(r){
       var p=toSvg(r.pos), c=substColor(st, r.substance);
       var op=Math.max(0.35, 1-(r.ageDays/14)*0.65);
       var tip=(r.ts?fmtDateTime(r.ts):r.date)+" \u00b7 "+substLabel(st, r.substance)
