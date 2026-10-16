@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v206";
+var BUILD = "mj-v207";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -1010,10 +1010,11 @@ var I18N = (function(){
     "common.saved":{pl:"Zapisano ✓",en:"Saved ✓"},
 
     "weight.title":{pl:"Dziennik wagi",en:"Weight log"},
-    "weight.sub":{pl:"Zapisuj wagę i powiązaną dawkę Mounjaro. Wszystko zostaje na Twoim urządzeniu.",
-                  en:"Log your weight and the Mounjaro dose at that time. Everything stays on your device."},
+    "weight.sub":{pl:"Zapisuj wagę, obwód pasa i powiązaną dawkę Mounjaro — wystarczy jedno z dwóch. Wszystko zostaje na Twoim urządzeniu.",
+                  en:"Log your weight, your waist and the Mounjaro dose at that time — either measurement on its own is enough. Everything stays on your device."},
     "weight.doseMg":{pl:"Dawka (mg)",en:"Dose (mg)"},
     "weight.add":{pl:"Dodaj wpis",en:"Add entry"},
+    "weight.needValue":{pl:"Podaj wagę albo obwód pasa",en:"Enter a weight or a waist measurement"},
     "weight.chartTitle":{pl:"Trend wagi",en:"Weight trend"},
     "weight.empty":{pl:"Brak wpisów. Dodaj pierwszy pomiar powyżej.",en:"No entries yet. Add your first measurement above."},
     "weight.history":{pl:"Historia",en:"History"},
@@ -2588,6 +2589,20 @@ var DOMAIN = (function(){
     return { n:rows.length, avg:mm.avg, min:mm.min, max:mm.max,
              change:rows[rows.length-1].weightKg-rows[0].weightKg };
   }
+  // Newest-first log, one field: what it reads now, where it started, and the
+  // gap between them. Rows that don't carry the field are not measurements of
+  // it -- a waist-only entry must not read as "no weight yet", and a weigh-in
+  // without the tape must not reset the waist. `newest`/`oldest` ride along so
+  // a caller can date the figure by the row it actually came from. null when
+  // nothing in the log carries the field.
+  function fieldSpan(log, field){
+    var rows=(log||[]).filter(function(e){ return e && e[field]!=null; });
+    if(!rows.length) return null;
+    var cur=Number(rows[0][field]), first=Number(rows[rows.length-1][field]);
+    return { n:rows.length, newest:rows[0], oldest:rows[rows.length-1],
+             cur:cur, first:first, diff:cur-first,
+             pct: first>0 ? (cur-first)/first*100 : 0 };
+  }
 
   // Peptide cycle progress. cfg:{cycleDays,cycleStart}. Returns null if no start.
   // Days stay the unit a cycle is measured in; weeks ride along because that is
@@ -2876,6 +2891,7 @@ var DOMAIN = (function(){
     conditionEpisodes:conditionEpisodes, openConditions:openConditions, conditionSpans:conditionSpans,
     normName:normName, nameScore:nameScore, similarCompounds:similarCompounds,
     chartWindow:chartWindow, bpWindowStats:bpWindowStats, bpAverage:bpAverage, weightWindowStats:weightWindowStats,
+    fieldSpan:fieldSpan,
     gluToMgdl:gluToMgdl, gluFromMgdl:gluFromMgdl, gluTagFor:gluTagFor, gluWindowStats:gluWindowStats,
     gluTypicalRange:gluTypicalRange, GLU_TAGS:GLU_TAGS,
     describe:describe, stripDescribed:stripDescribed, symptomParts:symptomParts, SITE_CODES:SITE_CODES,
@@ -2905,7 +2921,9 @@ var STORE = (function(){
         // so rolling one up stores an explicit false and survives a reload too.
         panelOpen:{} },
       profile:{ heightCm:null, weightKg:null, age:null, sex:null },
-      weightLog:[],        // {id,date,weightKg,waistCm,doseMg,note}; ts (optional) = exact time when given
+      weightLog:[],        // {id,date,weightKg,waistCm,doseMg,note}; ts (optional) = exact time when given.
+                           // weightKg and waistCm are each optional -- a row may
+                           // be a weigh-in, a tape measure, or both, but not neither
       calc:{ costPerPen:null, strengthMg:null, intervalDays:7, baseDose:null, cycleLen:1, pattern:[1],
         prog:{ from:2.5, to:5, method:"step", step:0.5, weeksPerStep:1, weeks:8, manual:"" } },
       jab:{ history:[] },
@@ -3720,35 +3738,56 @@ var CHART = (function(){
   }
 
   // opts.showWeight / opts.showWaist toggle the two series (both default on).
-  // With the weight hidden, the time axis spans only the waist-measurement
+  // With the weight hidden -- or simply absent, because every entry in the
+  // window is a tape measure -- the time axis spans only the waist-measurement
   // period and the waist gets the full chart height.
   function render(log, opts){
     opts=opts||{};
     var showWeight = opts.showWeight!==false;
     var showWaist = opts.showWaist!==false;
-    var data = log.slice().filter(function(e){return e.weightKg!=null;})
-                  .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
-    // waist series (optional): dashed line on its own right-hand axis
-    var waistPts = showWaist ? data.filter(function(e){ return e.waistCm!=null; }) : [];
+    var src = log.slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+    var data = src.filter(function(e){ return e.weightKg!=null; });
+    // waist series (optional): dashed line on its own right-hand axis. Taken
+    // from the whole log, not from `data` -- an entry can be a tape measure
+    // with no weigh-in beside it, and filtering through the weight series hid
+    // exactly those readings.
+    var waistPts = showWaist ? src.filter(function(e){ return e.waistCm!=null; }) : [];
     var hasWaist = waistPts.length>0;
-    if((showWeight && data.length===0) || (!showWeight && !hasWaist)){
+    // Drawing the weight line takes rows that carry a weight, not just the
+    // series toggle being on: with none, this is the waist-only chart.
+    var hasWeight = showWeight && data.length>0;
+    if(!hasWeight && !hasWaist){
       return '<div class="empty">'+esc(I18N.t("weight.empty"))+'</div>';
     }
     // the halo is the card behind the dot, so a marker never smears into a line
     var WC=PAL.series.waist, HALO=PAL.halo;
-    var W=320, H=200, mL=showWeight?38:14, mR=hasWaist?38:14, mT=14, mB=26;
+    var W=320, H=200, mL=hasWeight?38:14, mR=hasWaist?38:14, mT=14, mB=26;
     var iw=W-mL-mR, ih=H-mT-mB;
-    var xsrc = showWeight ? data : waistPts;
-    var xs = xsrc.map(function(e){ return new Date(e.date+"T12:00:00").getTime(); });
+    // The time axis has to cover every point that gets drawn on it. The two
+    // series no longer share their rows, so a tape measure taken after the last
+    // weigh-in belongs on the axis too -- read off the weight alone it landed
+    // past the right edge, in among the axis labels.
+    var xseen={}, xs=[];
+    (hasWeight?data:[]).concat(hasWaist?waistPts:[]).forEach(function(e){
+      if(xseen[e.date]) return;
+      xseen[e.date]=true;
+      xs.push(new Date(e.date+"T12:00:00").getTime());
+    });
+    xs.sort(function(a,b){ return a-b; });
     var minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs);
     // an explicit window (range selector) wins over the data extent, so sparse
     // or empty stretches still span the full requested period
     if(opts.minX!=null) minX=opts.minX;
     if(opts.maxX!=null) maxX=opts.maxX;
+    // no weight on the chart -> no weight scale; Y() then goes unused, but an
+    // empty Math.min would leave Infinity lying around for the gridlines
     var ys = data.map(function(e){ return e.weightKg; });
-    var minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
-    if(minY===maxY){ minY-=1; maxY+=1; }
-    var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
+    var minY=0, maxY=1;
+    if(hasWeight){
+      minY=Math.min.apply(null,ys); maxY=Math.max.apply(null,ys);
+      if(minY===maxY){ minY-=1; maxY+=1; }
+      var padY=(maxY-minY)*0.12; minY-=padY; maxY+=padY;
+    }
     function X(t){ return maxX===minX ? mL+iw/2 : mL + (t-minX)/(maxX-minX)*iw; }
     function Y(v){ return mT + (1-(v-minY)/(maxY-minY))*ih; }
     // The waist axis is anchored to the vertical band the WEIGHT line occupies
@@ -3763,7 +3802,7 @@ var CHART = (function(){
       minW=Math.min.apply(null,ws); maxW=Math.max.apply(null,ws);
       if(minW===maxW){ minW-=1; maxW+=1; }
       var padW=(maxW-minW)*0.12; minW-=padW; maxW+=padW;
-      if(showWeight){
+      if(hasWeight){
         // Find where the weight line runs during the waist period, then park
         // the waist band right NEXT to it (below if there's room, else above)
         // — visually correlated but never hidden underneath the weight line.
@@ -3795,7 +3834,7 @@ var CHART = (function(){
       var val = minY + (maxY-minY)*r/rows;
       var y = mT + ih*(1-r/rows);
       svg+='<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y.toFixed(1)+'" stroke="'+PAL.chartGrid+'" stroke-width="1"/>';
-      if(showWeight) svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="end">'+val.toFixed(1)+'</text>';
+      if(hasWeight) svg+='<text x="'+(mL-6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="end">'+val.toFixed(1)+'</text>';
       if(hasWaist){
         svg+='<text x="'+(W-mR+6)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="'+WC+'" text-anchor="start">'+WofY(y).toFixed(1)+'</text>';
       }
@@ -3806,7 +3845,7 @@ var CHART = (function(){
         svg+='<text x="'+X(t).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(t)+'</text>';
       });
     } else {
-      var idxs = xsrc.length<=3 ? xsrc.map(function(_,i){return i;}) : [0, Math.floor((xsrc.length-1)/2), xsrc.length-1];
+      var idxs = xs.length<=3 ? xs.map(function(_,i){return i;}) : [0, Math.floor((xs.length-1)/2), xs.length-1];
       idxs.forEach(function(i){
         var x=X(xs[i]);
         svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="'+PAL.chartAxis+'" text-anchor="middle">'+dlabel(xs[i])+'</text>';
@@ -3836,7 +3875,7 @@ var CHART = (function(){
       });
     }
     // trend line + dose-coloured points (hidden in waist-only mode)
-    if(showWeight){
+    if(hasWeight){
       function Xd(e){ return X(new Date(e.date+"T12:00:00").getTime()); }
       if(data.length>1){
         var pts = data.map(function(e){ return Xd(e).toFixed(1)+","+Y(e.weightKg).toFixed(1); }).join(" ");
@@ -4382,43 +4421,44 @@ var UI = (function(){
     weightRange.offset=win.offset;   // keep state in sync with the clamp
     var chartLog=win.entries;
     function noonMs(iso){ return new Date(iso+"T12:00:00").getTime(); }
-    var anyWaist = st.weightLog.some(function(e){ return e.waistCm!=null; });
+    // each series spans only the rows that actually carry it, so a tape-only
+    // entry never reads as the current weight and vice versa
+    var wSpan=DOMAIN.fieldSpan(st.weightLog, "weightKg"), gSpan=DOMAIN.fieldSpan(st.weightLog, "waistCm");
+    // the filter is only a filter when there are two series to choose between
+    var bothSeries = !!(wSpan && gSpan);
     function serChip(key, on, label, color){
       return '<button type="button" class="pill wSer" data-s="'+key+'" style="cursor:pointer;border:0;background:'
         +(on?color+PAL.tintA:'var(--soft)')+';color:'+(on?color:'var(--muted)')+'">'+esc(label)+'</button>';
     }
     html+='<div class="card">'+rangeHeader("weight.chartTitle","wRg",weightRange,win)
-        + (anyWaist ? '<div class="row" style="gap:6px;margin:0 0 8px">'
+        + (bothSeries ? '<div class="row" style="gap:6px;margin:0 0 8px">'
             + serChip("w", weightShow.w, I18N.t("common.weight"), PAL.series.weight)
             + serChip("g", weightShow.g, I18N.t("weight.waist"), PAL.series.waist)
             + '</div>' : '')
         + '<div id="chartHolder">'+CHART.render(chartLog, {showWeight:weightShow.w, showWaist:weightShow.g, illness:illSpansFor(chartLog,"date",win),
             minX:win.from?noonMs(win.from)-43200000:null, maxX:win.to?noonMs(win.to)+43200000:null})+'</div>';
     if(st.weightLog.length){
-      var first=st.weightLog[st.weightLog.length-1].weightKg, cur=st.weightLog[0].weightKg;
-      var diff=cur-first;
-      var pct = first>0 ? diff/first*100 : 0;
-      var col = diff<=0?"var(--good)":"var(--bad)";
-      var waistLog = st.weightLog.filter(function(e){ return e.waistCm!=null; }); // newest first
+      var col = (wSpan&&wSpan.diff>0)?"var(--bad)":"var(--good)";
       html+='<div class="legend">'
           + (illSpansFor(chartLog,"date",win).length?'<span><i style="background:'+illColor(null)+'59"></i>'+esc(I18N.t("ill.legend"))+'</span>':'')
-          + (weightShow.w?'<span>'+esc(I18N.t("weight.legendDose"))+'</span>':'')
-          + (weightShow.g&&waistLog.length?'<span style="color:'+PAL.series.waist+'">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
+          + (weightShow.w&&wSpan?'<span>'+esc(I18N.t("weight.legendDose"))+'</span>':'')
+          + (weightShow.g&&gSpan?'<span style="color:'+PAL.series.waist+'">'+esc(I18N.t("weight.legendWaist"))+'</span>':'')
           + '</div>'
-          + '<div class="stats" style="margin-top:12px">'
-          + '<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(cur,1)+' kg</span></div>'
-          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+col+'">'+(diff>0?"+":"")+fmtNum(diff,1)+' kg</span></div>'
-          + '<div class="stat"><span class="k">'+esc(I18N.t("weight.totalPct"))+'</span><span class="v" style="color:'+col+'">'+(pct>0?"+":"")+fmtNum(pct,1)+'%</span></div>';
-      var mc = DOMAIN.monthChange(st.weightLog, "weightKg", todayISO());
-      if(mc){
-        var mCol = mc.diff<=0?"var(--good)":"var(--bad)";
-        html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.month"))+'</span><span class="v" style="color:'+mCol+'">'+(mc.diff>0?"+":"")+fmtNum(mc.diff,1)+' kg</span></div>';
+          + '<div class="stats" style="margin-top:12px">';
+      if(wSpan){
+        html+='<div class="stat"><span class="k">'+esc(I18N.t("common.weight"))+'</span><span class="v">'+fmtNum(wSpan.cur,1)+' kg</span></div>'
+            + '<div class="stat"><span class="k">'+esc(I18N.t("weight.total"))+'</span><span class="v" style="color:'+col+'">'+(wSpan.diff>0?"+":"")+fmtNum(wSpan.diff,1)+' kg</span></div>'
+            + '<div class="stat"><span class="k">'+esc(I18N.t("weight.totalPct"))+'</span><span class="v" style="color:'+col+'">'+(wSpan.pct>0?"+":"")+fmtNum(wSpan.pct,1)+'%</span></div>';
+        var mc = DOMAIN.monthChange(st.weightLog, "weightKg", todayISO());
+        if(mc){
+          var mCol = mc.diff<=0?"var(--good)":"var(--bad)";
+          html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.month"))+'</span><span class="v" style="color:'+mCol+'">'+(mc.diff>0?"+":"")+fmtNum(mc.diff,1)+' kg</span></div>';
+        }
       }
-      if(waistLog.length){
-        var wCur=waistLog[0].waistCm, wFirst=waistLog[waistLog.length-1].waistCm, wDiff=wCur-wFirst;
-        var wCol = wDiff<=0?"var(--good)":"var(--bad)";
-        html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v">'+fmtNum(wCur,1)+' cm</span></div>'
-            + '<div class="stat"><span class="k">'+esc(I18N.t("weight.waistTotal"))+'</span><span class="v" style="color:'+wCol+'">'+(wDiff>0?"+":"")+fmtNum(wDiff,1)+' cm</span></div>';
+      if(gSpan){
+        var wCol = gSpan.diff<=0?"var(--good)":"var(--bad)";
+        html+='<div class="stat"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v">'+fmtNum(gSpan.cur,1)+' cm</span></div>'
+            + '<div class="stat"><span class="k">'+esc(I18N.t("weight.waistTotal"))+'</span><span class="v" style="color:'+wCol+'">'+(gSpan.diff>0?"+":"")+fmtNum(gSpan.diff,1)+' cm</span></div>';
       }
       html+='</div>';
       // extra row scoped to the visible day window (range selector active)
@@ -4441,7 +4481,7 @@ var UI = (function(){
     +   '<div class="grid g2">'
     +     '<div class="field"><label>'+esc(I18N.t("common.date"))+'</label><input type="date" id="wDate" value="'+esc(editing?editing.date:todayISO())+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("common.time"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="time" id="wTime" value="'+(editing?(editing.ts?toLocalDT(editing.ts).slice(11,16):''):nowLocalDT().slice(11,16))+'"></div>'
-    +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+'</label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0" value="'+(editing?esc(editing.weightKg):'')+'"></div>'
+    +     '<div class="field"><label>'+esc(I18N.t("bmi.weight"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.1" id="wKg" placeholder="80.0" value="'+(editing&&editing.weightKg!=null?esc(editing.weightKg):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.waistCm"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.5" id="wWaist" placeholder="100" value="'+(editing&&editing.waistCm!=null?esc(editing.waistCm):'')+'"></div>'
     +     '<div class="field"><label>'+esc(I18N.t("weight.doseMg"))+' <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label><input type="number" inputmode="decimal" step="0.25" id="wDose" placeholder="7.5" value="'+(editing?(editing.doseMg!=null?esc(editing.doseMg):''):(last!=null?esc(last):''))+'"></div>'
     +   '</div>'
@@ -4460,8 +4500,14 @@ var UI = (function(){
       pageSlice(st.weightLog, weightPage).forEach(function(e){
         html+='<tr><td style="width:29%"><span class="nowrap">'+esc(fmtDate(e.date))+(e.ts?'<span class="muted tiny"> '+esc(fmtTime(e.ts))+'</span>':'')+'</span>'+injDayMarkersBlock(st, e.date, e.ts)
             + (e.note?'<span class="muted tiny" style="display:block">'+esc(e.note)+'</span>':'')+'</td>'
-            + '<td style="width:25%"><b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
-            + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:'+PAL.series.waist+'">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')+'</td>'
+            // a tape measure with no weigh-in beside it is an entry in its own
+            // right, so the waist takes the headline rather than leaving "— kg"
+            + '<td style="width:25%">'
+            + (e.weightKg!=null
+                ? '<b class="nowrap">'+fmtNum(e.weightKg,1)+' kg</b>'
+                  + (e.waistCm!=null?'<br><span class="tiny nowrap" style="color:'+PAL.series.waist+'">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</span>':'')
+                : '<b class="nowrap" style="color:'+PAL.series.waist+'">'+fmtNum(e.waistCm,1).replace(/\.0$/,'')+' cm</b>')
+            + '</td>'
             + '<td style="width:24%">'+dosePillsAsOf(st, e.date, e.doseMg)+'</td>'
             + '<td class="num"><button class="btn ghost sm wEdit" title="'+esc(I18N.t("common.edit"))+'" data-id="'+esc(e.id)+'">'+icon("edit")+'</button> '
             + '<button class="btn ghost sm wDel" title="'+esc(I18N.t("common.delete"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button></td></tr>';
@@ -4470,7 +4516,7 @@ var UI = (function(){
     }
 
     // BMI — display only; pulls weight from the log and height/age/sex from Settings
-    var bmiW = st.weightLog.length ? st.weightLog[0].weightKg : null;
+    var bmiW = wSpan ? wSpan.cur : null;
     var bmiH = st.profile.heightCm;
     var bmiBody = (bmiW==null) ? '<div class="empty">'+esc(I18N.t("bmi.needWeight"))+'</div>'
                 : (!bmiH)      ? '<div class="empty">'+esc(I18N.t("bmi.setHeight"))+'</div>'
@@ -4484,10 +4530,14 @@ var UI = (function(){
     app.innerHTML=html;
 
     $("#wAdd").addEventListener("click",function(){
-      var kg=parseFloat($("#wKg").value);
-      if(isNaN(kg)||kg<=0){ $("#wKg").focus(); return; }
-      var dose=$("#wDose").value===""?null:parseFloat($("#wDose").value);
+      var kg=$("#wKg").value===""?null:parseFloat($("#wKg").value);
       var waist=$("#wWaist").value===""?null:parseFloat($("#wWaist").value);
+      if(kg!=null && (isNaN(kg)||kg<=0)) kg=null;
+      if(waist!=null && (isNaN(waist)||waist<=0)) waist=null;
+      // an entry has to measure something, but either one alone is a real
+      // measurement -- the tape comes out on days the scale doesn't
+      if(kg==null && waist==null){ toast(I18N.t("weight.needValue")); $("#wKg").focus(); return; }
+      var dose=$("#wDose").value===""?null:parseFloat($("#wDose").value);
       // optional time -> full timestamp, so injection-day markers can tell
       // whether the weigh-in happened before or after that day's shot
       var wTs=null;
@@ -4495,8 +4545,7 @@ var UI = (function(){
         var wWhen=new Date(($("#wDate").value||todayISO())+"T"+$("#wTime").value);
         if(!isNaN(wWhen.getTime())) wTs=wWhen.toISOString();
       }
-      var fields={ date:$("#wDate").value||todayISO(), ts:wTs, weightKg:kg,
-                   waistCm:(waist==null||isNaN(waist)||waist<=0)?null:waist,
+      var fields={ date:$("#wDate").value||todayISO(), ts:wTs, weightKg:kg, waistCm:waist,
                    doseMg:(dose==null||isNaN(dose))?null:dose, note:($("#wNote").value||"").trim() };
       if(editing){
         editing.date=fields.date; editing.ts=fields.ts; editing.weightKg=fields.weightKg; editing.waistCm=fields.waistCm;
@@ -8236,22 +8285,23 @@ var UI = (function(){
     html+='<a class="stat" href="#glucose"><span class="k">'+esc(I18N.t("pulpit.glu"))+'</span><span class="v">'
       +(gL?esc(gluShow(gL.mgdl,gU)+" "+gluUnitLabel(gU)):I18N.t("pulpit.noData"))+'</span>'
       +(gL?statDate(DOMAIN.localDayISO(gL.ts), gL.ts):'')+'</a>';
-    var wl=st.weightLog||[], curW=wl.length?wl[0].weightKg:null;
+    // Each figure is dated by the row it came from, not by the newest entry:
+    // a tape-measure-only day must not date the weight, nor hide it.
+    var wl=st.weightLog||[], wSpan=DOMAIN.fieldSpan(wl,"weightKg"), gSpan=DOMAIN.fieldSpan(wl,"waistCm");
+    var curW=wSpan?wSpan.cur:null;
     var wtxt=curW!=null?fmtNum(curW,1)+" kg":I18N.t("pulpit.noData");
     // month-to-date + total deltas on their own line, each coloured by its own sign
     function dSpan(lbl,v){ return '<span style="color:'+(v<=0?"var(--good)":"var(--bad)")+'">'+esc(lbl)+' '+(v>0?"+":"")+fmtNum(v,1)+'</span>'; }
     var wDeltas='';
-    if(wl.length>1){
-      var first=wl[wl.length-1].weightKg, d=curW-first;
+    if(wSpan && wSpan.n>1){
       var wmc=DOMAIN.monthChange(wl, "weightKg", today);
-      wDeltas='<span class="muted tiny" style="font-weight:600;white-space:nowrap">'+(wmc?dSpan(I18N.t("pulpit.monthShort"),wmc.diff)+' · ':'')+dSpan(I18N.t("pulpit.totalShort"),d)+'</span>';
+      wDeltas='<span class="muted tiny" style="font-weight:600;white-space:nowrap">'+(wmc?dSpan(I18N.t("pulpit.monthShort"),wmc.diff)+' · ':'')+dSpan(I18N.t("pulpit.totalShort"),wSpan.diff)+'</span>';
     }
-    html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="font-size:18px">'+wtxt+'</span>'+wDeltas+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>';
-    var waistL=wl.filter(function(e){return e.waistCm!=null;});
-    if(waistL.length){
-      var curWa=waistL[0].waistCm, watxt=fmtNum(curWa,1)+" cm", wacol="var(--ink)";
-      if(waistL.length>1){ var dWa=curWa-waistL[waistL.length-1].waistCm; wacol=dWa<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(dWa>0?"+":"")+fmtNum(dWa,1)+")"; }
-      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(waistL[0].date, waistL[0].ts)+'</a>';
+    html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.weight"))+'</span><span class="v" style="font-size:18px">'+wtxt+'</span>'+wDeltas+(wSpan?statDate(wSpan.newest.date, wSpan.newest.ts):'')+'</a>';
+    if(gSpan){
+      var watxt=fmtNum(gSpan.cur,1)+" cm", wacol="var(--ink)";
+      if(gSpan.n>1){ wacol=gSpan.diff<=0?"var(--good)":"var(--bad)"; watxt+=" ("+(gSpan.diff>0?"+":"")+fmtNum(gSpan.diff,1)+")"; }
+      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("weight.waist"))+'</span><span class="v" style="color:'+wacol+';font-size:18px">'+watxt+'</span>'+statDate(gSpan.newest.date, gSpan.newest.ts)+'</a>';
     }
     // latest wellbeing values from today (notes with dots or legacy check-ins)
     var ckAll=(st.stateLog||[]).slice();
@@ -8263,7 +8313,7 @@ var UI = (function(){
       +(todayCk?statDate(DOMAIN.localDayISO(todayCk.ts), todayCk.ts):'')+'</a>';
     var bmiV=DOMAIN.bmi(curW, st.profile.heightCm);
     if(bmiV){ var cat=DOMAIN.bmiCategory(bmiV);
-      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+PAL.bmi[cat.band]+'">'+fmtNum(bmiV,1)+'</span>'+(wl.length?statDate(wl[0].date, wl[0].ts):'')+'</a>'; }
+      html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v" style="color:'+PAL.bmi[cat.band]+'">'+fmtNum(bmiV,1)+'</span>'+(wSpan?statDate(wSpan.newest.date, wSpan.newest.ts):'')+'</a>'; }
     else { html+='<a class="stat" href="#weight"><span class="k">'+esc(I18N.t("pulpit.bmi"))+'</span><span class="v muted" style="font-size:13px">'+esc(I18N.t("pulpit.bmiNeed"))+'</span></a>'; }
     html+='</div></div>';
 
@@ -8306,7 +8356,7 @@ var UI = (function(){
     }
     if(st.glu && st.glu.log && st.glu.log.length) opts.push({ id:"glucose", label:I18N.t("corr.glucose") });
     if((st.weightLog||[]).length){
-      opts.push({ id:"weight", label:I18N.t("corr.weight") });
+      if(st.weightLog.some(function(e){return e.weightKg!=null;})) opts.push({ id:"weight", label:I18N.t("corr.weight") });
       if(st.weightLog.some(function(e){return e.waistCm!=null;})) opts.push({ id:"waist", label:I18N.t("corr.waist") });
       if(st.weightLog.some(function(e){return e.doseMg!=null;})) opts.push({ id:"mounjaroDose", label:I18N.t("corr.mjDose") });
     }

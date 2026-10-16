@@ -527,6 +527,68 @@ test("weightWindowStats: change runs oldest to newest regardless of input order"
   assert.strictEqual(DOMAIN.weightWindowStats([]), null);
 });
 
+test("weightWindowStats ignores entries that carry no weight", function () {
+  var s = DOMAIN.weightWindowStats([wEntry("2026-08-07", 90), { date: "2026-08-04", waistCm: 98 },
+                                    wEntry("2026-08-01", 93)]);
+  assert.strictEqual(s.n, 2);
+  assert.strictEqual(s.change, -3);
+  assert.strictEqual(DOMAIN.weightWindowStats([{ date: "2026-08-04", waistCm: 98 }]), null);
+});
+
+// ---- fieldSpan: current / first / change for one field of a newest-first log ----
+
+test("fieldSpan: reads cur, first, diff and pct off a newest-first log", function () {
+  var span = DOMAIN.fieldSpan([wEntry("2026-08-07", 90), wEntry("2026-08-01", 100)], "weightKg");
+  assert.strictEqual(span.n, 2);
+  assert.strictEqual(span.cur, 90);
+  assert.strictEqual(span.first, 100);
+  assert.strictEqual(span.diff, -10);
+  assert.strictEqual(span.pct, -10);
+  assert.strictEqual(span.newest.date, "2026-08-07");
+  assert.strictEqual(span.oldest.date, "2026-08-01");
+});
+
+test("fieldSpan: a waist-only entry leaves the weight span alone, and vice versa", function () {
+  var log = [{ date: "2026-08-09", waistCm: 96 },                  // tape only, newest
+              { date: "2026-08-07", weightKg: 90, waistCm: 98 },
+              { date: "2026-08-01", weightKg: 100 }];              // scale only, oldest
+  var w = DOMAIN.fieldSpan(log, "weightKg");
+  assert.strictEqual(w.n, 2);
+  assert.strictEqual(w.cur, 90);                                   // NOT "no weight yet"
+  assert.strictEqual(w.newest.date, "2026-08-07");                 // dated by its own row
+  assert.strictEqual(w.diff, -10);
+  var g = DOMAIN.fieldSpan(log, "waistCm");
+  assert.strictEqual(g.n, 2);
+  assert.strictEqual(g.cur, 96);
+  assert.strictEqual(g.first, 98);
+  assert.strictEqual(g.diff, -2);
+});
+
+test("fieldSpan: one row spans nothing, no row at all is null", function () {
+  var one = DOMAIN.fieldSpan([wEntry("2026-08-07", 90)], "weightKg");
+  assert.strictEqual(one.n, 1);
+  assert.strictEqual(one.diff, 0);
+  assert.strictEqual(one.pct, 0);
+  assert.strictEqual(DOMAIN.fieldSpan([{ date: "2026-08-07", waistCm: 98 }], "weightKg"), null);
+  assert.strictEqual(DOMAIN.fieldSpan([], "weightKg"), null);
+  assert.strictEqual(DOMAIN.fieldSpan(null, "weightKg"), null);
+});
+
+test("fieldSpan: a zero baseline yields no percentage rather than Infinity", function () {
+  var span = DOMAIN.fieldSpan([wEntry("2026-08-07", 5), wEntry("2026-08-01", 0)], "weightKg");
+  assert.strictEqual(span.diff, 5);
+  assert.strictEqual(span.pct, 0);
+});
+
+test("seriesFor: a weightless entry feeds the waist series, not the weight one", function () {
+  var st = { weightLog: [{ date: "2026-08-09", waistCm: 96 },
+                         { date: "2026-08-07", weightKg: 90, waistCm: 98 }] };
+  assert.deepStrictEqual(Array.from(DOMAIN.seriesFor(st, "weight")).map(function (p) { return p.date; }),
+    ["2026-08-07"]);
+  assert.deepStrictEqual(Array.from(DOMAIN.seriesFor(st, "waist")).map(function (p) { return p.value; }),
+    [98, 96]);   // oldest first, the order every series comes back in
+});
+
 // ---- fractional dosing intervals ----
 
 var SAT_8AM = Date.parse("2026-08-01T08:00:00.000Z");   // reference shot
