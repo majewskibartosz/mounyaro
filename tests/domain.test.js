@@ -589,6 +589,46 @@ test("seriesFor: a weightless entry feeds the waist series, not the weight one",
     [98, 96]);   // oldest first, the order every series comes back in
 });
 
+// ---- a dose split across several shots of one injection day ----
+
+// The modules run in a bare vm, so an object they return is not
+// reference-equal to a host literal -- the fields are read one by one.
+function span(o) { return o && { n: o.n, total: o.total }; }
+
+test("doseDayTotal: perDay multiplies the per-shot dose", function () {
+  assert.deepStrictEqual(span(DOMAIN.doseDayTotal(50, 2, null)), { n: 2, total: 100 });
+  assert.deepStrictEqual(span(DOMAIN.doseDayTotal(0.5, 3, null)), { n: 3, total: 1.5 });
+});
+
+test("doseDayTotal: named hours are the count, outranking perDay", function () {
+  // doseTxt already drops the "2x" when hours are listed, for the same reason:
+  // the hours say how many a day on their own.
+  assert.deepStrictEqual(span(DOMAIN.doseDayTotal(50, 1, ["08:00", "20:00"])), { n: 2, total: 100 });
+  assert.deepStrictEqual(span(DOMAIN.doseDayTotal(50, 4, ["08:00", "20:00"])), { n: 2, total: 100 });
+  assert.strictEqual(DOMAIN.doseDayTotal(50, 3, ["08:00"]), null);   // one hour is one shot
+});
+
+test("doseDayTotal: nothing split, nothing to print", function () {
+  assert.strictEqual(DOMAIN.doseDayTotal(50, 1, null), null);
+  assert.strictEqual(DOMAIN.doseDayTotal(50, null, null), null);
+});
+
+test("doseDayTotal: a dose that is not a number yields no sum", function () {
+  assert.strictEqual(DOMAIN.doseDayTotal(null, 2, null), null);
+  assert.strictEqual(DOMAIN.doseDayTotal("", 2, null), null);
+  assert.strictEqual(DOMAIN.doseDayTotal("abc", 2, null), null);
+  assert.strictEqual(DOMAIN.doseDayTotal(undefined, 2, null), null);
+});
+
+test("doseDayTotal: a dose typed as text still multiplies", function () {
+  // the field hands over a string, and 50 typed is still 50
+  assert.deepStrictEqual(span(DOMAIN.doseDayTotal("50", 2, null)), { n: 2, total: 100 });
+});
+
+test("doseDayTotal: the count is capped the same way perDay is", function () {
+  assert.strictEqual(DOMAIN.doseDayTotal(10, 99, null).n, DOMAIN.PER_DAY_MAX);
+});
+
 // ---- fractional dosing intervals ----
 
 var SAT_8AM = Date.parse("2026-08-01T08:00:00.000Z");   // reference shot

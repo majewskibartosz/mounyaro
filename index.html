@@ -741,6 +741,8 @@ var I18N = (function(){
     "inj.schedAllDays":{pl:"codziennie",en:"daily"},
     "inj.schedEveryDay":{pl:"Codziennie",en:"Every day"},
     "inj.perDay":{pl:"Razy dziennie",en:"Times a day"},
+    "inj.dayTotal":{pl:"{n} \u00d7 {dose} {unit} = {total} {unit} w dniu wk\u0142u\u0107",
+                    en:"{n} \u00d7 {dose} {unit} = {total} {unit} on an injection day"},
     "inj.perDayHint":{pl:"Wpisane pory dnia maj\u0105 pierwsze\u0144stwo przed t\u0105 liczb\u0105.",en:"Times of day, when listed, take precedence over this number."},
     "inj.schedWholeDays":{pl:"Z podanymi porami dnia odst\u0119p liczy si\u0119 w pe\u0142nych dniach.",en:"With times of day set, the gap counts in whole days."},
     "inj.backfillTitle":{pl:"Uzupełnij dawkowanie w historii",en:"Backfill dosing in history"},
@@ -2237,6 +2239,17 @@ var DOMAIN = (function(){
     return (best>=0 && best+1<slots.length) ? slots[best+1] : null;
   }
   // How many doses a day, as a plain count. 1 (or nothing) is the ordinary case.
+  // What one injection day adds up to when the dose is split across several
+  // shots. Named hours ARE the count -- the same rule doseTxt follows, since a
+  // list of times says how many a day on its own. null when nothing is split:
+  // one shot a day has no sum worth printing, and printing "1 x 50 = 50" on
+  // every ordinary compound would be noise.
+  function doseDayTotal(dose, perDay, times){
+    var d=Number(dose);
+    if(dose==null || dose==="" || !isFinite(d)) return null;
+    var t=normTimes(times), n = t ? t.length : normPerDay(perDay);
+    return n>1 ? { n:n, total:d*n } : null;
+  }
   function normPerDay(n){
     n=Number(n);
     if(!isFinite(n) || n<1) return 1;
@@ -2878,7 +2891,7 @@ var DOMAIN = (function(){
     normDays:normDays, daysKey:daysKey, cadenceKey:cadenceKey, daysToNextDow:daysToNextDow,
     normTimes:normTimes, timesKey:timesKey, nextSlotMs:nextSlotMs,
     DUE_SOON_MS:DUE_SOON_MS, dueNow:dueNow,
-    PER_DAY_MAX:PER_DAY_MAX, normPerDay:normPerDay, nextRollingMs:nextRollingMs,
+    PER_DAY_MAX:PER_DAY_MAX, normPerDay:normPerDay, doseDayTotal:doseDayTotal, nextRollingMs:nextRollingMs,
     vialUnitFor:vialUnitFor, doseInVialUnit:doseInVialUnit,
     totalMgPerPen:totalMgPerPen, budgetClicks:budgetClicks, cost:cost, penSchedule:penSchedule,
     stretch:stretch, planRegimen:planRegimen, progression:progression, bmi:bmi, bmiCategory:bmiCategory, bmiBand:bmiBand, BMI_BANDS:BMI_BANDS,
@@ -7051,6 +7064,20 @@ var UI = (function(){
   }
   // Doses per injection day, as a count. Offered in BOTH rhythms — "every 2 days,
   // twice a day" is as legitimate a protocol as "daily, twice a day".
+  // A split dose is entered one shot at a time -- 50 mg, twice -- but it is
+  // thought about as the day's figure. This says the day's figure out loud,
+  // right under the number being typed, so nobody has to trust their own
+  // arithmetic about what went in. Empty unless the dose really is split.
+  function dayTotalHTML(st, sub, dose){
+    var dt=DOMAIN.doseDayTotal(dose, substPerDay(st, sub), substTimes(st, sub));
+    if(!dt) return "";
+    function n(v){ return String(Math.round(Number(v)*1000)/1000); }
+    var p=peptideById(st, sub);
+    var u=p?p.unit:(sub==="peptide"?I18N.t("inj.unitsUnit"):I18N.t("inj.mgUnit"));
+    return '<p class="tiny muted" style="margin:-6px 0 10px">'
+      +esc(I18N.t("inj.dayTotal").replace("{n}", String(dt.n)).replace("{dose}", n(dose))
+            .replace("{total}", n(dt.total)).replace(/\{unit\}/g, u))+'</p>';
+  }
   function perDayHTML(id, sel){
     var n=DOMAIN.normPerDay(sel), out='<select id="'+esc(id)+'">';
     for(var i=1;i<=DOMAIN.PER_DAY_MAX;i++)
@@ -7820,6 +7847,7 @@ var UI = (function(){
     var doseVal=editing?(editing.dose!=null?editing.dose:""):(injDraft.dose||lastTxt);
     html+='<div class="field"><label>'+esc(I18N.t("inj.dose"))+' ('+esc(unit)+') <span class="muted tiny">('+esc(I18N.t("common.optional"))+')</span></label>'
       +'<input type="number" inputmode="decimal" step="0.1" id="injDose" value="'+esc(String(doseVal))+'" placeholder="'+esc(String(dosePh))+'"></div>';
+    html+='<div id="doseTotal">'+dayTotalHTML(st, sub, doseVal)+'</div>';
     // how much to draw on a U-100 syringe, recomputed live as the dose is typed
     if(pepCur) html+='<div id="pepDraw">'+drawBoxHTML(st, pepCur, doseVal)+'</div>';
     // when given: captured as "now" by default, editable to backfill (parity with BP)
@@ -8063,10 +8091,14 @@ var UI = (function(){
       hits.forEach(function(e){ e.every=bev; delete e.days; });
       STORE.save(); toast(I18N.t("inj.backfillDone")+" "+hits.length); viewInject();
     });
-    if($("#injDose") && $("#pepDraw")){
+    // Both readouts hang off the dose being typed; the draw box only exists for
+    // a peptide, the day's total for anything split across several shots, so
+    // the listener is bound for either and each part checks for itself.
+    if($("#injDose")){
       $("#injDose").addEventListener("input",function(){
         var pd=peptideById(st, sub);
-        if(pd) $("#pepDraw").innerHTML=drawBoxHTML(st, pd, parseFloat(this.value), ($("#injDate")&&$("#injDate").value)||null);
+        if(pd && $("#pepDraw")) $("#pepDraw").innerHTML=drawBoxHTML(st, pd, parseFloat(this.value), ($("#injDate")&&$("#injDate").value)||null);
+        if($("#doseTotal")) $("#doseTotal").innerHTML=dayTotalHTML(st, sub, this.value);
       });
     }
     bindPeptides(st);
