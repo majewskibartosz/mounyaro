@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v208";
+var BUILD = "mj-v209";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -6104,20 +6104,28 @@ var UI = (function(){
       // Show it in the card's unit when the two share a scale, otherwise in its
       // own -- and never label an old number with a new unit.
       var shown=p?DOMAIN.convertDose(last.dose, last.unit, p.unit):null;
-      bits.push(esc(shown!=null ? fmtDose(shown)+" "+p.unit
-                                : String(last.dose)+" "+(last.unit||"")));
+      // Split across the day, the card carries the day's figure -- the whole
+      // point of the row is "what am I on", and that is the sum.
+      var cardDt=DOMAIN.doseDayTotal(shown!=null?shown:last.dose,
+                                     substPerDay(st, sub), substTimes(st, sub));
+      bits.push(esc(shown!=null ? fmtDose(cardDt?cardDt.total:shown)+" "+p.unit
+                                : String(cardDt?fmtDose(cardDt.total):last.dose)+" "+(last.unit||"")));
+      // Units are what goes into ONE syringe -- the number you act on at the
+      // moment of injecting -- so they stay per shot and say how many instead.
       var u=p?pepUnits(st, p, last.dose, null, last.unit):null;
-      if(u!=null) bits.push('<b style="color:'+substColor(st,sub)+'">'+esc(fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
+      if(u!=null) bits.push('<b style="color:'+substColor(st,sub)+'">'
+        +esc((cardDt?cardDt.n+" \u00d7 ":"")+fmtUnits(u)+" "+I18N.t("sch.units"))+'</b>');
     } else if(p){
       // no shot yet: show the mix so the card is not blank
       var c0=pepConcAsOf(st, p);
       if(c0!=null) bits.push(esc(fmtConc(c0)+" "+DOMAIN.vialUnitFor(p.unit)+"/ml"));
     }
-    var subDys=substDays(st, sub), subTms=substTimes(st, sub), subPd=substPerDay(st, sub);
-    var pdTxt=(subPd>1 && !subTms)?" "+subPd+"\u00d7":"";
-    // Named hours say how many a day better than the count does, so they take
-    // its place — in either rhythm, since either one picks the days out.
-    var rhTxt=subTms?" "+fmtTimes(subTms):pdTxt;
+    var subDys=substDays(st, sub), subTms=substTimes(st, sub);
+    // The count no longer rides the cadence: the dose above is already the
+    // day's total, so "co 2 dni 2x" would say the same thing twice and read as
+    // if the figure still needed doubling. Named hours stay -- they carry more
+    // than a count does, and they say when, not just how many.
+    var rhTxt=subTms?" "+fmtTimes(subTms):"";
     if(subDys) bits.push(esc(fmtDows(subDys)+rhTxt));
     // A one-day gap is simply "daily" — the same word the weekday plan uses for
     // all seven, and short enough that "2x" beside it no longer wraps the line.
@@ -7130,13 +7138,18 @@ var UI = (function(){
     for(var i=0;i<pick.length;i++) if(!have[pick[i]]) return pick[i];
     return "10:00";
   }
+  // The figure a split dose is thought about is the day's, not the syringe's.
+  // The old "2x" carried that meaning badly: going from 75 mg once to 50 mg
+  // twice RAISED the daily dose while the headline number fell from 75 to 50.
+  // The count is no longer printed because it is already inside the figure --
+  // what went into one syringe rides the detail line underneath instead.
   function doseTxt(dose, unit, every, days, times, perDay){
     var d=fmtDows(days), t=fmtTimes(times);
-    // Named hours already say how many a day, so the count is not repeated.
-    var n=DOMAIN.normPerDay(perDay), px=(n>1 && !t)?" "+n+"\u00d7":"";
-    if(d && t) return dose+" "+unit+" "+(DOMAIN.normDays(days).length===7?"":d+" ")+t;
-    if(d) return dose+" "+unit+" "+d+px;
-    return dose+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"")+(t?" "+t:"")+px;
+    var dt=DOMAIN.doseDayTotal(dose, perDay, times);
+    var shown=dt?fmtDose(dt.total):dose;
+    if(d && t) return shown+" "+unit+" "+(DOMAIN.normDays(days).length===7?"":d+" ")+t;
+    if(d) return shown+" "+unit+" "+d;
+    return shown+" "+unit+(every!=null?"/"+fmtEvery(every)+"d":"")+(t?" "+t:"");
   }
   function dosePill(label, txt, color, week, doseWeek){
     return '<span class="pill dosepill" style="background:'+color+PAL.tintA+';color:'+color+'">'+(label?label+' ':'')+esc(txt)
@@ -7920,6 +7933,11 @@ var UI = (function(){
         var where=e.pos ? siteLbl+" · "+posLabelShort(e.pos, e.area) : siteLbl;
         var meta=[];
         if(e.name) meta.push(e.name);
+        // One row is ONE injection. With the pill carrying the day's figure,
+        // this is the only place left that records what actually went in, and
+        // a 50 mg shot must never read as a 100 mg one.
+        var rowDt=DOMAIN.doseDayTotal(e.dose, e.perDay, e.times);
+        if(rowDt) meta.push(rowDt.n+" \u00d7 "+fmtDose(e.dose)+" "+(e.unit||""));
         if(e.penDraw) meta.push(penDrawLabel(e.penDraw));
         if(e.units!=null) meta.push(fmtUnits(e.units)+" "+I18N.t("sch.units")
           +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""));
