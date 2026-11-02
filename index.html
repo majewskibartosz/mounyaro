@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v209";
+var BUILD = "mj-v210";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -5886,6 +5886,17 @@ var UI = (function(){
     ((st.inj&&st.inj.peptides)||[]).forEach(function(p){ if(p && p.id===id) hit=p; });
     return hit;
   }
+  // A cycle belongs to a RUN, not to the compound. Finishing ends the run;
+  // coming back starts another one, on its first day -- otherwise a compound
+  // picked up again reports the week and the tally of the run that ended.
+  // Only the anchor moves: the length, the shots, the vials and the colour are
+  // the same record, which is the whole point of resuming rather than re-adding.
+  function resumePeptide(p){
+    if(!p) return p;
+    p.archived=false;
+    if(p.cycleDays) p.cycleStart=todayISO();
+    return p;
+  }
   function substColor(st, sub){
     if(PAL.subst[sub] && sub!=="peptide") return PAL.subst[sub];
     var p=peptideById(st, sub);
@@ -6096,7 +6107,10 @@ var UI = (function(){
     var lastTs=lastInjTs(st,sub);
     var cd=DOMAIN.doseCountdown(lastTs, ev, Date.now(), substDays(st, sub), substTimes(st, sub),
                                 substDayCtx(st, sub, lastTs));
-    var cyc=(p && p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
+    // A finished run has no current week: the cycle stops where the compound
+    // did, instead of ticking on in the "Zakończone" list for ever. The tally
+    // hangs off the same value, so both leave together.
+    var cyc=(p && !p.archived && p.cycleDays && p.cycleStart) ? DOMAIN.cycleProgress(p, todayISO()) : null;
     var last=DOMAIN.lastDoseAsOf(st, sub);
     var bits=[];
     if(last && last.dose!=null){
@@ -6609,7 +6623,7 @@ var UI = (function(){
     // vials and colour all come back with it.
     function adoptCompound(id){
       var p=peptideById(st, id); if(!p) return;
-      p.archived=false;
+      resumePeptide(p);
       pepEditId=p.id; pepSel=p.id; injSeg="peptide";
       pepPickOpen=false; pepDraft={}; document.body.style.overflow="";
       STORE.save(); syncInjectRoute(); viewInject();
@@ -6702,7 +6716,7 @@ var UI = (function(){
           if(sc>=60 && sc>best){ best=sc; dupe=o; }
         });
         if(dupe && confirm(I18N.t("pep.dupConfirm").replace("{name}", dupe.name))){
-          dupe.archived=false;
+          resumePeptide(dupe);
           pepEditId=null; pepDraft={}; pepSel=dupe.id; injSeg="peptide";
           STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
           return;
@@ -6803,7 +6817,7 @@ var UI = (function(){
     if($("#pfVialSave")) $("#pfVialSave").addEventListener("click",function(){ savePepForm(true); });
     if($("#pepResume")) $("#pepResume").addEventListener("click",function(){
       var p=peptideById(st, selectedSubst()); if(!p) return;
-      p.archived=false;
+      resumePeptide(p);
       STORE.save(); toast(I18N.t("common.saved")); syncInjectRoute(); viewInject();
     });
     if($("#pepDrop")) $("#pepDrop").addEventListener("click",function(){
