@@ -621,7 +621,7 @@
 /* Which build this page is. Kept in step with CACHE in sw.js on every release
    and shown in the footer, so "am I looking at the new version?" is answered by
    reading it rather than by comparing what moved on the screen. */
-var BUILD = "mj-v210";
+var BUILD = "mj-v211";
 /* =========================================================================
    I18N — Polish + English dictionary
    ========================================================================= */
@@ -7157,9 +7157,13 @@ var UI = (function(){
   // twice RAISED the daily dose while the headline number fell from 75 to 50.
   // The count is no longer printed because it is already inside the figure --
   // what went into one syringe rides the detail line underneath instead.
-  function doseTxt(dose, unit, every, days, times, perDay){
+  // `oneShot` picks which of the two readings is meant. A regimen or a whole
+  // day is labelled with the day's figure; ONE injection is labelled with what
+  // went into that syringe. Both rows of a split day carrying the day's 100 mg
+  // add up to 200 when the list is read, and a log has to survive being summed.
+  function doseTxt(dose, unit, every, days, times, perDay, oneShot){
     var d=fmtDows(days), t=fmtTimes(times);
-    var dt=DOMAIN.doseDayTotal(dose, perDay, times);
+    var dt=oneShot?null:DOMAIN.doseDayTotal(dose, perDay, times);
     var shown=dt?fmtDose(dt.total):dose;
     if(d && t) return shown+" "+unit+" "+(DOMAIN.normDays(days).length===7?"":d+" ")+t;
     if(d) return shown+" "+unit+" "+d;
@@ -7950,8 +7954,13 @@ var UI = (function(){
         // One row is ONE injection. With the pill carrying the day's figure,
         // this is the only place left that records what actually went in, and
         // a 50 mg shot must never read as a 100 mg one.
+        // With the pill stating the syringe, this closes the arithmetic: both
+        // numbers are named, so neither can be taken for the other. Same
+        // sentence as under the dose field while it is being typed.
         var rowDt=DOMAIN.doseDayTotal(e.dose, e.perDay, e.times);
-        if(rowDt) meta.push(rowDt.n+" \u00d7 "+fmtDose(e.dose)+" "+(e.unit||""));
+        if(rowDt) meta.push(I18N.t("inj.dayTotal").replace("{n}", String(rowDt.n))
+          .replace("{dose}", fmtDose(e.dose)).replace("{total}", fmtDose(rowDt.total))
+          .replace(/\{unit\}/g, e.unit||""));
         if(e.penDraw) meta.push(penDrawLabel(e.penDraw));
         if(e.units!=null) meta.push(fmtUnits(e.units)+" "+I18N.t("sch.units")
           +(e.mgPerMl?" · "+fmtConc(e.mgPerMl)+" "+DOMAIN.vialUnitFor((peptideById(st,e.substance)||{}).unit)+"/ml":""));
@@ -7964,7 +7973,7 @@ var UI = (function(){
             +'<button class="btn ghost sm injDel" title="'+esc(I18N.t("inj.confirmDel"))+'" data-id="'+esc(e.id)+'">'+icon("trash")+'</button>'
           +'</span></div>'
           +(e.dose!=null?'<div class="ihpill">'
-            +dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days, e.times, e.perDay), substColor(st, e.substance),
+            +dosePill("", doseTxt(e.dose, e.unit||"", e.every, e.days, e.times, e.perDay, true), substColor(st, e.substance),
                       DOMAIN.therapyWeek(DOMAIN.firstInjDateFor(st,e.substance), e.date), doseWeekAsOf(st,e.substance,e.date))
             +'</div>':'')
           +'<div class="ihmeta">'+esc(where)+'</div>'
